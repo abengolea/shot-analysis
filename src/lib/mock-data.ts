@@ -8,6 +8,7 @@ export const mockPlayers: Player[] = [
     "data-ai-hint": "male portrait",
     ageGroup: "U18",
     playerLevel: "Avanzado",
+    coachId: "c1",
   },
   {
     id: "2",
@@ -16,6 +17,7 @@ export const mockPlayers: Player[] = [
     "data-ai-hint": "female portrait",
     ageGroup: "U15",
     playerLevel: "Intermedio",
+    coachId: "c1",
   },
   {
     id: "3",
@@ -24,6 +26,7 @@ export const mockPlayers: Player[] = [
     "data-ai-hint": "male portrait",
     ageGroup: "U13",
     playerLevel: "Principiante",
+    coachId: "c2",
   },
 ];
 
@@ -100,6 +103,7 @@ export const mockCoaches: Coach[] = [
     rate: 75,
     rating: 4.9,
     reviews: 82,
+    playerIds: ["1", "2"],
   },
   {
     id: "c2",
@@ -111,6 +115,7 @@ export const mockCoaches: Coach[] = [
     rate: 65,
     rating: 4.8,
     reviews: 64,
+    playerIds: ["3"],
   },
   {
     id: "c3",
@@ -122,6 +127,7 @@ export const mockCoaches: Coach[] = [
     rate: 80,
     rating: 5.0,
     reviews: 45,
+    playerIds: [],
   },
    {
     id: "c4",
@@ -133,5 +139,6 @@ export const mockCoaches: Coach[] = [
     rate: 70,
     rating: 4.9,
     reviews: 71,
+    playerIds: [],
   },
 ]
