@@ -21,12 +21,12 @@ import { PlayerProgressChart } from "@/components/player-progress-chart";
 
 
 const chartData = [
-  { month: "January", score: 75 },
-  { month: "February", score: 78 },
-  { month: "March", score: 82 },
-  { month: "April", score: 80 },
-  { month: "May", score: 85 },
-  { month: "June", score: 88 },
+    { month: "Enero", score: 75 },
+    { month: "Febrero", score: 78 },
+    { month: "Marzo", score: 82 },
+    { month: "Abril", score: 80 },
+    { month: "Mayo", score: 85 },
+    { month: "Junio", score: 88 },
 ];
 
 
@@ -67,10 +67,10 @@ export default function PlayerProfilePage({
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 font-headline">
-                <FileText className="h-6 w-6" /> Analysis History
+                <FileText className="h-6 w-6" /> Historial de Análisis
               </CardTitle>
               <CardDescription>
-                Review past shot analyses and track improvements.
+                Revisa análisis de tiros anteriores y sigue el progreso.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -83,21 +83,21 @@ export default function PlayerProfilePage({
                           <Target className="h-6 w-6" />
                         </div>
                         <div className="flex-1">
-                          <p className="font-semibold">{analysis.shotType} Analysis</p>
+                          <p className="font-semibold">Análisis de {analysis.shotType}</p>
                           <p className="text-sm text-muted-foreground flex items-center gap-2">
                             <Calendar className="h-4 w-4" />
                             {new Date(analysis.createdAt).toLocaleDateString()}
                           </p>
                         </div>
                          <p className="text-sm font-medium text-primary transition-transform group-hover:translate-x-1">
-                          View Details
+                          Ver Detalles
                         </p>
                       </div>
                     </Link>
                   ))
                 ) : (
                   <p className="py-8 text-center text-muted-foreground">
-                    No analyses found for this player yet.
+                    Aún no se han encontrado análisis para este jugador.
                   </p>
                 )}
               </div>
@@ -109,10 +109,10 @@ export default function PlayerProfilePage({
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 font-headline">
-                <BarChart className="h-6 w-6" /> Progress
+                <BarChart className="h-6 w-6" /> Progreso
               </CardTitle>
               <CardDescription>
-                Overall shot score over the last 6 months.
+                Puntuación general de tiro en los últimos 6 meses.
               </CardDescription>
             </CardHeader>
             <CardContent>

@@ -7,7 +7,7 @@ export const mockPlayers: Player[] = [
     avatarUrl: "https://placehold.co/100x100.png",
     "data-ai-hint": "male portrait",
     ageGroup: "U18",
-    playerLevel: "Advanced",
+    playerLevel: "Avanzado",
   },
   {
     id: "2",
@@ -15,7 +15,7 @@ export const mockPlayers: Player[] = [
     avatarUrl: "https://placehold.co/100x100.png",
     "data-ai-hint": "female portrait",
     ageGroup: "U15",
-    playerLevel: "Intermediate",
+    playerLevel: "Intermedio",
   },
   {
     id: "3",
@@ -23,7 +23,7 @@ export const mockPlayers: Player[] = [
     avatarUrl: "https://placehold.co/100x100.png",
     "data-ai-hint": "male portrait",
     ageGroup: "U13",
-    playerLevel: "Beginner",
+    playerLevel: "Principiante",
   },
 ];
 
@@ -33,12 +33,12 @@ export const mockAnalyses: ShotAnalysis[] = [
     playerId: "1",
     createdAt: "2024-07-20T10:00:00Z",
     videoUrl: "https://placehold.co/1280x720.png",
-    shotType: "Three-Pointer",
+    shotType: "Tiro de Tres",
     analysisSummary:
-      "Alex shows a strong, consistent release but needs to improve balance during the shot. The elbow alignment is slightly off, causing occasional misses to the right.",
-    strengths: ["Quick release", "High arc", "Good follow-through"],
-    weaknesses: ["Slight elbow flare", "Off-balance on landing", "Inconsistent foot placement"],
-    recommendations: ["Focus on 'elbow-in' drills.", "Practice one-legged shots to improve balance.", "Use a line on the court to ensure consistent foot setup."],
+      "Alex muestra un lanzamiento fuerte y consistente, pero necesita mejorar el equilibrio durante el tiro. La alineación del codo está ligeramente desviada, causando fallos ocasionales a la derecha.",
+    strengths: ["Lanzamiento rápido", "Arco alto", "Buena continuación"],
+    weaknesses: ["Codo ligeramente abierto", "Desequilibrio al aterrizar", "Posición de pies inconsistente"],
+    recommendations: ["Concéntrate en ejercicios de 'codo adentro'.", "Practica tiros a una pierna para mejorar el equilibrio.", "Usa una línea en la cancha para asegurar una posición de pies consistente."],
     keyframes: [
       "https://placehold.co/640x360.png",
       "https://placehold.co/640x360.png",
@@ -51,12 +51,12 @@ export const mockAnalyses: ShotAnalysis[] = [
     playerId: "1",
     createdAt: "2024-07-22T11:00:00Z",
     videoUrl: "https://placehold.co/1280x720.png",
-    shotType: "Free Throw",
+    shotType: "Tiro Libre",
     analysisSummary:
-      "A much-improved free throw session. Balance is better, and elbow alignment is more consistent. The release point is now very reliable.",
-    strengths: ["Excellent balance", "Consistent release point", "Strong mental focus"],
-    weaknesses: ["Slightly slow setup routine", "Could generate more power from legs"],
-    recommendations: ["Streamline pre-shot routine to be quicker.", "Incorporate box jumps to increase explosive power from the legs."],
+      "Una sesión de tiros libres muy mejorada. El equilibrio es mejor y la alineación del codo es más consistente. El punto de lanzamiento es ahora muy fiable.",
+    strengths: ["Excelente equilibrio", "Punto de lanzamiento consistente", "Fuerte enfoque mental"],
+    weaknesses: ["Rutina de preparación un poco lenta", "Podría generar más potencia desde las piernas"],
+    recommendations: ["Agiliza la rutina previa al tiro para que sea más rápida.", "Incorpora saltos al cajón para aumentar la potencia explosiva de las piernas."],
     keyframes: [
       "https://placehold.co/640x360.png",
       "https://placehold.co/640x360.png",
@@ -69,12 +69,12 @@ export const mockAnalyses: ShotAnalysis[] = [
     playerId: "2",
     createdAt: "2024-07-21T09:30:00Z",
     videoUrl: "https://placehold.co/1280x720.png",
-    shotType: "Mid-Range",
+    shotType: "Tiro de Media Distancia",
     analysisSummary:
-      "Maria has a solid foundation but tends to release the ball a bit too early on her way up. This affects the shot's arc and power.",
-    strengths: ["Good footwork", "Solid stance", "Eyes on the rim"],
-    weaknesses: ["Releasing on the way up", "Needs more wrist snap", "Slight hesitation in motion"],
-    recommendations: ["Practice 'shooting from a chair' to isolate the upper body and focus on the release point.", "Exaggerate the 'hand in the cookie jar' follow-through for better wrist action."],
+      "María tiene una base sólida pero tiende a soltar el balón un poco pronto en su ascenso. Esto afecta el arco y la potencia del tiro.",
+    strengths: ["Buen juego de pies", "Postura sólida", "Ojos en el aro"],
+    weaknesses: ["Lanzamiento en el ascenso", "Necesita más muñequeo", "Ligera vacilación en el movimiento"],
+    recommendations: ["Practica 'tiros desde una silla' para aislar la parte superior del cuerpo y centrarse en el punto de lanzamiento.", "Exagera la continuación de 'la mano en la lata de galletas' para una mejor acción de muñeca."],
     keyframes: [
       "https://placehold.co/640x360.png",
       "https://placehold.co/640x360.png",
@@ -85,6 +85,6 @@ export const mockAnalyses: ShotAnalysis[] = [
 ];
 
 export const mockComments: Comment[] = [
-    { id: '1', author: 'Coach David', text: 'Great progress on the elbow alignment, Alex. Keep it up!', createdAt: '2024-07-20T10:05:00Z' },
-    { id: '2', author: 'Alex Johnson', text: 'Thanks coach! The drills are really helping.', createdAt: '2024-07-20T12:30:00Z' },
+    { id: '1', author: 'Entrenador David', text: 'Gran progreso en la alineación del codo, Alex. ¡Sigue así!', createdAt: '2024-07-20T10:05:00Z' },
+    { id: '2', author: 'Alex Johnson', text: '¡Gracias entrenador! Los ejercicios están ayudando mucho.', createdAt: '2024-07-20T12:30:00Z' },
 ];

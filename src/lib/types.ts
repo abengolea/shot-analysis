@@ -4,7 +4,7 @@ export type Player = {
   avatarUrl: string;
   "data-ai-hint"?: string;
   ageGroup: 'U10' | 'U13' | 'U15' | 'U18' | 'Amateur' | 'SemiPro' | 'Pro';
-  playerLevel: 'Beginner' | 'Intermediate' | 'Advanced';
+  playerLevel: 'Principiante' | 'Intermedio' | 'Avanzado';
 };
 
 export type ShotAnalysis = {
@@ -12,7 +12,7 @@ export type ShotAnalysis = {
   playerId: string;
   createdAt: string;
   videoUrl: string; // This would be the uploaded video
-  shotType: 'Free Throw' | 'Mid-Range' | 'Three-Pointer' | 'Layup';
+  shotType: 'Tiro Libre' | 'Tiro de Media Distancia' | 'Tiro de Tres' | 'Bandeja';
   analysisSummary: string;
   strengths: string[];
   weaknesses: string[];

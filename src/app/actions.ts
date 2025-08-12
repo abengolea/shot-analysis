@@ -11,13 +11,13 @@ import { mockAnalyses } from "@/lib/mock-data";
 const analysisSchema = z.object({
   playerId: z.string(),
   ageGroup: z.enum(['U10', 'U13', 'U15', 'U18', 'Amateur', 'SemiPro', 'Pro']),
-  playerLevel: z.enum(['Beginner', 'Intermediate', 'Advanced']),
-  shotType: z.enum(['Free Throw', 'Mid-Range', 'Three-Pointer', 'Layup']),
+  playerLevel: z.enum(['Principiante', 'Intermedio', 'Avanzado']),
+  shotType: z.enum(['Tiro Libre', 'Tiro de Media Distancia', 'Tiro de Tres', 'Bandeja']),
 });
 
 // This is a placeholder for a database write
 async function saveAnalysis(analysisData: any) {
-  console.log("Saving analysis data (mock):", analysisData);
+  console.log("Guardando datos de análisis (simulado):", analysisData);
   const newId = (mockAnalyses.length + 101).toString();
   const newAnalysis = {
       ...analysisData,
@@ -46,7 +46,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
     });
 
     if (!validatedFields.success) {
-      return { message: "Invalid form data.", errors: validatedFields.error.flatten().fieldErrors };
+      return { message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
     }
 
     // In a real app, you would upload the video and get a URL.
@@ -65,10 +65,10 @@ export async function startAnalysis(prevState: any, formData: FormData) {
     // In a real app, you might call the AI flow like this:
     // const analysisResult: AnalyzeBasketballShotOutput = await analyzeBasketballShot(aiInput);
     const analysisResult: AnalyzeBasketballShotOutput = {
-        analysisSummary: "This is a mock analysis. The player shows good potential but needs to work on their follow-through. The shot arc is a bit flat.",
-        strengths: ["Good stance", "Quick release"],
-        weaknesses: ["Flat arc", "Inconsistent follow-through"],
-        recommendations: ["Practice shooting with more arc.", "Focus on holding the follow-through position."],
+        analysisSummary: "Este es un análisis de prueba. El jugador muestra buen potencial pero necesita trabajar en la continuación del tiro. El arco del tiro es un poco plano.",
+        strengths: ["Buena postura", "Lanzamiento rápido"],
+        weaknesses: ["Arco plano", "Continuación inconsistente"],
+        recommendations: ["Practicar tiros con más arco.", "Concentrarse en mantener la posición de continuación."],
         keyframes: [],
     };
     
@@ -84,8 +84,8 @@ export async function startAnalysis(prevState: any, formData: FormData) {
     redirect(`/analysis/${savedAnalysis.id}`);
 
   } catch (error) {
-    console.error("Analysis Error:", error);
-    return { message: "Failed to start analysis. Please try again." };
+    console.error("Error de Análisis:", error);
+    return { message: "No se pudo iniciar el análisis. Por favor, inténtalo de nuevo." };
   }
 }
 
@@ -96,13 +96,13 @@ export async function getDrills(
     try {
         const result = await generatePersonalizedDrills({
             analysisJson: JSON.stringify({ summary: analysisSummary }),
-            resources: "Cones, basketball, wall",
+            resources: "Conos, balón de baloncesto, pared",
             ageGroup: ageGroup,
         });
         return { drills: result.drills };
     } catch (error) {
-        console.error("Drill Generation Error:", error);
-        return { error: "Failed to generate drills." };
+        console.error("Error de Generación de Ejercicios:", error);
+        return { error: "No se pudieron generar los ejercicios." };
     }
 }
 
@@ -111,22 +111,22 @@ export async function moderateAndAddComment(prevState: any, formData: FormData) 
     const analysisId = formData.get('analysisId') as string;
 
     if (!text || text.trim().length === 0) {
-        return { message: 'Comment cannot be empty.' };
+        return { message: 'El comentario no puede estar vacío.' };
     }
 
     try {
         const moderationResult = await moderateContent({ text });
         if (moderationResult.isHarmful) {
-            return { message: `Comment could not be posted: ${moderationResult.reason}` };
+            return { message: `El comentario no pudo ser publicado: ${moderationResult.reason}` };
         }
 
         // In a real app, you would save the comment to the database here.
-        console.log(`(Mock) Adding comment to analysis ${analysisId}: "${text}"`);
+        console.log(`(Simulado) Añadiendo comentario al análisis ${analysisId}: "${text}"`);
 
         revalidatePath(`/analysis/${analysisId}`);
-        return { message: 'Comment posted successfully.', comment: text };
+        return { message: 'Comentario publicado con éxito.', comment: text };
     } catch (error) {
-        console.error('Comment moderation error:', error);
-        return { message: 'Failed to post comment.' };
+        console.error('Error de moderación de comentario:', error);
+        return { message: 'No se pudo publicar el comentario.' };
     }
 }

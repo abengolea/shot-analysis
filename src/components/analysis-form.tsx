@@ -34,10 +34,10 @@ import { Input } from "@/components/ui/input";
 import { Upload, Loader2 } from "lucide-react";
 
 const analysisFormSchema = z.object({
-  playerId: z.string().min(1, "Please select a player."),
+  playerId: z.string().min(1, "Por favor selecciona un jugador."),
   ageGroup: z.enum(['U10', 'U13', 'U15', 'U18', 'Amateur', 'SemiPro', 'Pro']),
-  playerLevel: z.enum(['Beginner', 'Intermediate', 'Advanced']),
-  shotType: z.enum(['Free Throw', 'Mid-Range', 'Three-Pointer', 'Layup']),
+  playerLevel: z.enum(['Principiante', 'Intermedio', 'Avanzado']),
+  shotType: z.enum(['Tiro Libre', 'Tiro de Media Distancia', 'Tiro de Tres', 'Bandeja']),
   videoFile: z.any().optional(), // In a real app, you'd have more robust file validation
 });
 
@@ -50,10 +50,10 @@ function SubmitButton() {
       {pending ? (
         <>
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Analyzing...
+          Analizando...
         </>
       ) : (
-        "Start Analysis"
+        "Iniciar Análisis"
       )}
     </Button>
   );
@@ -67,8 +67,8 @@ export function AnalysisForm({ players }: { players: Player[] }) {
     defaultValues: {
       playerId: "",
       ageGroup: "U15",
-      playerLevel: "Intermediate",
-      shotType: "Mid-Range",
+      playerLevel: "Intermedio",
+      shotType: "Tiro de Media Distancia",
     },
   });
 
@@ -77,9 +77,9 @@ export function AnalysisForm({ players }: { players: Player[] }) {
       <form action={formAction}>
         <Card>
           <CardHeader>
-            <CardTitle>Shot Details</CardTitle>
+            <CardTitle>Detalles del Tiro</CardTitle>
             <CardDescription>
-              Select the player and provide details about the shot recording.
+              Selecciona el jugador y proporciona detalles sobre la grabación del tiro.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-6">
@@ -88,7 +88,7 @@ export function AnalysisForm({ players }: { players: Player[] }) {
               name="playerId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Player</FormLabel>
+                  <FormLabel>Jugador</FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
@@ -96,7 +96,7 @@ export function AnalysisForm({ players }: { players: Player[] }) {
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a player" />
+                        <SelectValue placeholder="Selecciona un jugador" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -118,7 +118,7 @@ export function AnalysisForm({ players }: { players: Player[] }) {
                 name="ageGroup"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Age Group</FormLabel>
+                    <FormLabel>Categoría</FormLabel>
                     <Select
                       onValueChange={field.onChange}
                       defaultValue={field.value}
@@ -142,7 +142,7 @@ export function AnalysisForm({ players }: { players: Player[] }) {
                 name="playerLevel"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Player Level</FormLabel>
+                    <FormLabel>Nivel del Jugador</FormLabel>
                      <Select
                       onValueChange={field.onChange}
                       defaultValue={field.value}
@@ -152,7 +152,7 @@ export function AnalysisForm({ players }: { players: Player[] }) {
                         <SelectTrigger><SelectValue /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {['Beginner', 'Intermediate', 'Advanced'].map((level) => (
+                        {['Principiante', 'Intermedio', 'Avanzado'].map((level) => (
                             <SelectItem key={level} value={level}>{level}</SelectItem>
                         ))}
                       </SelectContent>
@@ -168,7 +168,7 @@ export function AnalysisForm({ players }: { players: Player[] }) {
                 name="shotType"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Shot Type</FormLabel>
+                    <FormLabel>Tipo de Tiro</FormLabel>
                      <Select
                       onValueChange={field.onChange}
                       defaultValue={field.value}
@@ -178,7 +178,7 @@ export function AnalysisForm({ players }: { players: Player[] }) {
                         <SelectTrigger><SelectValue /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {['Free Throw', 'Mid-Range', 'Three-Pointer', 'Layup'].map((type) => (
+                        {['Tiro Libre', 'Tiro de Media Distancia', 'Tiro de Tres', 'Bandeja'].map((type) => (
                             <SelectItem key={type} value={type}>{type}</SelectItem>
                         ))}
                       </SelectContent>
@@ -189,7 +189,7 @@ export function AnalysisForm({ players }: { players: Player[] }) {
               />
 
             <FormItem>
-                <FormLabel>Video Upload</FormLabel>
+                <FormLabel>Subir Video</FormLabel>
                 <FormControl>
                     <div className="relative">
                         <Upload className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />

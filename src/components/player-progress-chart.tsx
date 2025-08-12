@@ -1,4 +1,4 @@
-"use client";
+"use client"
 
 import {
   ChartContainer,
@@ -9,7 +9,7 @@ import { Bar, BarChart as RechartsBarChart, CartesianGrid, XAxis, YAxis } from "
 
 const chartConfig = {
   score: {
-    label: "Shot Score",
+    label: "Puntuación de Tiro",
     color: "hsl(var(--primary))",
   },
 } satisfies import("@/components/ui/chart").ChartConfig

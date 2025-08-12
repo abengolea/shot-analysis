@@ -47,11 +47,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <SidebarMenuButton
                 asChild
                 isActive={isActive("/")}
-                tooltip="Dashboard"
+                tooltip="Panel de control"
               >
                 <Link href="/">
                   <LayoutDashboard />
-                  Dashboard
+                  Panel de control
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -59,11 +59,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <SidebarMenuButton
                 asChild
                 isActive={isActive("/analysis/new")}
-                tooltip="Analyze Shot"
+                tooltip="Analizar Tiro"
               >
                 <Link href="/analysis/new">
                   <PlusSquare />
-                  Analyze Shot
+                  Analizar Tiro
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

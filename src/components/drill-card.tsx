@@ -22,7 +22,7 @@ export function DrillCard({ drill }: DrillCardProps) {
       </AccordionTrigger>
       <AccordionContent className="space-y-6 pt-2">
         <div>
-          <h4 className="font-semibold mb-2">Instructions</h4>
+          <h4 className="font-semibold mb-2">Instrucciones</h4>
           <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
             {drill.instructions.map((step, i) => (
               <li key={i}>{step}</li>
@@ -34,28 +34,28 @@ export function DrillCard({ drill }: DrillCardProps) {
             <div className="flex items-start gap-3 rounded-md bg-muted/50 p-3">
                 <Dumbbell className="h-5 w-5 mt-0.5 shrink-0 text-primary"/>
                 <div>
-                    <h5 className="font-semibold">Sets & Reps</h5>
+                    <h5 className="font-semibold">Series y Reps</h5>
                     <p className="text-muted-foreground">{drill.setsReps}</p>
                 </div>
             </div>
              <div className="flex items-start gap-3 rounded-md bg-muted/50 p-3">
                 <Target className="h-5 w-5 mt-0.5 shrink-0 text-primary"/>
                 <div>
-                    <h5 className="font-semibold">Success Criteria</h5>
+                    <h5 className="font-semibold">Criterio de Éxito</h5>
                     <p className="text-muted-foreground">{drill.successCriteria}</p>
                 </div>
             </div>
              <div className="flex items-start gap-3 rounded-md bg-muted/50 p-3">
                 <ShieldCheck className="h-5 w-5 mt-0.5 shrink-0 text-primary"/>
                 <div>
-                    <h5 className="font-semibold">Safety</h5>
-                    <p className="text-muted-foreground">{drill.safety || 'None'}</p>
+                    <h5 className="font-semibold">Seguridad</h5>
+                    <p className="text-muted-foreground">{drill.safety || 'Ninguna'}</p>
                 </div>
             </div>
         </div>
 
          <div>
-          <h4 className="font-semibold mb-2">Progression</h4>
+          <h4 className="font-semibold mb-2">Progresión</h4>
           <p className="text-muted-foreground">{drill.progression}</p>
         </div>
       </AccordionContent>

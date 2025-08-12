@@ -39,7 +39,7 @@ export function PlayerCard({ player }: PlayerCardProps) {
       <CardFooter>
         <Button asChild variant="outline" className="w-full">
           <Link href={`/players/${player.id}`}>
-            View Profile <ArrowRight className="ml-2 h-4 w-4" />
+            Ver Perfil <ArrowRight className="ml-2 h-4 w-4" />
           </Link>
         </Button>
       </CardFooter>

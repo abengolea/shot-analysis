@@ -26,18 +26,18 @@ function CommentForm({ analysisId }: { analysisId: string }) {
     return (
         <form action={formAction} className="grid w-full gap-2">
             <input type="hidden" name="analysisId" value={analysisId} />
-            <Textarea placeholder="Type your message here." name="comment" />
+            <Textarea placeholder="Escribe tu mensaje aquí." name="comment" />
             {state?.message && <p className={`text-sm ${state.comment ? 'text-green-600' : 'text-destructive'}`}>{state.message}</p>}
             <Button type="submit" disabled={pending}>
                 {pending ? (
                     <>
                         <Send className="mr-2 h-4 w-4 animate-pulse" />
-                        Sending...
+                        Enviando...
                     </>
                 ) : (
                     <>
                         <Send className="mr-2 h-4 w-4" />
-                        Post Comment
+                        Publicar Comentario
                     </>
                 )}
             </Button>
@@ -76,7 +76,7 @@ export default function AnalysisPage({ params }: { params: { id: string } }) {
         <div>
           <h1 className="font-headline text-2xl font-bold">{player.name}</h1>
           <p className="text-muted-foreground">
-            {analysis.shotType} Analysis -{" "}
+            Análisis de {analysis.shotType} -{" "}
             {new Date(analysis.createdAt).toLocaleDateString()}
           </p>
         </div>
@@ -91,10 +91,10 @@ export default function AnalysisPage({ params }: { params: { id: string } }) {
                 <CardHeader>
                     <CardTitle className="font-headline flex items-center gap-2">
                         <MessageSquare className="h-6 w-6" />
-                        Feedback & Comments
+                        Feedback y Comentarios
                     </CardTitle>
                     <CardDescription>
-                        Private conversation between coach and player.
+                        Conversación privada entre entrenador y jugador.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-6">
