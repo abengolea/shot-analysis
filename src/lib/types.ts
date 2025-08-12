@@ -1,0 +1,39 @@
+export type Player = {
+  id: string;
+  name: string;
+  avatarUrl: string;
+  "data-ai-hint"?: string;
+  ageGroup: 'U10' | 'U13' | 'U15' | 'U18' | 'Amateur' | 'SemiPro' | 'Pro';
+  playerLevel: 'Beginner' | 'Intermediate' | 'Advanced';
+};
+
+export type ShotAnalysis = {
+  id: string;
+  playerId: string;
+  createdAt: string;
+  videoUrl: string; // This would be the uploaded video
+  shotType: 'Free Throw' | 'Mid-Range' | 'Three-Pointer' | 'Layup';
+  analysisSummary: string;
+  strengths: string[];
+  weaknesses: string[];
+  recommendations: string[];
+  keyframes: string[]; // URLs or base64 strings of keyframe images
+};
+
+export type Drill = {
+  name: string;
+  targetIssue: string;
+  instructions: string[];
+  setsReps: string;
+  progression: string;
+  successCriteria: string;
+  safety: string;
+  ageVariants?: Record<string, string>;
+};
+
+export type Comment = {
+  id: string;
+  author: string;
+  text: string;
+  createdAt: string;
+};
