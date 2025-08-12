@@ -37,3 +37,15 @@ export type Comment = {
   text: string;
   createdAt: string;
 };
+
+export type Coach = {
+  id: string;
+  name: string;
+  avatarUrl: string;
+  "data-ai-hint"?: string;
+  specialties: string[];
+  experience: string;
+  rate: number; // rate per hour in USD
+  rating: number; // 0-5
+  reviews: number;
+}

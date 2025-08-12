@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, PlusSquare, Users } from "lucide-react";
+import { LayoutDashboard, PlusSquare, Users, Search } from "lucide-react";
 import {
   SidebarProvider,
   Sidebar,
@@ -47,11 +47,23 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <SidebarMenuButton
                 asChild
                 isActive={isActive("/")}
-                tooltip="Panel de control"
+                tooltip="Mis Análisis"
               >
                 <Link href="/">
                   <LayoutDashboard />
-                  Panel de control
+                  Mis Análisis
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+             <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={isActive("/coaches")}
+                tooltip="Buscar Entrenadores"
+              >
+                <Link href="/coaches">
+                  <Search />
+                  Buscar Entrenadores
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

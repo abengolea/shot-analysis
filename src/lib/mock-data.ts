@@ -1,4 +1,4 @@
-import type { Player, ShotAnalysis, Comment } from "@/lib/types";
+import type { Player, ShotAnalysis, Comment, Coach } from "@/lib/types";
 
 export const mockPlayers: Player[] = [
   {
@@ -88,3 +88,50 @@ export const mockComments: Comment[] = [
     { id: '1', author: 'Entrenador David', text: 'Gran progreso en la alineación del codo, Alex. ¡Sigue así!', createdAt: '2024-07-20T10:05:00Z' },
     { id: '2', author: 'Alex Johnson', text: '¡Gracias entrenador! Los ejercicios están ayudando mucho.', createdAt: '2024-07-20T12:30:00Z' },
 ];
+
+export const mockCoaches: Coach[] = [
+  {
+    id: "c1",
+    name: "David Miller",
+    avatarUrl: "https://placehold.co/128x128.png",
+    "data-ai-hint": "male coach",
+    specialties: ["Técnica de Tiro", "Desarrollo de Jugadores Jóvenes"],
+    experience: "15 años de experiencia como entrenador, ex-jugador NCAA D1.",
+    rate: 75,
+    rating: 4.9,
+    reviews: 82,
+  },
+  {
+    id: "c2",
+    name: "Sophia Rodriguez",
+    avatarUrl: "https://placehold.co/128x128.png",
+    "data-ai-hint": "female coach",
+    specialties: ["Agilidad y Juego de Pies", "Acondicionamiento Físico"],
+    experience: "Entrenadora certificada en rendimiento deportivo con 10 años de experiencia.",
+    rate: 65,
+    rating: 4.8,
+    reviews: 64,
+  },
+  {
+    id: "c3",
+    name: "Kenji Tanaka",
+    avatarUrl: "https://placehold.co/128x128.png",
+    "data-ai-hint": "male coach",
+    specialties: ["Estrategia Ofensiva", "Análisis de Video"],
+    experience: "Entrenador asistente en la liga profesional japonesa por 8 años.",
+    rate: 80,
+    rating: 5.0,
+    reviews: 45,
+  },
+   {
+    id: "c4",
+    name: "Isabella Rossi",
+    avatarUrl: "https://placehold.co/128x128.png",
+    "data-ai-hint": "female coach",
+    specialties: ["Defensa Perimetral", "IQ de Baloncesto"],
+    experience: "Ex-jugadora profesional en Europa, 12 años de carrera.",
+    rate: 70,
+    rating: 4.9,
+    reviews: 71,
+  },
+]
