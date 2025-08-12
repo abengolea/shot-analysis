@@ -6,7 +6,8 @@ import { z } from "zod";
 import { analyzeBasketballShot, type AnalyzeBasketballShotOutput } from "@/ai/flows/analyze-basketball-shot";
 import { generatePersonalizedDrills, type GeneratePersonalizedDrillsOutput } from "@/ai/flows/generate-personalized-drills";
 import { moderateContent } from '@/ai/flows/content-moderation';
-import { mockAnalyses } from "@/lib/mock-data";
+import { mockAnalyses, mockCoaches } from "@/lib/mock-data";
+import type { Coach } from "@/lib/types";
 
 const analysisSchema = z.object({
   playerId: z.string(),
@@ -14,6 +15,15 @@ const analysisSchema = z.object({
   playerLevel: z.enum(['Principiante', 'Intermedio', 'Avanzado']),
   shotType: z.enum(['Tiro Libre', 'Tiro de Media Distancia', 'Tiro de Tres', 'Bandeja']),
 });
+
+const coachSchema = z.object({
+    name: z.string().min(3, "El nombre es requerido."),
+    specialties: z.string().min(3, "Las especialidades son requeridas."),
+    experience: z.string().min(10, "La experiencia es requerida."),
+    rate: z.coerce.number().min(1, "La tarifa debe ser positiva."),
+    avatarUrl: z.string().url("Debe ser una URL válida.").optional().or(z.literal('')),
+});
+
 
 // This is a placeholder for a database write
 async function saveAnalysis(analysisData: any) {
@@ -121,5 +131,45 @@ export async function moderateAndAddComment(prevState: any, formData: FormData) 
     } catch (error) {
         console.error('Error de moderación de comentario:', error);
         return { message: 'No se pudo publicar el comentario.' };
+    }
+}
+
+
+export async function addCoach(prevState: any, formData: FormData) {
+    try {
+        const validatedFields = coachSchema.safeParse({
+            name: formData.get("name"),
+            specialties: formData.get("specialties"),
+            experience: formData.get("experience"),
+            rate: formData.get("rate"),
+            avatarUrl: formData.get("avatarUrl"),
+        });
+
+        if (!validatedFields.success) {
+            console.log(validatedFields.error.flatten().fieldErrors);
+            return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
+        }
+
+        const newCoach: Coach = {
+            id: `c${mockCoaches.length + 1}`,
+            ...validatedFields.data,
+            specialties: validatedFields.data.specialties.split(',').map(s => s.trim()),
+            avatarUrl: validatedFields.data.avatarUrl || 'https://placehold.co/128x128.png',
+            'data-ai-hint': 'male coach', // default hint
+            rating: 0,
+            reviews: 0,
+        };
+
+        // In a real app, you would save the coach to the database here.
+        console.log("(Simulado) Añadiendo nuevo entrenador:", newCoach);
+        mockCoaches.push(newCoach);
+        
+        revalidatePath('/coaches');
+        revalidatePath('/admin');
+        return { success: true, message: `Entrenador ${newCoach.name} añadido con éxito.` };
+
+    } catch (error) {
+        console.error("Error al añadir entrenador:", error);
+        return { success: false, message: "No se pudo añadir el entrenador. Por favor, inténtalo de nuevo." };
     }
 }
