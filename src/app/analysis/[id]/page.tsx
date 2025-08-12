@@ -1,9 +1,10 @@
+"use client";
+
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { mockAnalyses, mockPlayers, mockComments } from "@/lib/mock-data";
 import { AnalysisView } from "@/components/analysis-view";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
