@@ -63,14 +63,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
     
     // For demonstration, we'll return a mock analysis immediately.
     // In a real app, you might call the AI flow like this:
-    // const analysisResult: AnalyzeBasketballShotOutput = await analyzeBasketballShot(aiInput);
-    const analysisResult: AnalyzeBasketballShotOutput = {
-        analysisSummary: "Este es un análisis de prueba. El jugador muestra buen potencial pero necesita trabajar en la continuación del tiro. El arco del tiro es un poco plano.",
-        strengths: ["Buena postura", "Lanzamiento rápido"],
-        weaknesses: ["Arco plano", "Continuación inconsistente"],
-        recommendations: ["Practicar tiros con más arco.", "Concentrarse en mantener la posición de continuación."],
-        keyframes: [],
-    };
+    const analysisResult: AnalyzeBasketballShotOutput = await analyzeBasketballShot(aiInput);
     
     const newAnalysisData = {
         playerId: validatedFields.data.playerId,
