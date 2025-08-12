@@ -17,14 +17,8 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  ChartLegend,
-  ChartLegendContent,
-} from "@/components/ui/chart"
-import { Bar, BarChart as RechartsBarChart, CartesianGrid, XAxis, YAxis, Legend, Tooltip } from "recharts"
+import { PlayerProgressChart } from "@/components/player-progress-chart";
+
 
 const chartData = [
   { month: "January", score: 75 },
@@ -34,13 +28,6 @@ const chartData = [
   { month: "May", score: 85 },
   { month: "June", score: 88 },
 ];
-
-const chartConfig = {
-  score: {
-    label: "Shot Score",
-    color: "hsl(var(--primary))",
-  },
-} satisfies import("@/components/ui/chart").ChartConfig
 
 
 export default function PlayerProfilePage({
@@ -129,24 +116,7 @@ export default function PlayerProfilePage({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ChartContainer config={chartConfig} className="h-[250px] w-full">
-                <RechartsBarChart accessibilityLayer data={chartData}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis
-                    dataKey="month"
-                    tickLine={false}
-                    tickMargin={10}
-                    axisLine={false}
-                    tickFormatter={(value) => value.slice(0, 3)}
-                  />
-                  <YAxis />
-                  <ChartTooltip
-                    cursor={false}
-                    content={<ChartTooltipContent indicator="dot" />}
-                  />
-                  <Bar dataKey="score" fill="var(--color-score)" radius={4} />
-                </RechartsBarChart>
-              </ChartContainer>
+              <PlayerProgressChart data={chartData} />
             </CardContent>
           </Card>
         </div>
