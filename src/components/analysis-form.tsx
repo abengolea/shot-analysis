@@ -1,6 +1,7 @@
 "use client"
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -57,7 +58,7 @@ function SubmitButton() {
 }
 
 export function AnalysisForm() {
-  const [state, formAction] = useFormState(startAnalysis, { message: "" });
+  const [state, formAction] = useActionState(startAnalysis, { message: "" });
   
   const form = useForm<AnalysisFormValues>({
     resolver: zodResolver(analysisFormSchema),
