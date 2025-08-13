@@ -158,7 +158,7 @@ export async function addCoach(prevState: any, formData: FormData) {
             return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
         }
 
-        const newCoach: Coach = {
+        const newCoach: Omit<Coach, 'specialties'> & { specialties?: string[] } = {
             id: `c${mockCoaches.length + 1}`,
             ...validatedFields.data,
             avatarUrl: validatedFields.data.avatarUrl || 'https://placehold.co/128x128.png',
@@ -166,10 +166,12 @@ export async function addCoach(prevState: any, formData: FormData) {
             rating: 0,
             reviews: 0,
         };
+        delete newCoach.specialties;
+
 
         // In a real app, you would save the coach to the database here.
         console.log("(Simulado) Añadiendo nuevo entrenador:", newCoach);
-        mockCoaches.push(newCoach);
+        mockCoaches.push(newCoach as Coach);
         
         revalidatePath('/coaches');
         revalidatePath('/admin');

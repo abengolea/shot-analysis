@@ -35,16 +35,30 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BasketballIcon } from "@/components/icons";
 import { mockPlayers } from "@/lib/mock-data";
 import { SidebarMenuContents } from "./sidebar-menu-contents";
+import { useState, useEffect } from "react";
 
 const player = mockPlayers[0];
 
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isSpecialPage = ["/", "/login", "/register"].includes(pathname);
+  const [mounted, setMounted] = useState(false);
 
-  if (isSpecialPage) {
-    return <>{children}</>;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const publicRoutes = ["/", "/login", "/register"];
+  const isPublicRoute = publicRoutes.includes(pathname);
+
+  if (!mounted) {
+    // On the server and during initial client hydration, render a consistent structure
+    // to avoid hydration mismatches. We can show a loader here if we want.
+    return <div className="flex-1">{children}</div>;
+  }
+  
+  if (isPublicRoute) {
+    return <div className="flex flex-1 flex-col">{children}</div>;
   }
   
   return (

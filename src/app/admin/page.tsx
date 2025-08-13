@@ -87,17 +87,6 @@ export default function AdminPage({
                           ${coach.ratePerAnalysis}/análisis
                         </p>
                       </div>
-                      <div className="flex max-w-xs flex-wrap justify-end gap-1">
-                        {coach.specialties.map((spec) => (
-                          <Badge
-                            key={spec}
-                            variant="secondary"
-                            className="text-xs"
-                          >
-                            {spec}
-                          </Badge>
-                        ))}
-                      </div>
                     </div>
                   ))}
                 </CardContent>
