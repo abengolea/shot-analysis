@@ -35,25 +35,33 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BasketballIcon } from "@/components/icons";
-import { useState } from "react";
 import { mockPlayers } from "@/lib/mock-data";
-
-type Role = "player" | "coach";
 
 const player = mockPlayers[0];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [role, setRole] = useState<Role>("player");
 
-  const isActive = (path: string) => {
-    return pathname === path;
+  const isActive = (path: string, exact: boolean = false) => {
+    if (exact) return pathname === path;
+    return pathname.startsWith(path);
   };
+  
+  const isPlayerView = !pathname.startsWith('/coach') && !pathname.startsWith('/admin');
+  const isCoachView = pathname.startsWith('/coach');
+  const isAdminView = pathname.startsWith('/admin');
+
+  const getCurrentRole = () => {
+    if (isCoachView) return "Entrenador";
+    if (isAdminView) return "Admin";
+    return "Jugador";
+  };
+
 
   const PlayerMenu = () => (
     <>
       <SidebarMenuItem>
-        <SidebarMenuButton asChild isActive={isActive("/")} tooltip="Mi Panel">
+        <SidebarMenuButton asChild isActive={isActive("/", true)} tooltip="Mi Panel">
           <Link href="/">
             <LayoutDashboard />
             Mi Panel
@@ -92,7 +100,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={isActive("/coach/dashboard")}
+          isActive={isActive("/coach/dashboard", true)}
           tooltip="Panel de Entrenador"
         >
           <Link href="/coach/dashboard">
@@ -104,7 +112,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={pathname.startsWith("/players")}
+          isActive={isActive("/players")}
           tooltip="Mis Jugadores"
         >
           <Link href="/coach/dashboard">
@@ -115,6 +123,27 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </SidebarMenuItem>
     </>
   );
+
+  const AdminMenu = () => (
+    <SidebarMenuItem>
+        <SidebarMenuButton
+          asChild
+          isActive={isActive("/admin")}
+          tooltip="Admin"
+        >
+          <Link href="/admin">
+            <Shield />
+            Gestión
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+  )
+
+  const renderMenu = () => {
+    if(isCoachView) return <CoachMenu />;
+    if(isAdminView) return <AdminMenu />;
+    return <PlayerMenu />;
+  }
 
   return (
     <SidebarProvider>
@@ -135,7 +164,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </SidebarHeader>
         <SidebarContent>
           <SidebarMenu>
-            {role === "player" ? <PlayerMenu /> : <CoachMenu />}
+            {renderMenu()}
           </SidebarMenu>
         </SidebarContent>
         <SidebarFooter>
@@ -157,7 +186,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                         {player.name}
                       </span>
                       <span className="text-xs capitalize text-muted-foreground">
-                        {role === 'player' ? 'Jugador' : 'Entrenador'}
+                        {getCurrentRole()}
                       </span>
                     </div>
                      <ChevronDown className="ml-auto h-4 w-4 group-data-[collapsible=icon]:hidden" />
@@ -167,13 +196,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <DropdownMenuContent className="w-56 mb-2" align="end">
                 <DropdownMenuLabel>Cambiar Rol</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setRole("player")}>
-                  <User className="mr-2 h-4 w-4" />
-                  <span>Vista de Jugador</span>
+                <DropdownMenuItem asChild>
+                   <Link href="/">
+                    <User className="mr-2 h-4 w-4" />
+                    <span>Vista de Jugador</span>
+                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setRole("coach")}>
-                  <Users className="mr-2 h-4 w-4" />
-                  <span>Vista de Entrenador</span>
+                <DropdownMenuItem asChild>
+                   <Link href="/coach/dashboard">
+                    <Users className="mr-2 h-4 w-4" />
+                    <span>Vista de Entrenador</span>
+                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                  <DropdownMenuItem asChild>
