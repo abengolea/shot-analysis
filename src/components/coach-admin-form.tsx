@@ -1,7 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
-import { useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef } from "react";
+import { useFormStatus } from "react-dom";
 import { addCoach } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,7 +35,7 @@ function SubmitButton() {
 }
 
 export function CoachAdminForm() {
-  const [state, formAction] = useFormState(addCoach, { success: false, message: "" });
+  const [state, formAction] = useActionState(addCoach, { success: false, message: "" });
   const { toast } = useToast();
   const formRef = useRef<HTMLFormElement>(null);
 

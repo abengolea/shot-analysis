@@ -16,11 +16,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, MessageSquare, Send } from "lucide-react";
 import { moderateAndAddComment } from "@/app/actions";
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState } from "react";
+import { useFormStatus } from 'react-dom';
 
 
 function CommentForm({ analysisId }: { analysisId: string }) {
-    const [state, formAction] = useFormState(moderateAndAddComment, { message: "" });
+    const [state, formAction] = useActionState(moderateAndAddComment, { message: "" });
     const { pending } = useFormStatus();
 
     return (
