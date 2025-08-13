@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useActionState, useEffect, useRef } from "react";
-import type { DetailedChecklistItem, ShotAnalysis } from "@/lib/types";
+import type { DetailedChecklistItem, ShotAnalysis, ChecklistCategory } from "@/lib/types";
 import {
   Card,
   CardContent,
@@ -10,6 +10,12 @@ import {
   CardTitle,
   CardFooter,
 } from "@/components/ui/card";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -90,16 +96,16 @@ function ChecklistItem({ item }: { item: DetailedChecklistItem }) {
         className="flex gap-4"
       >
         <div className="flex items-center space-x-2">
-          <RadioGroupItem value="Correcto" id={`${item.name}-correct`} />
-          <Label htmlFor={`${item.name}-correct`}>Correcto</Label>
+          <RadioGroupItem value="Correcto" id={`${item.id}-correct`} />
+          <Label htmlFor={`${item.id}-correct`}>Correcto</Label>
         </div>
         <div className="flex items-center space-x-2">
-          <RadioGroupItem value="Mejorable" id={`${item.name}-improvable`} />
-          <Label htmlFor={`${item.name}-improvable`}>Mejorable</Label>
+          <RadioGroupItem value="Mejorable" id={`${item.id}-improvable`} />
+          <Label htmlFor={`${item.id}-improvable`}>Mejorable</Label>
         </div>
         <div className="flex items-center space-x-2">
-          <RadioGroupItem value="Incorrecto" id={`${item.name}-incorrect`} />
-          <Label htmlFor={`${item.name}-incorrect`}>Incorrecto</Label>
+          <RadioGroupItem value="Incorrecto" id={`${item.id}-incorrect`} />
+          <Label htmlFor={`${item.id}-incorrect`}>Incorrecto</Label>
         </div>
       </RadioGroup>
 
@@ -130,10 +136,21 @@ export function DetailedChecklist({ analysis }: { analysis: ShotAnalysis }) {
           Evalúa cada componente del lanzamiento y añade comentarios.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {analysis.detailedChecklist.map((item) => (
-          <ChecklistItem key={item.id} item={item} />
-        ))}
+      <CardContent>
+         <Accordion type="multiple" className="w-full space-y-4">
+            {analysis.detailedChecklist.map((category) => (
+              <AccordionItem value={category.category} key={category.category} className="rounded-lg border px-4">
+                <AccordionTrigger className="text-lg font-semibold hover:no-underline">
+                  {category.category}
+                </AccordionTrigger>
+                <AccordionContent className="space-y-4 pt-2">
+                  {category.items.map((item) => (
+                    <ChecklistItem key={item.id} item={item} />
+                  ))}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+        </Accordion>
       </CardContent>
        <CardFooter className="flex-col items-stretch gap-4 border-t px-6 py-4">
           <ScoreForm analysisId={analysis.id} currentScore={analysis.score} />
