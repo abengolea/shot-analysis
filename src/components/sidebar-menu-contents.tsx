@@ -24,9 +24,9 @@ export function SidebarMenuContents() {
     return path === '/' ? pathname === path : pathname.startsWith(path);
   };
   
-  const isPlayerView = !pathname.startsWith('/coach') && !pathname.startsWith('/admin');
   const isCoachView = pathname.startsWith('/coach');
   const isAdminView = pathname.startsWith('/admin');
+  const isPlayerView = !isCoachView && !isAdminView;
 
   const PlayerMenu = () => (
     <>
