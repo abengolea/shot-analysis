@@ -16,8 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, MessageSquare, Send } from "lucide-react";
 import { moderateAndAddComment } from "@/app/actions";
-import { useActionState } from "react";
-import { useFormStatus } from 'react-dom';
+import { useActionState, useFormStatus } from "react-dom";
 
 
 function CommentForm({ analysisId }: { analysisId: string }) {
