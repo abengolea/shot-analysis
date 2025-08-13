@@ -83,9 +83,9 @@ export function CoachAdminForm() {
 
           <div className="grid grid-cols-2 gap-4">
              <div className="space-y-2">
-                <Label htmlFor="rate">Tarifa por Hora</Label>
-                <Input id="rate" name="rate" type="number" placeholder="Ej: 75" />
-                {state.errors?.rate && <p className="text-sm text-destructive">{state.errors.rate[0]}</p>}
+                <Label htmlFor="ratePerAnalysis">Tarifa por Análisis</Label>
+                <Input id="ratePerAnalysis" name="ratePerAnalysis" type="number" placeholder="Ej: 50" />
+                {state.errors?.ratePerAnalysis && <p className="text-sm text-destructive">{state.errors.ratePerAnalysis[0]}</p>}
             </div>
              <div className="space-y-2">
                 <Label htmlFor="avatarUrl">URL de la Foto</Label>

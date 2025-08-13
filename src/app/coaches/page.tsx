@@ -57,8 +57,8 @@ export default function CoachesPage() {
             </CardContent>
             <CardFooter className="flex flex-col items-stretch gap-2 pt-4">
                  <div className="flex justify-center items-baseline">
-                    <span className="font-headline text-3xl font-bold">${coach.rate}</span>
-                    <span className="text-sm text-muted-foreground">/hora</span>
+                    <span className="font-headline text-3xl font-bold">${coach.ratePerAnalysis}</span>
+                    <span className="text-sm text-muted-foreground">/análisis</span>
                  </div>
               <Button>
                  <MessageSquare className="mr-2 h-4 w-4" /> Enviar Mensaje

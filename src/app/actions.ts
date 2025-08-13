@@ -22,7 +22,7 @@ const coachSchema = z.object({
     name: z.string().min(3, "El nombre es requerido."),
     specialties: z.string().min(3, "Las especialidades son requeridas."),
     experience: z.string().min(10, "La experiencia es requerida."),
-    rate: z.coerce.number().min(1, "La tarifa debe ser positiva."),
+    ratePerAnalysis: z.coerce.number().min(1, "La tarifa debe ser positiva."),
     avatarUrl: z.string().url("Debe ser una URL válida.").optional().or(z.literal('')),
 });
 
@@ -151,7 +151,7 @@ export async function addCoach(prevState: any, formData: FormData) {
             name: formData.get("name"),
             specialties: formData.get("specialties"),
             experience: formData.get("experience"),
-            rate: formData.get("rate"),
+            ratePerAnalysis: formData.get("ratePerAnalysis"),
             avatarUrl: formData.get("avatarUrl"),
         });
 

@@ -79,7 +79,7 @@ export default function AdminPage() {
                       <div className="flex-1">
                         <p className="font-semibold">{coach.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          ${coach.rate}/hr
+                          ${coach.ratePerAnalysis}/análisis
                         </p>
                       </div>
                       <div className="flex max-w-xs flex-wrap justify-end gap-1">

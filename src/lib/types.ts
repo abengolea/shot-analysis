@@ -51,7 +51,7 @@ export type Coach = {
   "data-ai-hint"?: string;
   specialties: string[];
   experience: string;
-  rate: number; // rate per hour in USD
+  ratePerAnalysis: number; // rate per analysis in USD
   rating: number; // 0-5
   reviews: number;
   playerIds?: string[];
