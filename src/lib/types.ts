@@ -13,7 +13,7 @@ export type ShotAnalysis = {
   playerId: string;
   createdAt: string;
   videoUrl: string; // This would be the uploaded video
-  shotType: 'Tiro Libre' | 'Tiro de Media Distancia' | 'Tiro de Tres' | 'Bandeja';
+  shotType: 'Tiro Libre' | 'Tiro de Media Distancia (Jump Shot)' | 'Tiro de Tres';
   analysisSummary: string;
   strengths: string[];
   weaknesses: string[];

@@ -72,7 +72,7 @@ export const mockAnalyses: ShotAnalysis[] = [
     playerId: "2",
     createdAt: "2024-07-21T09:30:00Z",
     videoUrl: "https://placehold.co/1280x720.png",
-    shotType: "Tiro de Media Distancia",
+    shotType: "Tiro de Media Distancia (Jump Shot)",
     analysisSummary:
       "María tiene una base sólida pero tiende a soltar el balón un poco pronto en su ascenso. Esto afecta el arco y la potencia del tiro.",
     strengths: ["Buen juego de pies", "Postura sólida", "Ojos en el aro"],

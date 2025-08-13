@@ -35,7 +35,7 @@ import { Input } from "@/components/ui/input";
 import { Upload, Loader2 } from "lucide-react";
 
 const analysisFormSchema = z.object({
-  shotType: z.enum(['Tiro Libre', 'Tiro de Media Distancia', 'Tiro de Tres', 'Bandeja']),
+  shotType: z.enum(['Tiro Libre', 'Tiro de Media Distancia (Jump Shot)', 'Tiro de Tres']),
   videoFile: z.any().optional(), // In a real app, you'd have more robust file validation
 });
 
@@ -63,7 +63,7 @@ export function AnalysisForm({ players }: { players: Player[] }) {
   const form = useForm<AnalysisFormValues>({
     resolver: zodResolver(analysisFormSchema),
     defaultValues: {
-      shotType: "Tiro de Media Distancia",
+      shotType: "Tiro de Media Distancia (Jump Shot)",
     },
   });
 
@@ -90,10 +90,10 @@ export function AnalysisForm({ players }: { players: Player[] }) {
                       name={field.name}
                     >
                       <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectTrigger><SelectValue /></SelectValue></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {['Tiro Libre', 'Tiro de Media Distancia', 'Tiro de Tres', 'Bandeja'].map((type) => (
+                        {['Tiro Libre', 'Tiro de Media Distancia (Jump Shot)', 'Tiro de Tres'].map((type) => (
                             <SelectItem key={type} value={type}>{type}</SelectItem>
                         ))}
                       </SelectContent>
