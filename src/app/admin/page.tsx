@@ -27,9 +27,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Users, ShieldCheck } from "lucide-react";
 
-export default function AdminPage() {
+export default function AdminPage({
+  searchParams,
+}: {
+  searchParams: { tab?: string };
+}) {
   const coaches = mockCoaches;
   const players = mockPlayers;
+  const defaultTab = searchParams.tab || "coaches";
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-8">
@@ -42,7 +47,7 @@ export default function AdminPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="coaches" className="w-full">
+      <Tabs defaultValue={defaultTab} className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="coaches">
             <ShieldCheck className="mr-2" />

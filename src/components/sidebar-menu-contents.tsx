@@ -99,7 +99,7 @@ export function SidebarMenuContents() {
       <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={isActive("/admin", true)}
+          isActive={pathname === "/admin"}
           tooltip="Panel de Admin"
         >
           <Link href="/admin">
@@ -111,10 +111,10 @@ export function SidebarMenuContents() {
        <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={isActive("/admin/coaches")}
+          isActive={pathname.includes("/admin")} // simplified logic for now
           tooltip="Entrenadores"
         >
-          <Link href="/admin">
+          <Link href="/admin?tab=coaches">
             <ShieldCheck />
             Entrenadores
           </Link>
@@ -123,10 +123,10 @@ export function SidebarMenuContents() {
        <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={isActive("/admin/players")}
+          isActive={pathname.includes("/admin")} // simplified logic for now
           tooltip="Jugadores"
         >
-          <Link href="/admin">
+          <Link href="/admin?tab=players">
             <Users />
             Jugadores
           </Link>
