@@ -88,7 +88,7 @@ export function AnalysisForm() {
                       name={field.name}
                     >
                       <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectTrigger><SelectValue /></SelectValue></SelectTrigger>
                       </FormControl>
                       <SelectContent>
                         {['Tiro Libre', 'Tiro de Media Distancia (Jump Shot)', 'Tiro de Tres'].map((type) => (
