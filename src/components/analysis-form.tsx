@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -31,11 +32,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { startAnalysis } from "@/app/actions";
-import { Upload, Loader2 } from "lucide-react";
+import { Upload, Loader2, Video } from "lucide-react";
 
 const analysisFormSchema = z.object({
   shotType: z.enum(['Tiro Libre', 'Tiro de Media Distancia (Jump Shot)', 'Tiro de Tres']),
-  videoFile: z.any().optional(),
+  videoFront: z.any().optional(),
+  videoBack: z.any().optional(),
+  videoSideLeft: z.any().optional(),
+  videoSideRight: z.any().optional(),
 });
 
 type AnalysisFormValues = z.infer<typeof analysisFormSchema>;
@@ -75,7 +79,7 @@ export function AnalysisForm() {
           <CardHeader>
             <CardTitle>Detalles del Tiro</CardTitle>
             <CardDescription>
-              Proporciona detalles sobre la grabación del tiro.
+              Proporciona detalles sobre el tipo de tiro y sube los videos desde todos los ángulos requeridos.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-6">
@@ -103,17 +107,57 @@ export function AnalysisForm() {
                   </FormItem>
                 )}
               />
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormItem>
+                    <FormLabel>Video Frontal</FormLabel>
+                    <FormControl>
+                        <div className="relative">
+                            <Video className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                            <Input type="file" className="pl-10" name="videoFront" accept="video/*" />
+                        </div>
+                    </FormControl>
+                    <FormDescription>Máximo 20 segundos.</FormDescription>
+                    <FormMessage />
+                </FormItem>
 
-            <FormItem>
-                <FormLabel>Subir Video</FormLabel>
-                <FormControl>
-                    <div className="relative">
-                        <Upload className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-                        <Input type="file" className="pl-10" name="videoFile" />
-                    </div>
-                </FormControl>
-                <FormMessage />
-            </FormItem>
+                <FormItem>
+                    <FormLabel>Video Trasero</FormLabel>
+                    <FormControl>
+                        <div className="relative">
+                            <Video className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                            <Input type="file" className="pl-10" name="videoBack" accept="video/*" />
+                        </div>
+                    </FormControl>
+                    <FormDescription>Máximo 20 segundos.</FormDescription>
+                    <FormMessage />
+                </FormItem>
+
+                <FormItem>
+                    <FormLabel>Video Lateral (Izquierdo)</FormLabel>
+                    <FormControl>
+                        <div className="relative">
+                            <Video className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                            <Input type="file" className="pl-10" name="videoSideLeft" accept="video/*" />
+                        </div>
+                    </FormControl>
+                     <FormDescription>Máximo 20 segundos.</FormDescription>
+                    <FormMessage />
+                </FormItem>
+
+                <FormItem>
+                    <FormLabel>Video Lateral (Derecho)</FormLabel>
+                    <FormControl>
+                        <div className="relative">
+                            <Video className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                            <Input type="file" className="pl-10" name="videoSideRight" accept="video/*" />
+                        </div>
+                    </FormControl>
+                     <FormDescription>Máximo 20 segundos.</FormDescription>
+                    <FormMessage />
+                </FormItem>
+            </div>
+
 
           </CardContent>
           <CardFooter className="flex flex-col items-stretch">
