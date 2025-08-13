@@ -50,7 +50,6 @@ function FormattedDate({ dateString }: { dateString: string }) {
     const [formattedDate, setFormattedDate] = useState('');
 
     useEffect(() => {
-        // 'es-ES' for Spanish format
         setFormattedDate(new Date(dateString).toLocaleDateString('es-ES'));
     }, [dateString]);
 
