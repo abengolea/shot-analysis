@@ -33,7 +33,7 @@ const getChartData = (playerId: string) => {
     const monthlyScores: { [key: string]: number[] } = {};
 
     playerAnalyses.forEach(analysis => {
-        const month = new Date(analysis.createdAt).toLocaleString('default', { month: 'long', year: 'numeric' });
+        const month = new Date(analysis.createdAt).toLocaleString('es-ES', { month: 'long', year: 'numeric' });
         if (!monthlyScores[month]) {
             monthlyScores[month] = [];
         }
@@ -41,7 +41,7 @@ const getChartData = (playerId: string) => {
     });
 
     return Object.entries(monthlyScores).map(([month, scores]) => ({
-        month: month.split(' ')[0], // just month name
+        month: month.split(' ')[0].charAt(0).toUpperCase() + month.split(' ')[0].slice(1), // just month name, capitalized
         score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
     }));
 };
@@ -50,7 +50,8 @@ function FormattedDate({ dateString }: { dateString: string }) {
     const [formattedDate, setFormattedDate] = useState('');
 
     useEffect(() => {
-        setFormattedDate(new Date(dateString).toLocaleDateString());
+        // 'es-ES' for Spanish format
+        setFormattedDate(new Date(dateString).toLocaleDateString('es-ES'));
     }, [dateString]);
 
     return <>{formattedDate || '...'}</>;

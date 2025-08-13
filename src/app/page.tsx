@@ -1,9 +1,7 @@
-"use client";
-
-import { useState, useEffect } from 'react';
 import Link from "next/link";
-import { PlusCircle, User, BarChart, FileText } from "lucide-react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { ArrowRight, Video, BarChart3, BotMessageSquare } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -11,127 +9,163 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { mockPlayers, mockAnalyses } from "@/lib/mock-data";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { BasketballIcon } from "@/components/icons";
 
-// Assuming a single logged-in user for now.
-const currentUser = mockPlayers[0];
-const userAnalyses = mockAnalyses.filter(a => a.playerId === currentUser.id);
+const features = [
+  {
+    icon: <Video />,
+    title: "Análisis con IA",
+    description:
+      "Sube tu video y nuestra IA desglosará tu tiro, identificando puntos clave de mejora.",
+  },
+  {
+    icon: <BotMessageSquare />,
+    title: "Feedback Personalizado",
+    description:
+      "Recibe recomendaciones y ejercicios personalizados de entrenadores expertos basados en tu análisis.",
+  },
+  {
+    icon: <BarChart3 />,
+    title: "Seguimiento de Progreso",
+    description:
+      "Visualiza tu evolución con gráficos claros y mantén un historial de todos tus análisis.",
+  },
+];
 
-function FormattedDate({ dateString }: { dateString: string }) {
-    const [formattedDate, setFormattedDate] = useState('');
+const testimonials = [
+  {
+    name: "Carlos R.",
+    role: "Jugador Amateur",
+    avatar: "https://placehold.co/100x100.png",
+    "data-ai-hint": "male portrait",
+    quote:
+      "ShotVision AI cambió mi forma de entrenar. El feedback instantáneo sobre mi técnica de tiro me ayudó a corregir errores que no sabía que tenía.",
+  },
+  {
+    name: "Entrenador G.",
+    role: "Coach de Juveniles",
+    avatar: "https://placehold.co/100x100.png",
+    "data-ai-hint": "male coach",
+    quote:
+      "Es una herramienta increíblemente poderosa para dar feedback visual y detallado a mis jugadores. El checklist es fundamental en mi día a día.",
+  },
+];
 
-    useEffect(() => {
-        setFormattedDate(new Date(dateString).toLocaleDateString());
-    }, [dateString]);
-
-    return <>{formattedDate || '...'}</>;
-}
-
-
-export default function DashboardPage() {
-  const lastAnalysis = userAnalyses.length > 0 ? userAnalyses[userAnalyses.length - 1] : null;
-
+export default function LandingPage() {
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex items-center justify-between">
-         <div className="flex items-center gap-4">
-            <Avatar className="h-16 w-16">
-              <AvatarImage src={currentUser.avatarUrl} alt={currentUser.name} />
-              <AvatarFallback>{currentUser.name.charAt(0)}</AvatarFallback>
-            </Avatar>
-            <div>
-              <h1 className="font-headline text-3xl font-bold tracking-tight">
-                Bienvenido, {currentUser.name}
-              </h1>
-              <p className="text-muted-foreground">Aquí está tu resumen de actividad.</p>
-            </div>
+    <div className="flex flex-col gap-16 md:gap-24">
+      {/* Hero Section */}
+      <section className="relative flex flex-col items-center justify-center pt-16 text-center md:pt-24">
+         <BasketballIcon className="mb-6 h-16 w-16 text-primary" />
+        <h1 className="font-headline text-4xl font-bold tracking-tight md:text-6xl">
+          La Revolución del Entrenamiento de Baloncesto está Aquí
+        </h1>
+        <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
+          Usa el poder de la inteligencia artificial para analizar tu tiro,
+          recibir feedback de entrenadores de élite y llevar tu juego al
+          siguiente nivel.
+        </p>
+        <div className="mt-8 flex flex-wrap justify-center gap-4">
+          <Button size="lg" asChild>
+            <Link href="/register">
+              Soy Jugador, ¡Comenzar! <ArrowRight className="ml-2" />
+            </Link>
+          </Button>
+          <Button size="lg" variant="outline" asChild>
+            <Link href="/coaches">Soy Entrenador</Link>
+          </Button>
         </div>
-
-        <div className="flex items-center gap-2">
-            <Button variant="outline" asChild>
-                <Link href="/register">
-                    Registrarse
-                </Link>
-            </Button>
-            <Button asChild>
-              <Link href="/analysis/new">
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Analizar Nuevo Tiro
-              </Link>
-            </Button>
+        <div className="relative mt-16 w-full max-w-5xl">
+            <div className="absolute -bottom-8 -left-8 -right-8 top-8 bg-primary/10 rounded-3xl -z-10"></div>
+            <Image
+                src="https://placehold.co/1200x675.png"
+                width={1200}
+                height={675}
+                alt="Panel de ShotVision AI"
+                className="rounded-xl border shadow-2xl"
+                data-ai-hint="basketball analysis dashboard"
+            />
         </div>
-      </div>
-      
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total de Análisis</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{userAnalyses.length}</div>
-            <p className="text-xs text-muted-foreground">
-              análisis completados en total
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Nivel Actual</CardTitle>
-            <BarChart className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{currentUser.playerLevel}</div>
-            <p className="text-xs text-muted-foreground">
-              según tu último análisis
-            </p>
-          </CardContent>
-        </Card>
-         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Último Tiro Analizado</CardTitle>
-            <User className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{lastAnalysis ? lastAnalysis.shotType : 'N/A'}</div>
-             <p className="text-xs text-muted-foreground">
-              {lastAnalysis ? <FormattedDate dateString={lastAnalysis.createdAt} /> : 'Aún no hay análisis'}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Análisis Recientes</CardTitle>
-          <CardDescription>
-            Revisa tus análisis de tiro más recientes.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4">
-              {userAnalyses.slice(0, 3).map((analysis) => (
-                <Link href={`/analysis/${analysis.id}`} key={analysis.id}>
-                  <div className="group flex items-center gap-4 rounded-lg border p-4 transition-all hover:bg-muted/50 hover:shadow-sm">
-                    <div className="flex-1">
-                      <p className="font-semibold">Análisis de {analysis.shotType}</p>
-                      <p className="text-sm text-muted-foreground">
-                        <FormattedDate dateString={analysis.createdAt} />
-                      </p>
-                    </div>
-                    <p className="text-sm font-medium text-primary transition-transform group-hover:translate-x-1">
-                      Ver Detalles
-                    </p>
-                  </div>
-                </Link>
-              ))}
-               {userAnalyses.length === 0 && (
-                 <p className="py-8 text-center text-muted-foreground">No se encontraron análisis.</p>
-              )}
-          </div>
-        </CardContent>
-      </Card>
+      {/* Features Section */}
+      <section className="container mx-auto max-w-5xl text-center">
+        <h2 className="font-headline text-3xl font-bold">
+          Todo lo que Necesitas para un Tiro Perfecto
+        </h2>
+        <p className="mt-2 text-muted-foreground">
+          Nuestra plataforma está diseñada para cubrir cada aspecto de tu
+          desarrollo.
+        </p>
+        <div className="mt-12 grid gap-8 md:grid-cols-3">
+          {features.map((feature, i) => (
+            <Card key={i}>
+              <CardHeader className="items-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  {feature.icon}
+                </div>
+                <CardTitle className="pt-2 font-headline">{feature.title}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground">{feature.description}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      {/* Testimonials Section */}
+      <section className="container mx-auto max-w-5xl text-center">
+        <h2 className="font-headline text-3xl font-bold">
+          Lo que Dicen Nuestros Usuarios
+        </h2>
+        <p className="mt-2 text-muted-foreground">
+          La confianza de jugadores y entrenadores es nuestro mayor logro.
+        </p>
+        <div className="mt-12 grid gap-8 md:grid-cols-2">
+          {testimonials.map((testimonial, i) => (
+            <Card key={i} className="text-left">
+              <CardContent className="pt-6">
+                <blockquote className="italic text-muted-foreground">
+                  "{testimonial.quote}"
+                </blockquote>
+              </CardContent>
+              <CardHeader className="flex-row items-center gap-4">
+                <Avatar>
+                  <AvatarImage src={testimonial.avatar} alt={testimonial.name} data-ai-hint={testimonial['data-ai-hint']} />
+                  <AvatarFallback>{testimonial.name.charAt(0)}</AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="font-semibold">{testimonial.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {testimonial.role}
+                  </p>
+                </div>
+              </CardHeader>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      {/* Final CTA */}
+      <section className="container mx-auto max-w-3xl text-center">
+        <h2 className="font-headline text-3xl font-bold">
+          ¿Listo para Empezar?
+        </h2>
+        <p className="mt-4 text-lg text-muted-foreground">
+          Únete a la comunidad de ShotVision AI hoy mismo y descubre tu
+          verdadero potencial. El registro es rápido, fácil y el primer paso
+          hacia un mejor tiro.
+        </p>
+        <div className="mt-8">
+          <Button size="lg" asChild>
+            <Link href="/register">
+              Crear mi Cuenta Gratis <ArrowRight className="ml-2" />
+            </Link>
+          </Button>
+        </div>
+      </section>
     </div>
   );
 }
