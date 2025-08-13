@@ -35,9 +35,6 @@ import { Input } from "@/components/ui/input";
 import { Upload, Loader2 } from "lucide-react";
 
 const analysisFormSchema = z.object({
-  playerId: z.string().min(1, "Por favor selecciona un jugador."),
-  ageGroup: z.enum(['U10', 'U13', 'U15', 'U18', 'Amateur', 'SemiPro', 'Pro']),
-  playerLevel: z.enum(['Principiante', 'Intermedio', 'Avanzado']),
   shotType: z.enum(['Tiro Libre', 'Tiro de Media Distancia', 'Tiro de Tres', 'Bandeja']),
   videoFile: z.any().optional(), // In a real app, you'd have more robust file validation
 });
@@ -66,9 +63,6 @@ export function AnalysisForm({ players }: { players: Player[] }) {
   const form = useForm<AnalysisFormValues>({
     resolver: zodResolver(analysisFormSchema),
     defaultValues: {
-      playerId: "",
-      ageGroup: "U15",
-      playerLevel: "Intermedio",
       shotType: "Tiro de Media Distancia",
     },
   });
@@ -80,90 +74,10 @@ export function AnalysisForm({ players }: { players: Player[] }) {
           <CardHeader>
             <CardTitle>Detalles del Tiro</CardTitle>
             <CardDescription>
-              Selecciona el jugador y proporciona detalles sobre la grabación del tiro.
+              Proporciona detalles sobre la grabación del tiro.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-6">
-            <FormField
-              control={form.control}
-              name="playerId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Jugador</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                    name={field.name}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecciona un jugador" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {players.map((player) => (
-                        <SelectItem key={player.id} value={player.id}>
-                          {player.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="ageGroup"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Categoría</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                      name={field.name}
-                    >
-                      <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {['U10', 'U13', 'U15', 'U18', 'Amateur', 'SemiPro', 'Pro'].map((group) => (
-                            <SelectItem key={group} value={group}>{group}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="playerLevel"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Nivel del Jugador</FormLabel>
-                     <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                      name={field.name}
-                    >
-                      <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {['Principiante', 'Intermedio', 'Avanzado'].map((level) => (
-                            <SelectItem key={level} value={level}>{level}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            
              <FormField
                 control={form.control}
                 name="shotType"

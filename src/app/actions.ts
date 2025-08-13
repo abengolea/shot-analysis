@@ -6,13 +6,15 @@ import { z } from "zod";
 import { analyzeBasketballShot, type AnalyzeBasketballShotOutput } from "@/ai/flows/analyze-basketball-shot";
 import { generatePersonalizedDrills, type GeneratePersonalizedDrillsOutput } from "@/ai/flows/generate-personalized-drills";
 import { moderateContent } from '@/ai/flows/content-moderation';
-import { mockAnalyses, mockCoaches } from "@/lib/mock-data";
+import { mockAnalyses, mockCoaches, mockPlayers } from "@/lib/mock-data";
 import type { Coach } from "@/lib/types";
 
+// Assume we know who the logged-in user is. For now, it's the first player.
+const getCurrentUser = async () => {
+    return mockPlayers[0];
+}
+
 const analysisSchema = z.object({
-  playerId: z.string(),
-  ageGroup: z.enum(['U10', 'U13', 'U15', 'U18', 'Amateur', 'SemiPro', 'Pro']),
-  playerLevel: z.enum(['Principiante', 'Intermedio', 'Avanzado']),
   shotType: z.enum(['Tiro Libre', 'Tiro de Media Distancia', 'Tiro de Tres', 'Bandeja']),
 });
 
@@ -49,15 +51,14 @@ async function saveAnalysis(analysisData: any) {
 export async function startAnalysis(prevState: any, formData: FormData) {
   try {
     const validatedFields = analysisSchema.safeParse({
-      playerId: formData.get("playerId"),
-      ageGroup: formData.get("ageGroup"),
-      playerLevel: formData.get("playerLevel"),
       shotType: formData.get("shotType"),
     });
 
     if (!validatedFields.success) {
       return { message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
     }
+    
+    const currentUser = await getCurrentUser();
 
     // In a real app, you would upload the video and get a URL.
     // For this demo, we'll use a placeholder.
@@ -66,8 +67,8 @@ export async function startAnalysis(prevState: any, formData: FormData) {
     const aiInput = {
       videoUrl,
       // The AI flow expects a different age category format.
-      ageCategory: validatedFields.data.ageGroup === 'Amateur' ? 'Amateur adulto' : `Sub-${validatedFields.data.ageGroup.replace('U','')}` as any,
-      playerLevel: validatedFields.data.playerLevel,
+      ageCategory: currentUser.ageGroup === 'Amateur' ? 'Amateur adulto' : `Sub-${currentUser.ageGroup.replace('U','')}` as any,
+      playerLevel: currentUser.playerLevel,
       shotType: validatedFields.data.shotType,
     };
     
@@ -76,7 +77,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
     const analysisResult: AnalyzeBasketballShotOutput = await analyzeBasketballShot(aiInput);
     
     const newAnalysisData = {
-        playerId: validatedFields.data.playerId,
+        playerId: currentUser.id,
         shotType: validatedFields.data.shotType,
         ...analysisResult,
     };
