@@ -6,7 +6,6 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { startAnalysis } from "@/app/actions";
-import type { Player } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -57,7 +56,7 @@ function SubmitButton() {
   );
 }
 
-export function AnalysisForm({ players }: { players: Player[] }) {
+export function AnalysisForm() {
   const [state, formAction] = useFormState(startAnalysis, { message: "" });
   
   const form = useForm<AnalysisFormValues>({
