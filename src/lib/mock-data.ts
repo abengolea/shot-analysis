@@ -9,6 +9,7 @@ export const mockPlayers: Player[] = [
     ageGroup: "U18",
     playerLevel: "Avanzado",
     coachId: "c1",
+    status: "active",
   },
   {
     id: "2",
@@ -18,6 +19,7 @@ export const mockPlayers: Player[] = [
     ageGroup: "U15",
     playerLevel: "Intermedio",
     coachId: "c1",
+    status: "active",
   },
   {
     id: "3",
@@ -27,6 +29,7 @@ export const mockPlayers: Player[] = [
     ageGroup: "U13",
     playerLevel: "Principiante",
     coachId: "c2",
+    status: "suspended",
   },
 ];
 

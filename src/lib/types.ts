@@ -6,6 +6,7 @@ export type Player = {
   ageGroup: 'U10' | 'U13' | 'U15' | 'U18' | 'Amateur' | 'SemiPro' | 'Pro';
   playerLevel: 'Principiante' | 'Intermedio' | 'Avanzado';
   coachId?: string;
+  status: 'active' | 'suspended';
 };
 
 export type ShotAnalysis = {
