@@ -69,9 +69,21 @@ function ScoreForm({ analysisId, currentScore }: { analysisId: string, currentSc
 }
 
 
-function ChecklistItem({ item }: { item: DetailedChecklistItem }) {
+function ChecklistItem({ 
+    item, 
+    categoryName,
+    onItemChange,
+}: { 
+    item: DetailedChecklistItem;
+    categoryName: string;
+    onItemChange: (categoryName: string, itemId: string, newStatus: DetailedChecklistItem['status'], newComment: string) => void;
+}) {
   const [status, setStatus] = useState(item.status);
   const [comment, setComment] = useState(item.comment);
+
+  useEffect(() => {
+    onItemChange(categoryName, item.id, status, comment);
+  }, [status, comment]);
 
   const ICONS = {
     Correcto: <CheckCircle className="text-green-500" />,
@@ -122,8 +134,14 @@ function ChecklistItem({ item }: { item: DetailedChecklistItem }) {
   );
 }
 
-export function DetailedChecklist({ analysis }: { analysis: ShotAnalysis }) {
-  if (!analysis.detailedChecklist) return null;
+interface DetailedChecklistProps {
+    categories: ChecklistCategory[];
+    onChecklistChange: (categoryName: string, itemId: string, newStatus: DetailedChecklistItem['status'], newComment: string) => void;
+    analysisId: string;
+    currentScore?: number;
+}
+
+export function DetailedChecklist({ categories, onChecklistChange, analysisId, currentScore }: DetailedChecklistProps) {
 
   return (
     <Card>
@@ -137,15 +155,20 @@ export function DetailedChecklist({ analysis }: { analysis: ShotAnalysis }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-         <Accordion type="multiple" className="w-full space-y-4">
-            {analysis.detailedChecklist.map((category) => (
+         <Accordion type="multiple" className="w-full space-y-4" defaultValue={categories.map(c => c.category)}>
+            {categories.map((category) => (
               <AccordionItem value={category.category} key={category.category} className="rounded-lg border px-4">
                 <AccordionTrigger className="text-lg font-semibold hover:no-underline">
                   {category.category}
                 </AccordionTrigger>
                 <AccordionContent className="space-y-4 pt-2">
                   {category.items.map((item) => (
-                    <ChecklistItem key={item.id} item={item} />
+                    <ChecklistItem 
+                        key={item.id} 
+                        item={item} 
+                        categoryName={category.category}
+                        onItemChange={onChecklistChange} 
+                    />
                   ))}
                 </AccordionContent>
               </AccordionItem>
@@ -153,7 +176,7 @@ export function DetailedChecklist({ analysis }: { analysis: ShotAnalysis }) {
         </Accordion>
       </CardContent>
        <CardFooter className="flex-col items-stretch gap-4 border-t px-6 py-4">
-          <ScoreForm analysisId={analysis.id} currentScore={analysis.score} />
+          <ScoreForm analysisId={analysisId} currentScore={currentScore} />
       </CardFooter>
     </Card>
   );

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { getDrills } from "@/app/actions";
-import type { ShotAnalysis, Player, Drill } from "@/lib/types";
+import type { ShotAnalysis, Player, Drill, ChecklistCategory, DetailedChecklistItem } from "@/lib/types";
 import {
   Card,
   CardContent,
@@ -11,6 +11,9 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import {
+  Accordion
+} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,12 +23,6 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from "@/components/ui/carousel";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import {
   CheckCircle2,
   XCircle,
@@ -47,10 +44,58 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const [isLoadingDrills, setIsLoadingDrills] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Lift checklist state up to this component
+  const [checklistState, setChecklistState] = useState<ChecklistCategory[]>(
+    analysis.detailedChecklist || []
+  );
+
+  const handleChecklistChange = (
+    categoryName: string,
+    itemId: string,
+    newStatus: DetailedChecklistItem['status'],
+    newComment: string
+  ) => {
+    setChecklistState(prevState =>
+      prevState.map(category =>
+        category.category === categoryName
+          ? {
+              ...category,
+              items: category.items.map(item =>
+                item.id === itemId
+                  ? { ...item, status: newStatus, comment: newComment }
+                  : item
+              ),
+            }
+          : category
+      )
+    );
+  };
+  
+  // Derive strengths, weaknesses, and recommendations from the state
+  const derivedStrengths = checklistState
+    .flatMap(c => c.items)
+    .filter(item => item.status === 'Correcto')
+    .map(item => item.name);
+
+  const derivedWeaknesses = checklistState
+    .flatMap(c => c.items)
+    .filter(item => item.status === 'Incorrecto')
+    .map(item => item.name);
+
+  const derivedRecommendations = checklistState
+    .flatMap(c => c.items)
+    .filter(item => (item.status === 'Mejorable' || item.status === 'Incorrecto') && item.comment.trim() !== '')
+    .map(item => `${item.name}: ${item.comment}`);
+
+
   const handleGenerateDrills = async () => {
     setIsLoadingDrills(true);
     setError(null);
-    const result = await getDrills(analysis.analysisSummary, player.ageGroup);
+    const weaknessesSummary = derivedWeaknesses.length > 0 
+      ? `El jugador necesita mejorar en: ${derivedWeaknesses.join(', ')}.`
+      : "El jugador no tiene debilidades marcadas, genera ejercicios generales de perfeccionamiento.";
+
+    const result = await getDrills(weaknessesSummary, player.ageGroup);
     if (result.drills) {
       setDrills(result.drills);
     } else if (result.error) {
@@ -110,29 +155,37 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         <Card>
           <CardHeader>
             <CardTitle className="font-headline flex items-center gap-2 text-green-600">
-              <CheckCircle2 /> Fortalezas
+              <CheckCircle2 /> Fortalezas (según el Coach)
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ul className="list-inside list-disc space-y-2 text-muted-foreground">
-              {analysis.strengths.map((s, i) => (
-                <li key={i}>{s}</li>
-              ))}
-            </ul>
+            {derivedStrengths.length > 0 ? (
+                <ul className="list-inside list-disc space-y-2 text-muted-foreground">
+                    {derivedStrengths.map((s, i) => (
+                        <li key={i}>{s}</li>
+                    ))}
+                </ul>
+            ) : (
+                <p className="text-sm text-muted-foreground">El entrenador aún no ha marcado fortalezas.</p>
+            )}
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle className="font-headline flex items-center gap-2 text-destructive">
-              <XCircle /> Debilidades
+              <XCircle /> Debilidades (según el Coach)
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ul className="list-inside list-disc space-y-2 text-muted-foreground">
-              {analysis.weaknesses.map((w, i) => (
-                <li key={i}>{w}</li>
-              ))}
-            </ul>
+             {derivedWeaknesses.length > 0 ? (
+                <ul className="list-inside list-disc space-y-2 text-muted-foreground">
+                    {derivedWeaknesses.map((w, i) => (
+                        <li key={i}>{w}</li>
+                    ))}
+                </ul>
+             ) : (
+                <p className="text-sm text-muted-foreground">El entrenador aún no ha marcado debilidades.</p>
+             )}
           </CardContent>
         </Card>
       </div>
@@ -140,15 +193,19 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       <Card>
         <CardHeader>
           <CardTitle className="font-headline flex items-center gap-2 text-accent">
-            <Lightbulb /> Recomendaciones
+            <Lightbulb /> Recomendaciones (del Coach)
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <ul className="list-inside list-disc space-y-2 text-muted-foreground">
-            {analysis.recommendations.map((r, i) => (
-              <li key={i}>{r}</li>
-            ))}
-          </ul>
+            {derivedRecommendations.length > 0 ? (
+                <ul className="list-inside list-disc space-y-2 text-muted-foreground">
+                    {derivedRecommendations.map((r, i) => (
+                    <li key={i}>{r}</li>
+                    ))}
+                </ul>
+            ) : (
+                 <p className="text-sm text-muted-foreground">El entrenador no ha dejado recomendaciones específicas en el checklist.</p>
+            )}
         </CardContent>
       </Card>
       
@@ -192,7 +249,14 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         </CardContent>
       </Card>
       
-      <DetailedChecklist analysis={analysis} />
+      {analysis.detailedChecklist && (
+        <DetailedChecklist 
+            categories={checklistState}
+            onChecklistChange={handleChecklistChange}
+            analysisId={analysis.id}
+            currentScore={analysis.score}
+        />
+      )}
 
     </div>
   );
