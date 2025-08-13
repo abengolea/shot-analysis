@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   PlusSquare,
@@ -18,8 +17,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
   SidebarInset,
   SidebarTrigger,
   SidebarSeparator,
@@ -36,115 +33,13 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BasketballIcon } from "@/components/icons";
 import { mockPlayers } from "@/lib/mock-data";
+import { SidebarMenuContents } from "./sidebar-menu-contents";
 
 const player = mockPlayers[0];
 
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-
-  const isActive = (path: string, exact: boolean = false) => {
-    if (exact) return pathname === path;
-    return pathname.startsWith(path);
-  };
   
-  const isPlayerView = !pathname.startsWith('/coach') && !pathname.startsWith('/admin');
-  const isCoachView = pathname.startsWith('/coach');
-  const isAdminView = pathname.startsWith('/admin');
-
-  const getCurrentRole = () => {
-    if (isCoachView) return "Entrenador";
-    if (isAdminView) return "Admin";
-    return "Jugador";
-  };
-
-
-  const PlayerMenu = () => (
-    <>
-      <SidebarMenuItem>
-        <SidebarMenuButton asChild isActive={isActive("/", true)} tooltip="Mi Panel">
-          <Link href="/">
-            <LayoutDashboard />
-            Mi Panel
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          asChild
-          isActive={isActive("/analysis/new")}
-          tooltip="Analizar Tiro"
-        >
-          <Link href="/analysis/new">
-            <PlusSquare />
-            Analizar Tiro
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          asChild
-          isActive={isActive("/coaches")}
-          tooltip="Buscar Entrenadores"
-        >
-          <Link href="/coaches">
-            <Search />
-            Buscar Entrenadores
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    </>
-  );
-
-  const CoachMenu = () => (
-    <>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          asChild
-          isActive={isActive("/coach/dashboard", true)}
-          tooltip="Panel de Entrenador"
-        >
-          <Link href="/coach/dashboard">
-            <LayoutDashboard />
-            Panel
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          asChild
-          isActive={isActive("/players")}
-          tooltip="Mis Jugadores"
-        >
-          <Link href="/coach/dashboard">
-            <Users />
-            Mis Jugadores
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    </>
-  );
-
-  const AdminMenu = () => (
-    <SidebarMenuItem>
-        <SidebarMenuButton
-          asChild
-          isActive={isActive("/admin")}
-          tooltip="Admin"
-        >
-          <Link href="/admin">
-            <Shield />
-            Gestión
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-  )
-
-  const renderMenu = () => {
-    if(isCoachView) return <CoachMenu />;
-    if(isAdminView) return <AdminMenu />;
-    return <PlayerMenu />;
-  }
-
   return (
     <SidebarProvider>
       <Sidebar>
@@ -164,7 +59,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </SidebarHeader>
         <SidebarContent>
           <SidebarMenu>
-            {renderMenu()}
+            <SidebarMenuContents />
           </SidebarMenu>
         </SidebarContent>
         <SidebarFooter>
@@ -186,7 +81,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                         {player.name}
                       </span>
                       <span className="text-xs capitalize text-muted-foreground">
-                        {getCurrentRole()}
+                        {/* Placeholder, will be updated by client component */}
+                        Jugador
                       </span>
                     </div>
                      <ChevronDown className="ml-auto h-4 w-4 group-data-[collapsible=icon]:hidden" />
