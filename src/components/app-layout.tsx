@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   PlusSquare,
@@ -39,6 +40,12 @@ const player = mockPlayers[0];
 
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isLandingPage = pathname === "/";
+  
+  if (isLandingPage) {
+    return <main className="flex-1">{children}</main>;
+  }
   
   return (
     <SidebarProvider>

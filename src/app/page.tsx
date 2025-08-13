@@ -54,7 +54,7 @@ const testimonials = [
 
 export default function LandingPage() {
   return (
-    <div className="flex flex-col gap-16 md:gap-24">
+    <div className="flex flex-1 flex-col gap-16 md:gap-24">
       {/* Hero Section */}
       <section className="relative flex flex-col items-center justify-center pt-16 text-center md:pt-24">
          <BasketballIcon className="mb-6 h-16 w-16 text-primary" />
