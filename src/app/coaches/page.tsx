@@ -45,12 +45,6 @@ export default function CoachesPage() {
             </CardHeader>
             <CardContent className="flex-grow space-y-4">
                <div>
-                  <h4 className="font-semibold mb-2 flex items-center gap-2"><Award className="h-5 w-5 text-primary" /> Especialidades</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {coach.specialties.map(spec => <Badge key={spec} variant="secondary">{spec}</Badge>)}
-                  </div>
-              </div>
-               <div>
                   <h4 className="font-semibold mb-2 flex items-center gap-2"><Briefcase className="h-5 w-5 text-primary" /> Experiencia</h4>
                   <p className="text-sm text-muted-foreground">{coach.experience}</p>
               </div>

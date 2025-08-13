@@ -20,7 +20,6 @@ const analysisSchema = z.object({
 
 const coachSchema = z.object({
     name: z.string().min(3, "El nombre es requerido."),
-    specialties: z.string().min(3, "Las especialidades son requeridas."),
     experience: z.string().min(10, "La experiencia es requerida."),
     ratePerAnalysis: z.coerce.number().min(1, "La tarifa debe ser positiva."),
     avatarUrl: z.string().url("Debe ser una URL válida.").optional().or(z.literal('')),
@@ -149,7 +148,6 @@ export async function addCoach(prevState: any, formData: FormData) {
     try {
         const validatedFields = coachSchema.safeParse({
             name: formData.get("name"),
-            specialties: formData.get("specialties"),
             experience: formData.get("experience"),
             ratePerAnalysis: formData.get("ratePerAnalysis"),
             avatarUrl: formData.get("avatarUrl"),
@@ -163,7 +161,6 @@ export async function addCoach(prevState: any, formData: FormData) {
         const newCoach: Coach = {
             id: `c${mockCoaches.length + 1}`,
             ...validatedFields.data,
-            specialties: validatedFields.data.specialties.split(',').map(s => s.trim()),
             avatarUrl: validatedFields.data.avatarUrl || 'https://placehold.co/128x128.png',
             'data-ai-hint': 'male coach', // default hint
             rating: 0,
@@ -230,7 +227,7 @@ export async function registerPlayer(prevState: any, formData: FormData) {
     }
 
     revalidatePath('/admin');
-    redirect('/'); // Redirect to dashboard after successful registration
+    redirect('/'); // Redirect to landing page after successful registration
 }
 
 export async function updateAnalysisScore(prevState: any, formData: FormData) {

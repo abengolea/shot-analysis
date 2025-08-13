@@ -44,7 +44,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isSpecialPage = ["/", "/login", "/register"].includes(pathname);
 
   if (isSpecialPage) {
-    return <main className="flex-1">{children}</main>;
+    return <>{children}</>;
   }
   
   return (

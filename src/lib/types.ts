@@ -64,7 +64,6 @@ export type Coach = {
   name: string;
   avatarUrl: string;
   "data-ai-hint"?: string;
-  specialties: string[];
   experience: string;
   ratePerAnalysis: number; // rate per analysis in USD
   rating: number; // 0-5

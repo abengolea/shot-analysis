@@ -67,13 +67,6 @@ export function CoachAdminForm() {
             <Input id="name" name="name" placeholder="Ej: Daniel Beltramo" />
             {state.errors?.name && <p className="text-sm text-destructive">{state.errors.name[0]}</p>}
           </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="specialties">Especialidades</Label>
-            <Input id="specialties" name="specialties" placeholder="Ej: Técnica de Tiro, Desarrollo Juvenil" />
-             <p className="text-xs text-muted-foreground">Separar por comas.</p>
-             {state.errors?.specialties && <p className="text-sm text-destructive">{state.errors.specialties[0]}</p>}
-          </div>
           
           <div className="space-y-2">
             <Label htmlFor="experience">Experiencia</Label>
