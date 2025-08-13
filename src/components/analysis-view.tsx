@@ -35,6 +35,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { DrillCard } from "./drill-card";
+import { DetailedChecklist } from "./detailed-checklist";
 
 interface AnalysisViewProps {
   analysis: ShotAnalysis;
@@ -190,6 +191,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             )}
         </CardContent>
       </Card>
+      
+      <DetailedChecklist analysis={analysis} />
 
     </div>
   );
