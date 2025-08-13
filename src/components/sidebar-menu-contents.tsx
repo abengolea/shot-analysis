@@ -8,6 +8,7 @@ import {
   Search,
   Users,
   Shield,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   SidebarMenuItem,
@@ -81,7 +82,7 @@ export function SidebarMenuContents() {
       <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={isActive("/players")}
+          isActive={isActive("/coach/dashboard")} // No exact match, can be part of players view
           tooltip="Mis Jugadores"
         >
           <Link href="/coach/dashboard">
@@ -94,22 +95,47 @@ export function SidebarMenuContents() {
   );
 
   const AdminMenu = () => (
-    <SidebarMenuItem>
+    <>
+      <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={isActive("/admin")}
-          tooltip="Admin"
+          isActive={isActive("/admin", true)}
+          tooltip="Panel de Admin"
         >
           <Link href="/admin">
-            <Shield />
-            Gestión
+            <LayoutDashboard />
+            Panel
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
+       <SidebarMenuItem>
+        <SidebarMenuButton
+          asChild
+          isActive={isActive("/admin/coaches")}
+          tooltip="Entrenadores"
+        >
+          <Link href="/admin">
+            <ShieldCheck />
+            Entrenadores
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+       <SidebarMenuItem>
+        <SidebarMenuButton
+          asChild
+          isActive={isActive("/admin/players")}
+          tooltip="Jugadores"
+        >
+          <Link href="/admin">
+            <Users />
+            Jugadores
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </>
   )
     
   if (isCoachView) return <CoachMenu />;
   if (isAdminView) return <AdminMenu />;
   return <PlayerMenu />;
 }
-
