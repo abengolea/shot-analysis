@@ -68,11 +68,11 @@ const generatePersonalizedDrillsPrompt = ai.definePrompt({
   name: 'generatePersonalizedDrillsPrompt',
   input: {schema: GeneratePersonalizedDrillsInputSchema},
   output: {schema: GeneratePersonalizedDrillsOutputSchema},
-  prompt: `You are an expert basketball coach AI assistant. Based on the player's analysis, their age group and available resources, generate a set of personalized drills to improve their weaknesses.
+  prompt: `You are an expert basketball coach AI assistant. Based on the player's analysis, their age group and available resources, generate a set of personalized drills.
 
 Follow these rules:
 
-*   Prioritize the issues detected.
+*   Prioritize the issues detected in the analysis. If no specific issues are mentioned, generate general skill-enhancement drills.
 *   Include progression and measurable success criteria for each drill.
 *   Use the specified age group to make sure that the drills are age appropriate.
 *   Consider the available resources and only suggest drills that can be performed with those resources.
