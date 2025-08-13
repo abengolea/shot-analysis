@@ -31,7 +31,7 @@ export function SidebarMenuContents() {
   const PlayerMenu = () => (
     <>
       <SidebarMenuItem>
-        <SidebarMenuButton asChild isActive={isActive("/dashboard", true)} tooltip="Mi Panel">
+        <SidebarMenuButton asChild isActive={isActive("/dashboard")} tooltip="Mi Panel">
           <Link href="/dashboard">
             <LayoutDashboard />
             Mi Panel
@@ -99,7 +99,7 @@ export function SidebarMenuContents() {
       <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={pathname === "/admin" && !pathname.includes("?tab=")}
+          isActive={pathname === "/admin" && !pathname.includes("tab=")}
           tooltip="Panel de Admin"
         >
           <Link href="/admin">
@@ -111,7 +111,7 @@ export function SidebarMenuContents() {
        <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={pathname.includes("?tab=coaches")}
+          isActive={pathname.includes("tab=coaches")}
           tooltip="Entrenadores"
         >
           <Link href="/admin?tab=coaches">
@@ -123,7 +123,7 @@ export function SidebarMenuContents() {
        <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={pathname.includes("?tab=players")}
+          isActive={pathname.includes("tab=players")}
           tooltip="Jugadores"
         >
           <Link href="/admin?tab=players">

@@ -22,7 +22,7 @@ function FormattedDate({ dateString }: { dateString: string }) {
     const [formattedDate, setFormattedDate] = useState('');
 
     useEffect(() => {
-        setFormattedDate(new Date(dateString).toLocaleDateString());
+        setFormattedDate(new Date(dateString).toLocaleDateString('es-ES'));
     }, [dateString]);
 
     return <>{formattedDate || '...'}</>;

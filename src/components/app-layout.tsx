@@ -93,7 +93,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <DropdownMenuLabel>Cambiar Rol</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                   <Link href="/">
+                   <Link href="/dashboard">
                     <User className="mr-2 h-4 w-4" />
                     <span>Vista de Jugador</span>
                    </Link>
