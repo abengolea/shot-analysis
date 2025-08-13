@@ -1,9 +1,6 @@
 import { AnalysisForm } from "@/components/analysis-form";
-import { mockPlayers } from "@/lib/mock-data";
 
 export default function NewAnalysisPage() {
-  // In a real app, you'd fetch players from your database
-  const players = mockPlayers;
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -15,7 +12,7 @@ export default function NewAnalysisPage() {
           Completa los detalles a continuación para obtener un análisis de tiro de un jugador con IA.
         </p>
       </div>
-      <AnalysisForm players={players} />
+      <AnalysisForm />
     </div>
   );
 }
