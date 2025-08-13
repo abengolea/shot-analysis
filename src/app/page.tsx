@@ -33,12 +33,19 @@ export default function DashboardPage() {
             </div>
         </div>
 
-        <Button asChild>
-          <Link href="/analysis/new">
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Analizar Nuevo Tiro
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+            <Button variant="outline" asChild>
+                <Link href="/register">
+                    Registrarse
+                </Link>
+            </Button>
+            <Button asChild>
+              <Link href="/analysis/new">
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Analizar Nuevo Tiro
+              </Link>
+            </Button>
+        </div>
       </div>
       
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

@@ -7,7 +7,7 @@ import { analyzeBasketballShot, type AnalyzeBasketballShotOutput } from "@/ai/fl
 import { generatePersonalizedDrills, type GeneratePersonalizedDrillsOutput } from "@/ai/flows/generate-personalized-drills";
 import { moderateContent } from '@/ai/flows/content-moderation';
 import { mockAnalyses, mockCoaches, mockPlayers } from "@/lib/mock-data";
-import type { Coach } from "@/lib/types";
+import type { Coach, Player } from "@/lib/types";
 
 // Assume we know who the logged-in user is. For now, it's the first player.
 const getCurrentUser = async () => {
@@ -24,6 +24,15 @@ const coachSchema = z.object({
     experience: z.string().min(10, "La experiencia es requerida."),
     rate: z.coerce.number().min(1, "La tarifa debe ser positiva."),
     avatarUrl: z.string().url("Debe ser una URL válida.").optional().or(z.literal('')),
+});
+
+const registerSchema = z.object({
+  name: z.string().min(3, "El nombre debe tener al menos 3 caracteres."),
+  email: z.string().email("Por favor, introduce un email válido."),
+  password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
+  dob: z.coerce.date({ required_error: "La fecha de nacimiento es obligatoria." }),
+  country: z.string().min(2, "Por favor, selecciona un país."),
+  phone: z.string().min(5, "Por favor, introduce un número de teléfono válido."),
 });
 
 
@@ -173,4 +182,53 @@ export async function addCoach(prevState: any, formData: FormData) {
         console.error("Error al añadir entrenador:", error);
         return { success: false, message: "No se pudo añadir el entrenador. Por favor, inténtalo de nuevo." };
     }
+}
+
+function getAgeGroup(dob: Date): Player['ageGroup'] {
+    const age = new Date().getFullYear() - dob.getFullYear();
+    if (age < 10) return 'U10';
+    if (age < 13) return 'U13';
+    if (age < 15) return 'U15';
+    if (age < 18) return 'U18';
+    return 'Amateur';
+}
+
+
+export async function registerPlayer(prevState: any, formData: FormData) {
+    try {
+        const validatedFields = registerSchema.safeParse(Object.fromEntries(formData.entries()));
+
+        if (!validatedFields.success) {
+             return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
+        }
+        
+        // In a real app, you would hash the password here.
+        const { name, email, dob, password, country, phone } = validatedFields.data;
+
+        const newPlayer: Player = {
+            id: `p${mockPlayers.length + 1}`,
+            name,
+            email,
+            dob,
+            country,
+            phone,
+            ageGroup: getAgeGroup(dob),
+            playerLevel: 'Principiante',
+            status: 'active',
+            avatarUrl: `https://placehold.co/100x100.png`
+        };
+
+        // Simulate saving the new player
+        console.log("(Simulado) Registrando nuevo jugador:", newPlayer);
+        mockPlayers.push(newPlayer);
+        
+        // In a real app, you would also create a session and log the user in.
+
+    } catch (error) {
+        console.error("Error de Registro:", error);
+        return { success: false, message: "No se pudo completar el registro. Por favor, inténtalo de nuevo." };
+    }
+
+    revalidatePath('/admin');
+    redirect('/'); // Redirect to dashboard after successful registration
 }

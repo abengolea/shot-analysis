@@ -1,6 +1,10 @@
 export type Player = {
   id: string;
   name: string;
+  email?: string;
+  dob?: Date;
+  country?: string;
+  phone?: string;
   avatarUrl: string;
   "data-ai-hint"?: string;
   ageGroup: 'U10' | 'U13' | 'U15' | 'U18' | 'Amateur' | 'SemiPro' | 'Pro';
