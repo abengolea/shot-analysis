@@ -7,7 +7,7 @@ import { analyzeBasketballShot, type AnalyzeBasketballShotOutput } from "@/ai/fl
 import { generatePersonalizedDrills, type GeneratePersonalizedDrillsOutput } from "@/ai/flows/generate-personalized-drills";
 import { moderateContent } from '@/ai/flows/content-moderation';
 import { mockAnalyses, mockCoaches, mockPlayers } from "@/lib/mock-data";
-import type { Coach, Player } from "@/lib/types";
+import type { Coach, Player, DetailedChecklistItem } from "@/lib/types";
 
 // Assume we know who the logged-in user is. For now, it's the first player.
 const getCurrentUser = async () => {
@@ -231,4 +231,29 @@ export async function registerPlayer(prevState: any, formData: FormData) {
 
     revalidatePath('/admin');
     redirect('/'); // Redirect to dashboard after successful registration
+}
+
+export async function updateAnalysisScore(prevState: any, formData: FormData) {
+    const analysisId = formData.get('analysisId') as string;
+    const scoreRaw = formData.get('score');
+
+    const score = Number(scoreRaw);
+
+    if (isNaN(score) || score < 0 || score > 100) {
+        return { success: false, message: "La puntuación debe ser un número entre 0 y 100." };
+    }
+    
+    const analysis = mockAnalyses.find(a => a.id === analysisId);
+
+    if (!analysis) {
+        return { success: false, message: "Análisis no encontrado." };
+    }
+
+    // Simulate DB update
+    analysis.score = score;
+    console.log(`(Simulado) Puntuación actualizada para el análisis ${analysisId}: ${score}`);
+    
+    revalidatePath(`/players/${analysis.playerId}`);
+    revalidatePath(`/analysis/${analysisId}`);
+    return { success: true, message: `Puntuación guardada: ${score}` };
 }

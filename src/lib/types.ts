@@ -13,6 +13,14 @@ export type Player = {
   status: 'active' | 'suspended';
 };
 
+export type DetailedChecklistItem = {
+  id: string;
+  name: string;
+  description: string;
+  status: 'Correcto' | 'Mejorable' | 'Incorrecto';
+  comment: string;
+};
+
 export type ShotAnalysis = {
   id: string;
   playerId: string;
@@ -24,6 +32,8 @@ export type ShotAnalysis = {
   weaknesses: string[];
   recommendations: string[];
   keyframes: string[]; // URLs or base64 strings of keyframe images
+  detailedChecklist?: DetailedChecklistItem[];
+  score?: number;
 };
 
 export type Drill = {

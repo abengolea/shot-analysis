@@ -4,6 +4,10 @@ export const mockPlayers: Player[] = [
   {
     id: "1",
     name: "Alex Johnson",
+    email: "alex.johnson@example.com",
+    dob: new Date("2006-05-15"),
+    country: "US",
+    phone: "+1-555-0101",
     avatarUrl: "https://placehold.co/100x100.png",
     "data-ai-hint": "male portrait",
     ageGroup: "U18",
@@ -14,6 +18,10 @@ export const mockPlayers: Player[] = [
   {
     id: "2",
     name: "Maria Garcia",
+    email: "maria.garcia@example.com",
+    dob: new Date("2009-08-22"),
+    country: "ES",
+    phone: "+34-655-0102",
     avatarUrl: "https://placehold.co/100x100.png",
     "data-ai-hint": "female portrait",
     ageGroup: "U15",
@@ -24,6 +32,10 @@ export const mockPlayers: Player[] = [
   {
     id: "3",
     name: "Sam Chen",
+    email: "sam.chen@example.com",
+    dob: new Date("2011-02-10"),
+    country: "AR",
+    phone: "+54-911-0103",
     avatarUrl: "https://placehold.co/100x100.png",
     "data-ai-hint": "male portrait",
     ageGroup: "U13",
@@ -37,7 +49,7 @@ export const mockAnalyses: ShotAnalysis[] = [
   {
     id: "101",
     playerId: "1",
-    createdAt: "2024-07-20T10:00:00Z",
+    createdAt: "2024-05-20T10:00:00Z",
     videoUrl: "https://placehold.co/1280x720.png",
     shotType: "Tiro de Tres",
     analysisSummary:
@@ -51,6 +63,15 @@ export const mockAnalyses: ShotAnalysis[] = [
       "https://placehold.co/640x360.png",
       "https://placehold.co/640x360.png",
     ],
+    score: 82,
+    detailedChecklist: [
+        { id: 'dc1', name: 'Posición de pies', description: 'Deben estar alineados al aro, separados al ancho de hombros.', status: 'Mejorable', comment: 'Los pies no siempre están alineados consistentemente.' },
+        { id: 'dc2', name: 'Agarre del balón', description: 'La mano de tiro debajo del balón, la de guía al costado.', status: 'Correcto', comment: '' },
+        { id: 'dc3', name: 'Set Point', description: 'Posición del balón antes de iniciar el tiro, usualmente sobre el ojo de tiro.', status: 'Correcto', comment: 'Buen Set Point, alto y cómodo.' },
+        { id: 'dc4', name: 'Alineación Codo-Rodilla', description: 'El codo de tiro debe estar alineado verticalmente sobre la rodilla y pie de tiro.', status: 'Incorrecto', comment: 'El codo se abre hacia afuera. Principal punto a corregir.' },
+        { id: 'dc5', name: 'Empuje y Extensión', description: 'Movimiento fluido y ascendente usando piernas y brazo simultáneamente.', status: 'Correcto', comment: 'Buena transferencia de energía.' },
+        { id: 'dc6', name: 'Continuación (Follow-through)', description: 'La muñeca se quiebra y los dedos apuntan al aro después de soltar.', status: 'Mejorable', comment: 'A veces el follow-through no es completo, afectando la rotación.' },
+    ]
   },
   {
     id: "102",
@@ -69,6 +90,15 @@ export const mockAnalyses: ShotAnalysis[] = [
       "https://placehold.co/640x360.png",
       "https://placehold.co/640x360.png",
     ],
+    score: 91,
+    detailedChecklist: [
+        { id: 'dc1', name: 'Posición de pies', description: 'Deben estar alineados al aro, separados al ancho de hombros.', status: 'Correcto', comment: '' },
+        { id: 'dc2', name: 'Agarre del balón', description: 'La mano de tiro debajo del balón, la de guía al costado.', status: 'Correcto', comment: '' },
+        { id: 'dc3', name: 'Set Point', description: 'Posición del balón antes de iniciar el tiro, usualmente sobre el ojo de tiro.', status: 'Correcto', comment: '' },
+        { id: 'dc4', name: 'Alineación Codo-Rodilla', description: 'El codo de tiro debe estar alineado verticalmente sobre la rodilla y pie de tiro.', status: 'Correcto', comment: '¡Gran mejora aquí! El codo se mantuvo alineado en casi todos los intentos.' },
+        { id: 'dc5', name: 'Empuje y Extensión', description: 'Movimiento fluido y ascendente usando piernas y brazo simultáneamente.', status: 'Mejorable', comment: 'La transferencia de energía de las piernas podría ser más explosiva.' },
+        { id: 'dc6', name: 'Continuación (Follow-through)', description: 'La muñeca se quiebra y los dedos apuntan al aro después de soltar.', status: 'Correcto', comment: 'Follow-through consistente y completo.' },
+    ]
   },
   {
     id: "201",
@@ -87,6 +117,15 @@ export const mockAnalyses: ShotAnalysis[] = [
       "https://placehold.co/640x360.png",
       "https://placehold.co/640x360.png",
     ],
+    score: 75,
+    detailedChecklist: [
+        { id: 'dc1', name: 'Posición de pies', description: 'Deben estar alineados al aro, separados al ancho de hombros.', status: 'Correcto', comment: 'Muy buena base.' },
+        { id: 'dc2', name: 'Agarre del balón', description: 'La mano de tiro debajo del balón, la de guía al costado.', status: 'Correcto', comment: '' },
+        { id: 'dc3', name: 'Set Point', description: 'Posición del balón antes de iniciar el tiro, usualmente sobre el ojo de tiro.', status: 'Mejorable', comment: 'El set point es un poco bajo, lo que puede llevar a un tiro más plano.' },
+        { id: 'dc4', name: 'Alineación Codo-Rodilla', description: 'El codo de tiro debe estar alineado verticalmente sobre la rodilla y pie de tiro.', status: 'Correcto', comment: '' },
+        { id: 'dc5', name: 'Empuje y Extensión', description: 'Movimiento fluido y ascendente usando piernas y brazo simultáneamente.', status: 'Incorrecto', comment: 'El balón se suelta durante el ascenso, no en el punto más alto del salto.' },
+        { id: 'dc6', name: 'Continuación (Follow-through)', description: 'La muñeca se quiebra y los dedos apuntan al aro después de soltar.', status: 'Mejorable', comment: 'La falta de un follow-through completo reduce la rotación y el arco.' },
+    ]
   },
 ];
 

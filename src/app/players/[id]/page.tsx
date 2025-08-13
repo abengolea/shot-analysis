@@ -20,14 +20,29 @@ import {
 import { PlayerProgressChart } from "@/components/player-progress-chart";
 
 
-const chartData = [
-    { month: "Enero", score: 75 },
-    { month: "Febrero", score: 78 },
-    { month: "Marzo", score: 82 },
-    { month: "Abril", score: 80 },
-    { month: "Mayo", score: 85 },
-    { month: "Junio", score: 88 },
-];
+// Helper to format chart data from analyses
+const getChartData = (playerId: string) => {
+    const playerAnalyses = mockAnalyses
+        .filter(a => a.playerId === playerId && a.score !== undefined)
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    if (playerAnalyses.length === 0) return [];
+    
+    const monthlyScores: { [key: string]: number[] } = {};
+
+    playerAnalyses.forEach(analysis => {
+        const month = new Date(analysis.createdAt).toLocaleString('default', { month: 'long', year: 'numeric' });
+        if (!monthlyScores[month]) {
+            monthlyScores[month] = [];
+        }
+        monthlyScores[month].push(analysis.score!);
+    });
+
+    return Object.entries(monthlyScores).map(([month, scores]) => ({
+        month: month.split(' ')[0], // just month name
+        score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
+    }));
+};
 
 
 export default function PlayerProfilePage({
@@ -41,6 +56,8 @@ export default function PlayerProfilePage({
   if (!player) {
     notFound();
   }
+
+  const chartData = getChartData(player.id);
 
   return (
     <div className="flex flex-col gap-8">
@@ -89,6 +106,12 @@ export default function PlayerProfilePage({
                             {new Date(analysis.createdAt).toLocaleDateString()}
                           </p>
                         </div>
+                         {analysis.score !== undefined && (
+                            <div className="text-right">
+                                <p className="text-sm font-semibold text-muted-foreground">Puntuación</p>
+                                <p className="font-headline text-2xl font-bold text-primary">{analysis.score}</p>
+                            </div>
+                        )}
                          <p className="text-sm font-medium text-primary transition-transform group-hover:translate-x-1">
                           Ver Detalles
                         </p>
@@ -112,11 +135,17 @@ export default function PlayerProfilePage({
                 <BarChart className="h-6 w-6" /> Progreso
               </CardTitle>
               <CardDescription>
-                Puntuación general de tiro en los últimos 6 meses.
+                Puntuación general de tiro en los últimos meses.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <PlayerProgressChart data={chartData} />
+              {chartData.length > 0 ? (
+                 <PlayerProgressChart data={chartData} />
+              ) : (
+                <div className="flex h-[250px] items-center justify-center">
+                    <p className="text-center text-muted-foreground">No hay suficientes datos de puntuación para mostrar el progreso.</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
