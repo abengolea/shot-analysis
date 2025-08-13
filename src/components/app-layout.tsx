@@ -42,8 +42,10 @@ const player = mockPlayers[0];
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLandingPage = pathname === "/";
-  
-  if (isLandingPage) {
+  const isLoginPage = pathname === "/login";
+  const isRegisterPage = pathname === "/register";
+
+  if (isLandingPage || isLoginPage || isRegisterPage) {
     return <main className="flex-1">{children}</main>;
   }
   
