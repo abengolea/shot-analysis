@@ -1,11 +1,26 @@
-"use client";
+"use client"
 
 import { useFormState, useFormStatus } from "react-dom";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { startAnalysis } from "@/app/actions";
-import { Button } from "@/components/ui/button";
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import * as z from "zod"
+import { Button } from "@/components/ui/button"
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input"
 import {
   Card,
   CardContent,
@@ -14,30 +29,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
+import { startAnalysis } from "@/app/actions";
 import { Upload, Loader2 } from "lucide-react";
 
 const analysisFormSchema = z.object({
   shotType: z.enum(['Tiro Libre', 'Tiro de Media Distancia (Jump Shot)', 'Tiro de Tres']),
-  videoFile: z.any().optional(), // In a real app, you'd have more robust file validation
+  videoFile: z.any().optional(),
 });
 
 type AnalysisFormValues = z.infer<typeof analysisFormSchema>;
+
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -63,11 +64,12 @@ export function AnalysisForm() {
     defaultValues: {
       shotType: "Tiro de Media Distancia (Jump Shot)",
     },
+    shouldFocusError: true,
   });
 
   return (
     <Form {...form}>
-      <form action={formAction}>
+      <form action={formAction} className="space-y-6">
         <Card>
           <CardHeader>
             <CardTitle>Detalles del Tiro</CardTitle>
@@ -88,7 +90,7 @@ export function AnalysisForm() {
                       name={field.name}
                     >
                       <FormControl>
-                        <SelectTrigger><SelectValue /></SelectValue></SelectTrigger>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
                         {['Tiro Libre', 'Tiro de Media Distancia (Jump Shot)', 'Tiro de Tres'].map((type) => (
@@ -122,5 +124,5 @@ export function AnalysisForm() {
         </Card>
       </form>
     </Form>
-  );
+  )
 }
