@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { mockAnalyses, mockPlayers, mockComments } from "@/lib/mock-data";
@@ -49,6 +50,13 @@ function CommentForm({ analysisId }: { analysisId: string }) {
 
 export function AnalysisPageClient({ id }: { id: string }) {
   const analysis = mockAnalyses.find((a) => a.id === id);
+  const [formattedDate, setFormattedDate] = useState("");
+
+  useEffect(() => {
+    if (analysis) {
+      setFormattedDate(new Date(analysis.createdAt).toLocaleDateString());
+    }
+  }, [analysis]);
 
   if (!analysis) {
     notFound();
@@ -78,7 +86,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
           <h1 className="font-headline text-2xl font-bold">{player.name}</h1>
           <p className="text-muted-foreground">
             Análisis de {analysis.shotType} -{" "}
-            {new Date(analysis.createdAt).toLocaleDateString()}
+            {formattedDate}
           </p>
         </div>
       </div>

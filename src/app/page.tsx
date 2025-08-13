@@ -1,3 +1,6 @@
+"use client";
+
+import { useState, useEffect } from 'react';
 import Link from "next/link";
 import { PlusCircle, User, BarChart, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,7 +18,19 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 const currentUser = mockPlayers[0];
 const userAnalyses = mockAnalyses.filter(a => a.playerId === currentUser.id);
 
+function FormattedDate({ dateString }: { dateString: string }) {
+    const [formattedDate, setFormattedDate] = useState('');
+
+    useEffect(() => {
+        setFormattedDate(new Date(dateString).toLocaleDateString());
+    }, [dateString]);
+
+    return <>{formattedDate || '...'}</>;
+}
+
+
 export default function DashboardPage() {
+  const lastAnalysis = userAnalyses.length > 0 ? userAnalyses[userAnalyses.length - 1] : null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -79,9 +94,9 @@ export default function DashboardPage() {
             <User className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{userAnalyses.length > 0 ? userAnalyses[userAnalyses.length - 1].shotType : 'N/A'}</div>
+            <div className="text-2xl font-bold">{lastAnalysis ? lastAnalysis.shotType : 'N/A'}</div>
              <p className="text-xs text-muted-foreground">
-              {userAnalyses.length > 0 ? new Date(userAnalyses[userAnalyses.length - 1].createdAt).toLocaleDateString() : 'Aún no hay análisis'}
+              {lastAnalysis ? <FormattedDate dateString={lastAnalysis.createdAt} /> : 'Aún no hay análisis'}
             </p>
           </CardContent>
         </Card>
@@ -102,7 +117,7 @@ export default function DashboardPage() {
                     <div className="flex-1">
                       <p className="font-semibold">Análisis de {analysis.shotType}</p>
                       <p className="text-sm text-muted-foreground">
-                        {new Date(analysis.createdAt).toLocaleDateString()}
+                        <FormattedDate dateString={analysis.createdAt} />
                       </p>
                     </div>
                     <p className="text-sm font-medium text-primary transition-transform group-hover:translate-x-1">

@@ -1,5 +1,7 @@
+"use client";
+
+import { useState, useEffect } from 'react';
 import Link from "next/link";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import {
   FileText,
@@ -43,6 +45,16 @@ const getChartData = (playerId: string) => {
         score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
     }));
 };
+
+function FormattedDate({ dateString }: { dateString: string }) {
+    const [formattedDate, setFormattedDate] = useState('');
+
+    useEffect(() => {
+        setFormattedDate(new Date(dateString).toLocaleDateString());
+    }, [dateString]);
+
+    return <>{formattedDate || '...'}</>;
+}
 
 
 export default function PlayerProfilePage({
@@ -103,7 +115,7 @@ export default function PlayerProfilePage({
                           <p className="font-semibold">Análisis de {analysis.shotType}</p>
                           <p className="text-sm text-muted-foreground flex items-center gap-2">
                             <Calendar className="h-4 w-4" />
-                            {new Date(analysis.createdAt).toLocaleDateString()}
+                            <FormattedDate dateString={analysis.createdAt} />
                           </p>
                         </div>
                          {analysis.score !== undefined && (
