@@ -79,7 +79,7 @@ export function AnalysisForm() {
           <CardHeader>
             <CardTitle>Detalles del Lanzamiento</CardTitle>
             <CardDescription>
-              Proporciona detalles sobre el tipo de lanzamiento y sube los videos desde todos los ángulos requeridos.
+              Para un análisis más preciso, graba un video continuo de 20 segundos con múltiples lanzamientos. Te recomendamos que alguien te ayude pasándote los balones para maximizar la cantidad de lanzamientos en el video.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-6">
@@ -95,7 +95,7 @@ export function AnalysisForm() {
                       name={field.name}
                     >
                       <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectTrigger><SelectValue /></SelectValue></SelectTrigger>
                       </FormControl>
                       <SelectContent>
                         {['Tiro Libre', 'Lanzamiento de Media Distancia (Jump Shot)', 'Lanzamiento de Tres'].map((type) => (
@@ -117,7 +117,7 @@ export function AnalysisForm() {
                             <Input type="file" className="pl-10" name="videoFront" accept="video/*" />
                         </div>
                     </FormControl>
-                    <FormDescription>Máximo 20 segundos.</FormDescription>
+                    <FormDescription>Realiza varios lanzamientos en 20 segundos. Un asistente pasándote balones puede ayudar.</FormDescription>
                     <FormMessage />
                 </FormItem>
 
@@ -129,7 +129,7 @@ export function AnalysisForm() {
                             <Input type="file" className="pl-10" name="videoBack" accept="video/*" />
                         </div>
                     </FormControl>
-                    <FormDescription>Máximo 20 segundos.</FormDescription>
+                    <FormDescription>Realiza varios lanzamientos en 20 segundos. Un asistente pasándote balones puede ayudar.</FormDescription>
                     <FormMessage />
                 </FormItem>
 
@@ -141,7 +141,7 @@ export function AnalysisForm() {
                             <Input type="file" className="pl-10" name="videoSideLeft" accept="video/*" />
                         </div>
                     </FormControl>
-                     <FormDescription>Máximo 20 segundos.</FormDescription>
+                     <FormDescription>Realiza varios lanzamientos en 20 segundos. Un asistente pasándote balones puede ayudar.</FormDescription>
                     <FormMessage />
                 </FormItem>
 
@@ -153,7 +153,7 @@ export function AnalysisForm() {
                             <Input type="file" className="pl-10" name="videoSideRight" accept="video/*" />
                         </div>
                     </FormControl>
-                     <FormDescription>Máximo 20 segundos.</FormDescription>
+                     <FormDescription>Realiza varios lanzamientos en 20 segundos. Un asistente pasándote balones puede ayudar.</FormDescription>
                     <FormMessage />
                 </FormItem>
             </div>
