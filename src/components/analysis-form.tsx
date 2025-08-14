@@ -32,7 +32,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { startAnalysis } from "@/app/actions";
-import { Upload, Loader2, Video } from "lucide-react";
+import { Loader2, Video } from "lucide-react";
 
 const analysisFormSchema = z.object({
   shotType: z.enum(['Tiro Libre', 'Lanzamiento de Media Distancia (Jump Shot)', 'Lanzamiento de Tres']),
@@ -44,23 +44,6 @@ const analysisFormSchema = z.object({
 
 type AnalysisFormValues = z.infer<typeof analysisFormSchema>;
 
-
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" className="w-full" disabled={pending}>
-      {pending ? (
-        <>
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Analizando...
-        </>
-      ) : (
-        "Iniciar Análisis"
-      )}
-    </Button>
-  );
-}
-
 export function AnalysisForm() {
   const [state, formAction] = useActionState(startAnalysis, { message: "" });
   
@@ -71,6 +54,22 @@ export function AnalysisForm() {
     },
     shouldFocusError: true,
   });
+
+  function SubmitButton() {
+    const { pending } = useFormStatus();
+    return (
+      <Button type="submit" className="w-full" disabled={pending}>
+        {pending ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Analizando...
+          </>
+        ) : (
+          "Iniciar Análisis"
+        )}
+      </Button>
+    );
+  }
 
   return (
     <Form {...form}>
