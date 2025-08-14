@@ -35,7 +35,7 @@ import { startAnalysis } from "@/app/actions";
 import { Loader2, Video } from "lucide-react";
 
 const analysisFormSchema = z.object({
-  shotType: z.enum(['Tiro Libre', 'Lanzamiento de Media Distancia (Jump Shot)', 'Lanzamiento de Tres']),
+  shotType: z.enum(['Lanzamiento Libre', 'Lanzamiento de Media Distancia (Jump Shot)', 'Lanzamiento de Tres']),
   videoFront: z.any().optional(),
   videoBack: z.any().optional(),
   videoSideLeft: z.any().optional(),
@@ -97,7 +97,7 @@ export function AnalysisForm() {
                         <SelectTrigger><SelectValue /></SelectValue></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {['Tiro Libre', 'Lanzamiento de Media Distancia (Jump Shot)', 'Lanzamiento de Tres'].map((type) => (
+                        {['Lanzamiento Libre', 'Lanzamiento de Media Distancia (Jump Shot)', 'Lanzamiento de Tres'].map((type) => (
                             <SelectItem key={type} value={type}>{type}</SelectItem>
                         ))}
                       </SelectContent>
