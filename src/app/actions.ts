@@ -34,6 +34,12 @@ const registerSchema = z.object({
   phone: z.string().min(5, "Por favor, introduce un número de teléfono válido."),
 });
 
+const loginSchema = z.object({
+  email: z.string().email("Por favor, introduce un email válido."),
+  password: z.string().min(1, "La contraseña es requerida."),
+  role: z.enum(['player', 'coach'])
+});
+
 
 // This is a placeholder for a database write
 async function saveAnalysis(analysisData: any) {
@@ -255,4 +261,31 @@ export async function updateAnalysisScore(prevState: any, formData: FormData) {
     revalidatePath(`/players/${analysis.playerId}`);
     revalidatePath(`/analysis/${analysisId}`);
     return { success: true, message: `Puntuación guardada: ${score}` };
+}
+
+export async function login(prevState: any, formData: FormData) {
+    try {
+        const validatedFields = loginSchema.safeParse(Object.fromEntries(formData.entries()));
+
+        if (!validatedFields.success) {
+            return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
+        }
+
+        // In a real app, you would verify email and password against a database.
+        // Here, we just simulate a successful login.
+        console.log(`(Simulado) Iniciando sesión como ${validatedFields.data.role} con email: ${validatedFields.data.email}`);
+
+        if (validatedFields.data.role === 'coach') {
+            redirect('/coach/dashboard');
+        } else {
+            redirect('/dashboard');
+        }
+
+    } catch (error) {
+        console.error("Error de Inicio de Sesión:", error);
+        if (error instanceof Error && error.message.includes('NEXT_REDIRECT')) {
+            throw error;
+        }
+        return { success: false, message: "No se pudo iniciar sesión. Por favor, inténtalo de nuevo." };
+    }
 }
