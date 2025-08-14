@@ -35,7 +35,7 @@ import { startAnalysis } from "@/app/actions";
 import { Upload, Loader2, Video } from "lucide-react";
 
 const analysisFormSchema = z.object({
-  shotType: z.enum(['Tiro Libre', 'Tiro de Media Distancia (Jump Shot)', 'Tiro de Tres']),
+  shotType: z.enum(['Tiro Libre', 'Lanzamiento de Media Distancia (Jump Shot)', 'Lanzamiento de Tres']),
   videoFront: z.any().optional(),
   videoBack: z.any().optional(),
   videoSideLeft: z.any().optional(),
@@ -67,7 +67,7 @@ export function AnalysisForm() {
   const form = useForm<AnalysisFormValues>({
     resolver: zodResolver(analysisFormSchema),
     defaultValues: {
-      shotType: "Tiro de Media Distancia (Jump Shot)",
+      shotType: "Lanzamiento de Media Distancia (Jump Shot)",
     },
     shouldFocusError: true,
   });
@@ -77,9 +77,9 @@ export function AnalysisForm() {
       <form action={formAction} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Detalles del Tiro</CardTitle>
+            <CardTitle>Detalles del Lanzamiento</CardTitle>
             <CardDescription>
-              Proporciona detalles sobre el tipo de tiro y sube los videos desde todos los ángulos requeridos.
+              Proporciona detalles sobre el tipo de lanzamiento y sube los videos desde todos los ángulos requeridos.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-6">
@@ -88,7 +88,7 @@ export function AnalysisForm() {
                 name="shotType"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Tipo de Tiro</FormLabel>
+                    <FormLabel>Tipo de Lanzamiento</FormLabel>
                      <Select
                       onValueChange={field.onChange}
                       defaultValue={field.value}
@@ -98,7 +98,7 @@ export function AnalysisForm() {
                         <SelectTrigger><SelectValue /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {['Tiro Libre', 'Tiro de Media Distancia (Jump Shot)', 'Tiro de Tres'].map((type) => (
+                        {['Tiro Libre', 'Lanzamiento de Media Distancia (Jump Shot)', 'Lanzamiento de Tres'].map((type) => (
                             <SelectItem key={type} value={type}>{type}</SelectItem>
                         ))}
                       </SelectContent>

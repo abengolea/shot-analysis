@@ -17,7 +17,7 @@ const features = [
     icon: <Video />,
     title: "Análisis con IA",
     description:
-      "Sube tu video y nuestra IA desglosará tu tiro, identificando puntos clave de mejora.",
+      "Sube tu video y nuestra IA desglosará tu lanzamiento, identificando puntos clave de mejora.",
   },
   {
     icon: <BotMessageSquare />,
@@ -40,7 +40,7 @@ const testimonials = [
     avatar: "https://placehold.co/100x100.png",
     "data-ai-hint": "male portrait",
     quote:
-      "ShotVision AI cambió mi forma de entrenar. El feedback instantáneo sobre mi técnica de tiro me ayudó a corregir errores que no sabía que tenía.",
+      "ShotVision AI cambió mi forma de entrenar. El feedback instantáneo sobre mi técnica de lanzamiento me ayudó a corregir errores que no sabía que tenía.",
   },
   {
     name: "Entrenador G.",
@@ -76,7 +76,7 @@ export default function LandingPage() {
             La Revolución del Entrenamiento de Baloncesto está Aquí
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
-            Usa el poder de la inteligencia artificial para analizar tu tiro,
+            Usa el poder de la inteligencia artificial para analizar tu lanzamiento,
             recibir feedback de entrenadores de élite y llevar tu juego al
             siguiente nivel.
           </p>
@@ -106,7 +106,7 @@ export default function LandingPage() {
         {/* Features Section */}
         <section className="container mx-auto max-w-5xl text-center">
           <h2 className="font-headline text-3xl font-bold">
-            Todo lo que Necesitas para un Tiro Perfecto
+            Todo lo que Necesitas para un Lanzamiento Perfecto
           </h2>
           <p className="mt-2 text-muted-foreground">
             Nuestra plataforma está diseñada para cubrir cada aspecto de tu
@@ -170,7 +170,7 @@ export default function LandingPage() {
           <p className="mt-4 text-lg text-muted-foreground">
             Únete a la comunidad de ShotVision AI hoy mismo y descubre tu
             verdadero potencial. El registro es rápido, fácil y el primer paso
-            hacia un mejor tiro.
+            hacia un mejor lanzamiento.
           </p>
           <div className="mt-8">
             <Button size="lg" asChild>

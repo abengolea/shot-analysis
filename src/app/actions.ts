@@ -15,7 +15,7 @@ const getCurrentUser = async () => {
 }
 
 const analysisSchema = z.object({
-  shotType: z.enum(['Tiro Libre', 'Tiro de Media Distancia (Jump Shot)', 'Tiro de Tres']),
+  shotType: z.enum(['Tiro Libre', 'Lanzamiento de Media Distancia (Jump Shot)', 'Lanzamiento de Tres']),
 });
 
 const coachSchema = z.object({

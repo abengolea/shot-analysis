@@ -120,7 +120,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         <Card>
             <CardHeader>
                 <CardTitle className="font-headline">Fotogramas Clave</CardTitle>
-                <CardDescription>Desglose fotograma a fotograma del tiro.</CardDescription>
+                <CardDescription>Desglose fotograma a fotograma del lanzamiento.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Carousel className="w-full">

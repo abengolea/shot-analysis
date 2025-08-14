@@ -9,7 +9,7 @@ import { Bar, BarChart as RechartsBarChart, CartesianGrid, XAxis, YAxis } from "
 
 const chartConfig = {
   score: {
-    label: "Puntuación de Tiro",
+    label: "Puntuación de Lanzamiento",
     color: "hsl(var(--primary))",
   },
 } satisfies import("@/components/ui/chart").ChartConfig

@@ -96,7 +96,7 @@ export function PlayerProfileClient({ player, analyses }: PlayerProfileClientPro
                 <FileText className="h-6 w-6" /> Historial de Análisis
               </CardTitle>
               <CardDescription>
-                Revisa análisis de tiros anteriores y sigue el progreso.
+                Revisa análisis de lanzamientos anteriores y sigue el progreso.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -144,7 +144,7 @@ export function PlayerProfileClient({ player, analyses }: PlayerProfileClientPro
                 <BarChart className="h-6 w-6" /> Progreso
               </CardTitle>
               <CardDescription>
-                Puntuación general de tiro en los últimos meses.
+                Puntuación general de lanzamiento en los últimos meses.
               </CardDescription>
             </CardHeader>
             <CardContent>

@@ -42,11 +42,11 @@ export function SidebarMenuContents() {
         <SidebarMenuButton
           asChild
           isActive={isActive("/analysis/new")}
-          tooltip="Analizar Tiro"
+          tooltip="Analizar Lanzamiento"
         >
           <Link href="/analysis/new">
             <PlusSquare />
-            Analizar Tiro
+            Analizar Lanzamiento
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>

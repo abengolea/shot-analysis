@@ -10,7 +10,7 @@ export default function RegisterPage() {
           Crea tu Cuenta
         </h1>
         <p className="mt-2 text-muted-foreground">
-          Únete a ShotVision AI para empezar a mejorar tu tiro hoy.
+          Únete a ShotVision AI para empezar a mejorar tu lanzamiento hoy.
         </p>
       </div>
       <RegisterForm />

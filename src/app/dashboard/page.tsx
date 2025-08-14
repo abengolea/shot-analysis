@@ -52,7 +52,7 @@ export default function DashboardPage() {
             <Button asChild>
               <Link href="/analysis/new">
                 <PlusCircle className="mr-2 h-4 w-4" />
-                Analizar Nuevo Tiro
+                Analizar Nuevo Lanzamiento
               </Link>
             </Button>
         </div>
@@ -85,7 +85,7 @@ export default function DashboardPage() {
         </Card>
          <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Último Tiro Analizado</CardTitle>
+            <CardTitle className="text-sm font-medium">Último Lanzamiento Analizado</CardTitle>
             <User className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -101,7 +101,7 @@ export default function DashboardPage() {
         <CardHeader>
           <CardTitle>Análisis Recientes</CardTitle>
           <CardDescription>
-            Revisa tus análisis de tiro más recientes.
+            Revisa tus análisis de lanzamiento más recientes.
           </CardDescription>
         </CardHeader>
         <CardContent>
