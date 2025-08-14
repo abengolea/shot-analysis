@@ -40,7 +40,7 @@ const analysisFormSchema = z.object({
   videoBack: z.any().optional(),
   videoSideLeft: z.any().optional(),
   videoSideRight: z.any().optional(),
-});
+})
 
 type AnalysisFormValues = z.infer<typeof analysisFormSchema>;
 
