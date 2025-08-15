@@ -64,21 +64,12 @@ const loginSchema = z.object({
 });
 
 
-// This function now saves to Firestore
-async function saveAnalysis(analysisData: Omit<any, 'id' | 'createdAt'>) {
-    console.log("Guardando datos de análisis en Firestore:", analysisData);
-    const analysisCollection = collection(db, "analyses");
-    const docRef = await addDoc(analysisCollection, {
-        ...analysisData,
-        createdAt: new Date().toISOString(),
-    });
-    return { ...analysisData, id: docRef.id, createdAt: new Date().toISOString() };
-}
-
-
 async function uploadVideoToStorage(file: File, userId: string): Promise<string> {
     if (!file) {
         throw new Error("No file provided for upload.");
+    }
+    if (!adminStorage) {
+        throw new Error("Admin Storage not initialized. Make sure FIREBASE_SERVICE_ACCOUNT is set.");
     }
 
     const storageBucket = adminStorage.bucket();
@@ -104,10 +95,9 @@ async function uploadVideoToStorage(file: File, userId: string): Promise<string>
 
         stream.on('finish', async () => {
             console.log(`Video ${file.name} subido a ${filePath}.`);
-            // Make the file public to get a download URL
-            await fileRef.makePublic();
-            const downloadURL = `https://storage.googleapis.com/${storageBucket.name}/${filePath}`;
-            resolve(downloadURL);
+            // The Cloud Function will be triggered on finalize. We resolve with the gs:// path.
+            const gsPath = `gs://${storageBucket.name}/${filePath}`;
+            resolve(gsPath);
         });
 
         stream.end(buffer);
@@ -134,30 +124,27 @@ export async function startAnalysis(prevState: any, formData: FormData) {
     }
 
     const videoFile = validatedFields.data['video-front'];
-    const videoUrl = await uploadVideoToStorage(videoFile, currentUser.id);
+    // This now returns the gs:// path
+    const videoPath = await uploadVideoToStorage(videoFile, currentUser.id);
 
-    const aiInput = {
-      videoUrl,
-      ageCategory: currentUser.ageGroup === 'Amateur' ? 'Amateur adulto' : `Sub-${currentUser.ageGroup.replace('U','')}` as any,
-      playerLevel: currentUser.playerLevel,
-      shotType: validatedFields.data.shotType,
-    };
+    // The Cloud Function will now handle the AI analysis.
+    // We just need to create a placeholder/pending analysis document
+    // that the function can update later.
+    // The id of this doc can be derived from the video path to link them.
+    const docId = videoPath.split('/').pop()?.split('.')[0] || `${Date.now()}`;
+    const analysisCollection = collection(db, "pending_analyses");
     
-    // For demonstration, we'll return a mock analysis immediately.
-    // In a real app, you might call the AI flow like this:
-    const analysisResult: AnalyzeBasketballShotOutput = await analyzeBasketballShot(aiInput);
-    
-    const newAnalysisData = {
+    await setDoc(doc(analysisCollection, docId), {
         playerId: currentUser.id,
         shotType: validatedFields.data.shotType,
-        ...analysisResult,
-        videoUrl, // Save the actual storage URL
-    };
-
-    const savedAnalysis = await saveAnalysis(newAnalysisData);
+        videoPath: videoPath,
+        status: 'uploaded',
+        createdAt: new Date().toISOString(),
+    });
     
-    revalidatePath(`/players/${savedAnalysis.playerId}`);
-    redirect(`/analysis/${savedAnalysis.id}`);
+    // Redirect to dashboard, the new analysis will appear once processed.
+    revalidatePath(`/dashboard`);
+    redirect(`/dashboard?status=processing`);
 
   } catch (error) {
     console.error("Error de Análisis:", error);
