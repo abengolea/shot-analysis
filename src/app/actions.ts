@@ -274,7 +274,8 @@ export async function registerPlayer(prevState: any, formData: FormData) {
 
     try {
         if (!adminAuth || !adminDb) {
-          throw new Error("La configuración de administrador de Firebase no está disponible. Revisa las variables de entorno.");
+            console.error("FIREBASE ADMIN SDK ERROR: adminAuth or adminDb is not initialized. Check server environment variables (FIREBASE_SERVICE_ACCOUNT).");
+            throw new Error("La configuración del servidor de Firebase no está disponible. El registro no puede continuar. Contacta al administrador.");
         }
         
         console.log('Intentando crear usuario con Admin SDK para:', email);
@@ -306,6 +307,7 @@ export async function registerPlayer(prevState: any, formData: FormData) {
         if (error.code === 'auth/email-already-exists') {
             message = "Este email ya está en uso. Por favor, utiliza otro."
         } else if (error.message) {
+            // Devuelve el mensaje de error real para depuración
             message = `Error de Firebase: ${error.message}`;
         }
         return { success: false, message, errors: null, inputValues: rawData };
