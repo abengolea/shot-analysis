@@ -21,6 +21,13 @@ import { Accordion } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import {
   CheckCircle2,
   XCircle,
   Lightbulb,
@@ -31,6 +38,11 @@ import {
   FilePenLine,
   Dumbbell,
   Camera,
+  MessageSquare,
+  Move,
+  Pencil,
+  Circle as CircleIcon,
+  Eraser,
 } from "lucide-react";
 import { DrillCard } from "./drill-card";
 import { DetailedChecklist } from "./detailed-checklist";
@@ -49,6 +61,15 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const [checklistState, setChecklistState] = useState<ChecklistCategory[]>(
     analysis.detailedChecklist || []
   );
+
+  const [selectedKeyframe, setSelectedKeyframe] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const openKeyframeModal = (keyframeUrl: string) => {
+    setSelectedKeyframe(keyframeUrl);
+    setIsModalOpen(true);
+  };
+
 
   const handleChecklistChange = (
     categoryName: string,
@@ -107,8 +128,26 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
     setIsLoadingDrills(false);
   };
+  
+  const renderKeyframes = (keyframes: string[], angle: string) => (
+     <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {keyframes.map((keyframe, index) => (
+            <button key={`${angle}-${index}`} onClick={() => openKeyframeModal(keyframe)} className="overflow-hidden rounded-lg border aspect-square focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-all hover:scale-105">
+                <Image
+                    src={keyframe}
+                    alt={`Fotograma ${angle} ${index + 1}`}
+                    width={300}
+                    height={300}
+                    className="aspect-square object-cover"
+                    data-ai-hint="basketball shot"
+                />
+            </button>
+        ))}
+    </div>
+  );
 
   return (
+    <>
     <Tabs defaultValue="ai-analysis" className="w-full">
       <TabsList className="grid w-full grid-cols-3">
         <TabsTrigger value="ai-analysis">
@@ -143,7 +182,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 <Camera /> Fotogramas Clave
               </CardTitle>
               <CardDescription>
-                Desglose fotograma a fotograma desde diferentes ángulos.
+                Haz clic en un fotograma para ampliarlo y comentarlo.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -155,64 +194,16 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   <TabsTrigger value="right">Lado Derecho</TabsTrigger>
                 </TabsList>
                 <TabsContent value="front" className="mt-4">
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                    {analysis.keyframes.front.map((keyframe, index) => (
-                      <Image
-                        key={`front-${index}`}
-                        src={keyframe}
-                        alt={`Fotograma frontal ${index + 1}`}
-                        width={300}
-                        height={300}
-                        className="aspect-square rounded-lg border object-cover"
-                        data-ai-hint="basketball shot"
-                      />
-                    ))}
-                  </div>
+                  {renderKeyframes(analysis.keyframes.front, 'frontal')}
                 </TabsContent>
                 <TabsContent value="back" className="mt-4">
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                    {analysis.keyframes.back.map((keyframe, index) => (
-                      <Image
-                        key={`back-${index}`}
-                        src={keyframe}
-                        alt={`Fotograma de espalda ${index + 1}`}
-                        width={300}
-                        height={300}
-                        className="aspect-square rounded-lg border object-cover"
-                        data-ai-hint="basketball shot"
-                      />
-                    ))}
-                  </div>
+                   {renderKeyframes(analysis.keyframes.back, 'espalda')}
                 </TabsContent>
                 <TabsContent value="left" className="mt-4">
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                    {analysis.keyframes.left.map((keyframe, index) => (
-                      <Image
-                        key={`left-${index}`}
-                        src={keyframe}
-                        alt={`Fotograma izquierdo ${index + 1}`}
-                        width={300}
-                        height={300}
-                        className="aspect-square rounded-lg border object-cover"
-                        data-ai-hint="basketball shot"
-                      />
-                    ))}
-                  </div>
+                   {renderKeyframes(analysis.keyframes.left, 'izquierdo')}
                 </TabsContent>
                 <TabsContent value="right" className="mt-4">
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                    {analysis.keyframes.right.map((keyframe, index) => (
-                      <Image
-                        key={`right-${index}`}
-                        src={keyframe}
-                        alt={`Fotograma derecho ${index + 1}`}
-                        width={300}
-                        height={300}
-                        className="aspect-square rounded-lg border object-cover"
-                        data-ai-hint="basketball shot"
-                      />
-                    ))}
-                  </div>
+                   {renderKeyframes(analysis.keyframes.right, 'derecho')}
                 </TabsContent>
               </Tabs>
             </CardContent>
@@ -345,5 +336,48 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         </Card>
       </TabsContent>
     </Tabs>
+
+     <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="max-w-4xl">
+            <DialogHeader>
+            <DialogTitle>Análisis del Fotograma</DialogTitle>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="relative">
+                    <Image
+                        src={selectedKeyframe || "https://placehold.co/600x600.png"}
+                        alt="Fotograma seleccionado"
+                        width={600}
+                        height={600}
+                        className="rounded-lg border"
+                    />
+                     <div className="absolute top-2 left-2 flex flex-col gap-2 rounded-lg border bg-background/80 p-2 shadow-lg backdrop-blur-sm">
+                        <Button variant="ghost" size="icon" className="h-8 w-8"><Move /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8"><Pencil /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8"><CircleIcon /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8"><Eraser /></Button>
+                    </div>
+                </div>
+                <div className="flex flex-col gap-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <MessageSquare /> Comentarios del Entrenador
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                           {/* Placeholder for comments */}
+                           <div className="text-sm text-muted-foreground p-4 text-center border-2 border-dashed rounded-lg">
+                             Aún no hay comentarios para este fotograma.
+                           </div>
+                           <Textarea placeholder="Añade tu comentario aquí..." />
+                           <Button className="w-full">Guardar Comentario</Button>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
