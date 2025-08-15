@@ -71,7 +71,7 @@ export default function UploadPage() {
           <CardHeader>
             <CardTitle>Detalles del Lanzamiento</CardTitle>
             <CardDescription>
-              Para un análisis más preciso, graba un video continuo de 20 segundos con múltiples lanzamientos.
+              Para un análisis más preciso, sube cuatro videos desde distintos ángulos: frontal, trasero y ambos costados.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-6">
@@ -89,11 +89,34 @@ export default function UploadPage() {
                 </Select>
             </div>
             
-            <div className="space-y-2">
-                <Label htmlFor="video">Video del Lanzamiento</Label>
-                <div className="relative">
-                    <Video className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-                    <Input id="video" type="file" className="pl-10" name="video" accept="video/*" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                    <Label htmlFor="video-front">Video de Frente</Label>
+                    <div className="relative">
+                        <Video className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                        <Input id="video-front" type="file" className="pl-10" name="video-front" accept="video/*" />
+                    </div>
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="video-back">Video de Atrás</Label>
+                    <div className="relative">
+                        <Video className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                        <Input id="video-back" type="file" className="pl-10" name="video-back" accept="video/*" />
+                    </div>
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="video-left">Video del Lado Izquierdo</Label>
+                    <div className="relative">
+                        <Video className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                        <Input id="video-left" type="file" className="pl-10" name="video-left" accept="video/*" />
+                    </div>
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="video-right">Video del Lado Derecho</Label>
+                    <div className="relative">
+                        <Video className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                        <Input id="video-right" type="file" className="pl-10" name="video-right" accept="video/*" />
+                    </div>
                 </div>
             </div>
           </CardContent>
