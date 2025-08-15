@@ -58,7 +58,7 @@ export type GeneratePersonalizedDrillsOutput = z.infer<
   typeof GeneratePersonalizedDrillsOutputSchema
 >;
 
-async function generatePersonalizedDrills(
+export async function generatePersonalizedDrills(
   input: GeneratePersonalizedDrillsInput
 ): Promise<GeneratePersonalizedDrillsOutput> {
   return generatePersonalizedDrillsFlow(input);
@@ -97,5 +97,3 @@ const generatePersonalizedDrillsFlow = ai.defineFlow(
     return output!;
   }
 );
-
-export {generatePersonalizedDrills};
