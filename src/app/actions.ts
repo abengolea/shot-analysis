@@ -294,7 +294,6 @@ export async function registerPlayer(prevState: any, formData: FormData) {
         return { success: false, message };
     }
 
-    revalidatePath('/admin');
     redirect('/');
 }
 

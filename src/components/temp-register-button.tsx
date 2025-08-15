@@ -11,7 +11,7 @@ export function TempRegisterButton() {
 
     return (
         <form action={formAction} className="my-4 w-full">
-            <Button type="submit" variant="destructive" className="w-full">
+            <Button type="submit" variant="secondary" className="w-full">
                 Registrar a Adrián Bengolea (Temporal)
             </Button>
             {state.message && (
