@@ -26,6 +26,13 @@ export type ChecklistCategory = {
   items: DetailedChecklistItem[];
 };
 
+export type KeyframeImages = {
+    front: string[];
+    back: string[];
+    left: string[];
+    right: string[];
+};
+
 export type ShotAnalysis = {
   id: string;
   playerId: string;
@@ -36,7 +43,7 @@ export type ShotAnalysis = {
   strengths: string[];
   weaknesses: string[];
   recommendations: string[];
-  keyframes: string[]; // URLs or base64 strings of keyframe images
+  keyframes: KeyframeImages; // URLs or base64 strings of keyframe images, organized by angle
   detailedChecklist?: ChecklistCategory[];
   score?: number;
 };

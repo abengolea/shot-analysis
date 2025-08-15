@@ -50,12 +50,32 @@ async function saveAnalysis(analysisData: any) {
       id: newId,
       createdAt: new Date().toISOString(),
       // In a real app, keyframes would come from video processing
-      keyframes: [
-          "https://placehold.co/640x360.png",
-          "https://placehold.co/640x360.png",
-          "https://placehold.co/640x360.png",
-          "https://placehold.co/640x360.png",
-      ],
+      keyframes: {
+        front: [
+            "https://placehold.co/300x300.png",
+            "https://placehold.co/300x300.png",
+            "https://placehold.co/300x300.png",
+            "https://placehold.co/300x300.png",
+        ],
+        back: [
+            "https://placehold.co/300x300.png",
+            "https://placehold.co/300x300.png",
+            "https://placehold.co/300x300.png",
+            "https://placehold.co/300x300.png",
+        ],
+        left: [
+            "https://placehold.co/300x300.png",
+            "https://placehold.co/300x300.png",
+            "https://placehold.co/300x300.png",
+            "https://placehold.co/300x300.png",
+        ],
+        right: [
+            "https://placehold.co/300x300.png",
+            "https://placehold.co/300x300.png",
+            "https://placehold.co/300x300.png",
+            "https://placehold.co/300x300.png",
+        ],
+      },
   };
   mockAnalyses.push(newAnalysis);
   return newAnalysis;

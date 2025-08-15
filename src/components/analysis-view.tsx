@@ -21,13 +21,6 @@ import { Accordion } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Carousel,
-  CarouselContent,
-  CarouselItem,
-  CarouselNext,
-  CarouselPrevious,
-} from "@/components/ui/carousel";
-import {
   CheckCircle2,
   XCircle,
   Lightbulb,
@@ -37,6 +30,7 @@ import {
   Bot,
   FilePenLine,
   Dumbbell,
+  Camera,
 } from "lucide-react";
 import { DrillCard } from "./drill-card";
 import { DetailedChecklist } from "./detailed-checklist";
@@ -143,42 +137,86 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             </CardContent>
           </Card>
 
-          {analysis.keyframes.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="font-headline">Fotogramas Clave</CardTitle>
-                <CardDescription>
-                  Desglose fotograma a fotograma del lanzamiento.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Carousel className="w-full">
-                  <CarouselContent>
-                    {analysis.keyframes.map((keyframe, index) => (
-                      <CarouselItem key={index}>
-                        <div className="p-1">
-                          <Card className="overflow-hidden">
-                            <CardContent className="flex aspect-video items-center justify-center p-0">
-                              <Image
-                                src={keyframe}
-                                alt={`Fotograma clave ${index + 1}`}
-                                width={1280}
-                                height={720}
-                                className="object-cover"
-                                data-ai-hint="basketball shot"
-                              />
-                            </CardContent>
-                          </Card>
-                        </div>
-                      </CarouselItem>
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-headline flex items-center gap-2">
+                <Camera /> Fotogramas Clave
+              </CardTitle>
+              <CardDescription>
+                Desglose fotograma a fotograma desde diferentes ángulos.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue="front" className="w-full">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="front">Frente</TabsTrigger>
+                  <TabsTrigger value="back">Espalda</TabsTrigger>
+                  <TabsTrigger value="left">Lado Izquierdo</TabsTrigger>
+                  <TabsTrigger value="right">Lado Derecho</TabsTrigger>
+                </TabsList>
+                <TabsContent value="front" className="mt-4">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                    {analysis.keyframes.front.map((keyframe, index) => (
+                      <Image
+                        key={`front-${index}`}
+                        src={keyframe}
+                        alt={`Fotograma frontal ${index + 1}`}
+                        width={300}
+                        height={300}
+                        className="aspect-square rounded-lg border object-cover"
+                        data-ai-hint="basketball shot"
+                      />
                     ))}
-                  </CarouselContent>
-                  <CarouselPrevious />
-                  <CarouselNext />
-                </Carousel>
-              </CardContent>
-            </Card>
-          )}
+                  </div>
+                </TabsContent>
+                <TabsContent value="back" className="mt-4">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                    {analysis.keyframes.back.map((keyframe, index) => (
+                      <Image
+                        key={`back-${index}`}
+                        src={keyframe}
+                        alt={`Fotograma de espalda ${index + 1}`}
+                        width={300}
+                        height={300}
+                        className="aspect-square rounded-lg border object-cover"
+                        data-ai-hint="basketball shot"
+                      />
+                    ))}
+                  </div>
+                </TabsContent>
+                <TabsContent value="left" className="mt-4">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                    {analysis.keyframes.left.map((keyframe, index) => (
+                      <Image
+                        key={`left-${index}`}
+                        src={keyframe}
+                        alt={`Fotograma izquierdo ${index + 1}`}
+                        width={300}
+                        height={300}
+                        className="aspect-square rounded-lg border object-cover"
+                        data-ai-hint="basketball shot"
+                      />
+                    ))}
+                  </div>
+                </TabsContent>
+                <TabsContent value="right" className="mt-4">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                    {analysis.keyframes.right.map((keyframe, index) => (
+                      <Image
+                        key={`right-${index}`}
+                        src={keyframe}
+                        alt={`Fotograma derecho ${index + 1}`}
+                        width={300}
+                        height={300}
+                        className="aspect-square rounded-lg border object-cover"
+                        data-ai-hint="basketball shot"
+                      />
+                    ))}
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
         </div>
       </TabsContent>
       <TabsContent value="coach-feedback" className="mt-6">

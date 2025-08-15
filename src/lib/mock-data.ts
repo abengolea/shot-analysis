@@ -81,6 +81,34 @@ const detailedChecklistData = [
     }
 ];
 
+const mockKeyframes = {
+    front: [
+        "https://placehold.co/300x300.png",
+        "https://placehold.co/300x300.png",
+        "https://placehold.co/300x300.png",
+        "https://placehold.co/300x300.png",
+    ],
+    back: [
+        "https://placehold.co/300x300.png",
+        "https://placehold.co/300x300.png",
+        "https://placehold.co/300x300.png",
+        "https://placehold.co/300x300.png",
+    ],
+    left: [
+        "https://placehold.co/300x300.png",
+        "https://placehold.co/300x300.png",
+        "https://placehold.co/300x300.png",
+        "https://placehold.co/300x300.png",
+    ],
+    right: [
+        "https://placehold.co/300x300.png",
+        "https://placehold.co/300x300.png",
+        "https://placehold.co/300x300.png",
+        "https://placehold.co/300x300.png",
+    ],
+};
+
+
 export const mockAnalyses: ShotAnalysis[] = [
   {
     id: "101",
@@ -93,12 +121,7 @@ export const mockAnalyses: ShotAnalysis[] = [
     strengths: ["Lanzamiento rápido", "Arco alto", "Buena continuación"],
     weaknesses: ["Codo ligeramente abierto", "Desequilibrio al aterrizar", "Posición de pies inconsistente"],
     recommendations: ["Concéntrate en ejercicios de 'codo adentro'.", "Practica lanzamientos a una pierna para mejorar el equilibrio.", "Usa una línea en la cancha para asegurar una posición de pies consistente."],
-    keyframes: [
-      "https://placehold.co/640x360.png",
-      "https://placehold.co/640x360.png",
-      "https://placehold.co/640x360.png",
-      "https://placehold.co/640x360.png",
-    ],
+    keyframes: mockKeyframes,
     score: 82,
     detailedChecklist: detailedChecklistData,
   },
@@ -113,12 +136,7 @@ export const mockAnalyses: ShotAnalysis[] = [
     strengths: ["Excelente equilibrio", "Punto de lanzamiento consistente", "Fuerte enfoque mental"],
     weaknesses: ["Rutina de preparación un poco lenta", "Podría generar más potencia desde las piernas"],
     recommendations: ["Agiliza la rutina previa al lanzamiento para que sea más rápida.", "Incorpora saltos al cajón para aumentar la potencia explosiva de las piernas."],
-    keyframes: [
-      "https://placehold.co/640x360.png",
-      "https://placehold.co/640x360.png",
-      "https://placehold.co/640x360.png",
-      "https://placehold.co/640x360.png",
-    ],
+    keyframes: mockKeyframes,
     score: 91,
     detailedChecklist: detailedChecklistData.map(category => ({
         ...category,
@@ -139,12 +157,7 @@ export const mockAnalyses: ShotAnalysis[] = [
     strengths: ["Buen juego de pies", "Postura sólida", "Ojos en el aro"],
     weaknesses: ["Lanzamiento en el ascenso", "Necesita más muñequeo", "Ligera vacilación en el movimiento"],
     recommendations: ["Practica 'lanzamientos desde una silla' para aislar la parte superior del cuerpo y centrarse en el punto de lanzamiento.", "Exagera la continuación de 'la mano en la lata de galletas' para una mejor acción de muñeca."],
-    keyframes: [
-      "https://placehold.co/640x360.png",
-      "https://placehold.co/640x360.png",
-      "https://placehold.co/640x360.png",
-      "https://placehold.co/640x360.png",
-    ],
+    keyframes: mockKeyframes,
     score: 75,
     detailedChecklist: detailedChecklistData.map(category => ({
         ...category,

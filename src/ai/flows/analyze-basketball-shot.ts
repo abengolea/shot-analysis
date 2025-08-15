@@ -29,12 +29,20 @@ const AnalyzeBasketballShotInputSchema = z.object({
 });
 export type AnalyzeBasketballShotInput = z.infer<typeof AnalyzeBasketballShotInputSchema>;
 
+const KeyframeImagesSchema = z.object({
+    front: z.array(z.string()).describe('List of base64 encoded keyframe images from the front angle.'),
+    back: z.array(z.string()).describe('List of base64 encoded keyframe images from the back angle.'),
+    left: z.array(z.string()).describe('List of base64 encoded keyframe images from the left side angle.'),
+    right: z.array(z.string()).describe('List of base64 encoded keyframe images from the right side angle.'),
+});
+
+
 const AnalyzeBasketballShotOutputSchema = z.object({
   analysisSummary: z.string().describe('A summary of the shot analysis.'),
   strengths: z.array(z.string()).describe('List of strengths in the player\'s shot.'),
   weaknesses: z.array(z.string()).describe('List of weaknesses in the player\'s shot.'),
   recommendations: z.array(z.string()).describe('Personalized recommendations for improvement.'),
-  keyframes: z.array(z.string()).describe('List of base64 encoded keyframe images'),
+  keyframes: KeyframeImagesSchema.describe('Keyframe images from four different angles.'),
 });
 export type AnalyzeBasketballShotOutput = z.infer<typeof AnalyzeBasketballShotOutputSchema>;
 
