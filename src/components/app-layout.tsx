@@ -10,6 +10,7 @@ import {
   Shield,
   User,
   ChevronDown,
+  PanelLeft,
 } from "lucide-react";
 import {
   SidebarProvider,
@@ -62,8 +63,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
   
   return (
-    <SidebarProvider>
-      <Sidebar>
+    <SidebarProvider defaultOpen={false}>
+      <Sidebar collapsible="icon">
         <SidebarHeader>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className="shrink-0" asChild>
@@ -139,7 +140,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </Sidebar>
       <SidebarInset>
         <header className="flex h-14 items-center gap-4 border-b bg-background/95 px-4 backdrop-blur-sm md:px-6">
-          <SidebarTrigger className="md:hidden" />
+          <SidebarTrigger />
           <div className="flex-1">
             {/* Can add breadcrumbs or page title here */}
           </div>

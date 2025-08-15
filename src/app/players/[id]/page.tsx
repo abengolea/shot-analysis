@@ -8,7 +8,10 @@ export default function PlayerProfilePage({
   params: { id: string };
 }) {
   const player = mockPlayers.find((p) => p.id === params.id);
-  const analyses = mockAnalyses.filter((a) => a.playerId === params.id);
+  // Sort analyses by date, newest first
+  const analyses = mockAnalyses
+    .filter((a) => a.playerId === params.id)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   if (!player) {
     notFound();

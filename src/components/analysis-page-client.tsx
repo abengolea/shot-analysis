@@ -54,7 +54,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
 
   useEffect(() => {
     if (analysis) {
-      setFormattedDate(new Date(analysis.createdAt).toLocaleDateString('es-ES'));
+      setFormattedDate(new Date(analysis.createdAt).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric'}));
     }
   }, [analysis]);
 
@@ -86,7 +86,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
         <div>
           <h1 className="font-headline text-2xl font-bold">{player.name}</h1>
           <p className="text-muted-foreground">
-            Análisis de {analysis.shotType} -{" "}
+            Análisis de {analysis.shotType} &bull;{" "}
             {formattedDate || "..."}
           </p>
            {coach && (

@@ -16,13 +16,16 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 // Assuming a single logged-in user for now.
 const currentUser = mockPlayers[0];
-const userAnalyses = mockAnalyses.filter(a => a.playerId === currentUser.id);
+const userAnalyses = mockAnalyses
+    .filter(a => a.playerId === currentUser.id)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
 
 function FormattedDate({ dateString }: { dateString: string }) {
     const [formattedDate, setFormattedDate] = useState('');
 
     useEffect(() => {
-        setFormattedDate(new Date(dateString).toLocaleDateString('es-ES'));
+        setFormattedDate(new Date(dateString).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric'}));
     }, [dateString]);
 
     return <>{formattedDate || '...'}</>;
@@ -30,7 +33,7 @@ function FormattedDate({ dateString }: { dateString: string }) {
 
 
 export default function DashboardPage() {
-  const lastAnalysis = userAnalyses.length > 0 ? userAnalyses[userAnalyses.length - 1] : null;
+  const lastAnalysis = userAnalyses.length > 0 ? userAnalyses[0] : null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -122,7 +125,12 @@ export default function DashboardPage() {
                 </Link>
               ))}
                {userAnalyses.length === 0 && (
-                 <p className="py-8 text-center text-muted-foreground">No se encontraron análisis.</p>
+                 <div className="py-8 text-center text-muted-foreground">
+                   <p>No se encontraron análisis.</p>
+                   <Button asChild variant="link">
+                      <Link href="/upload">Analiza tu primer lanzamiento</Link>
+                   </Button>
+                 </div>
               )}
           </div>
         </CardContent>

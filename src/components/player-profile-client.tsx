@@ -9,7 +9,6 @@ import {
   Target,
 } from "lucide-react";
 import { Player, ShotAnalysis } from "@/lib/types";
-import { mockAnalyses } from "@/lib/mock-data";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -23,9 +22,9 @@ import { PlayerProgressChart } from "@/components/player-progress-chart";
 
 
 // Helper to format chart data from analyses
-const getChartData = (playerId: string) => {
-    const playerAnalyses = mockAnalyses
-        .filter(a => a.playerId === playerId && a.score !== undefined)
+const getChartData = (analyses: ShotAnalysis[]) => {
+    const playerAnalyses = analyses
+        .filter(a => a.score !== undefined)
         .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     if (playerAnalyses.length === 0) return [];
@@ -52,7 +51,7 @@ function FormattedDate({ dateString }: { dateString: string }) {
     useEffect(() => {
         // This check ensures the code runs only on the client
         if (typeof window !== 'undefined') {
-            setFormattedDate(new Date(dateString).toLocaleDateString('es-ES'));
+            setFormattedDate(new Date(dateString).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric'}));
         }
     }, [dateString]);
 
@@ -66,7 +65,7 @@ interface PlayerProfileClientProps {
 
 export function PlayerProfileClient({ player, analyses }: PlayerProfileClientProps) {
   
-  const chartData = getChartData(player.id);
+  const chartData = getChartData(analyses);
 
   return (
     <div className="flex flex-col gap-8">
@@ -121,8 +120,8 @@ export function PlayerProfileClient({ player, analyses }: PlayerProfileClientPro
                                 <p className="font-headline text-2xl font-bold text-primary">{analysis.score}</p>
                             </div>
                         )}
-                         <p className="text-sm font-medium text-primary transition-transform group-hover:translate-x-1">
-                          Ver Detalles
+                         <p className="text-sm font-medium text-primary opacity-0 transition-all group-hover:translate-x-1 group-hover:opacity-100">
+                          Ver Detalles &rarr;
                         </p>
                       </div>
                     </Link>
