@@ -52,9 +52,16 @@ export type Drill = {
   ageVariants?: Record<string, string>;
 };
 
+export type Author = {
+    id: string;
+    name: string;
+    avatarUrl: string;
+};
+
 export type Comment = {
   id: string;
-  author: string;
+  author: Author;
+  coachId?: string; // Optional: To link comment specifically to a coach interaction
   text: string;
   createdAt: string;
 };

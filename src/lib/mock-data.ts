@@ -157,11 +157,6 @@ export const mockAnalyses: ShotAnalysis[] = [
   },
 ];
 
-export const mockComments: Comment[] = [
-    { id: '1', author: 'Entrenador David', text: 'Gran progreso en la alineación del codo, Alex. ¡Sigue así!', createdAt: '2024-07-20T10:05:00Z' },
-    { id: '2', author: 'Alex Johnson', text: '¡Gracias entrenador! Los ejercicios están ayudando mucho.', createdAt: '2024-07-20T12:30:00Z' },
-];
-
 export const mockCoaches: Coach[] = [
   {
     id: "c1",
@@ -208,3 +203,22 @@ export const mockCoaches: Coach[] = [
     playerIds: [],
   },
 ]
+
+const player1 = mockPlayers[0];
+const coach1 = mockCoaches[0];
+
+export const mockComments: Comment[] = [
+    { 
+        id: '1', 
+        author: { id: coach1.id, name: coach1.name, avatarUrl: coach1.avatarUrl }, 
+        coachId: 'c1',
+        text: 'Gran progreso en la alineación del codo, Alex. ¡Sigue así!', 
+        createdAt: '2024-07-20T10:05:00Z' 
+    },
+    { 
+        id: '2', 
+        author: { id: player1.id, name: player1.name, avatarUrl: player1.avatarUrl }, 
+        text: '¡Gracias entrenador! Los ejercicios están ayudando mucho.', 
+        createdAt: '2024-07-20T12:30:00Z' 
+    },
+];

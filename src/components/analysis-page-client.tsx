@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { mockAnalyses, mockPlayers, mockComments } from "@/lib/mock-data";
+import { mockAnalyses, mockPlayers, mockComments, mockCoaches } from "@/lib/mock-data";
 import { AnalysisView } from "@/components/analysis-view";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, MessageSquare, Send } from "lucide-react";
+import { ArrowLeft, MessageSquare, Send, UserCheck } from "lucide-react";
 import { moderateAndAddComment } from "@/app/actions";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
@@ -61,13 +61,14 @@ export function AnalysisPageClient({ id }: { id: string }) {
   if (!analysis) {
     notFound();
   }
+  
   const player = mockPlayers.find((p) => p.id === analysis.playerId);
-
+  
   if (!player) {
-    // Or handle this case gracefully
     notFound();
   }
-
+  
+  const coach = player.coachId ? mockCoaches.find(c => c.id === player.coachId) : null;
   const comments = mockComments;
 
   return (
@@ -88,6 +89,12 @@ export function AnalysisPageClient({ id }: { id: string }) {
             Análisis de {analysis.shotType} -{" "}
             {formattedDate || "..."}
           </p>
+           {coach && (
+            <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+              <UserCheck className="h-4 w-4" />
+              Entrenador: {coach.name}
+            </p>
+          )}
         </div>
       </div>
 
@@ -112,10 +119,11 @@ export function AnalysisPageClient({ id }: { id: string }) {
                         {comments.map(comment => (
                             <div key={comment.id} className="flex items-start gap-3">
                                 <Avatar className="h-8 w-8">
-                                    <AvatarFallback>{comment.author.charAt(0)}</AvatarFallback>
+                                    <AvatarImage src={comment.author.avatarUrl} alt={comment.author.name} />
+                                    <AvatarFallback>{comment.author.name.charAt(0)}</AvatarFallback>
                                 </Avatar>
                                 <div className="flex-1 rounded-lg bg-muted p-3">
-                                    <p className="text-sm font-semibold">{comment.author}</p>
+                                    <p className="text-sm font-semibold">{comment.author.name}</p>
                                     <p className="text-sm text-muted-foreground">{comment.text}</p>
                                 </div>
                             </div>
