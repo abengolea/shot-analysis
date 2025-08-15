@@ -7,6 +7,7 @@ import { initializeApp as initializeAdminApp, getApps as getAdminApps, getApp as
 import { getAuth as getAdminAuth, Auth as AdminAuth } from 'firebase-admin/auth';
 import { getFirestore as getAdminFirestore, Firestore as AdminFirestore } from 'firebase-admin/firestore';
 import { getStorage as getAdminStorage, Storage as AdminStorage } from 'firebase-admin/storage';
+import { getAppCheck } from "firebase-admin/app-check";
 
 
 // Your web app's Firebase configuration
@@ -14,15 +15,39 @@ const firebaseConfig: FirebaseOptions = {
   projectId: "shotanalisys",
   appId: "1:602998191800:web:92f34de8304fc30ac5264d",
   storageBucket: "shotanalisys.appspot.com",
-  apiKey: "AIzaSyBYvIGN0-Yd1b7LG2Seg6VwfKnTYIo4n_4",
+  // The API key is sensitive and should not be stored in source code.
+  // We will load it from the server.
+  // apiKey: "AIzaSyBYvIGN0-Yd1b7LG2Seg6VwfKnTYIo4n_4",
   authDomain: "shotanalisys.firebaseapp.com",
-  measurementId: "",
+  measurementId: "G-4J79G4X1B6",
   messagingSenderId: "602998191800",
 };
 
 
-// Initialize Firebase for the client
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+// A server-side endpoint to fetch the Firebase config.
+async function getFirebaseConfig(): Promise<FirebaseOptions> {
+    const response = await fetch('/__/firebase/init.json');
+    if (!response.ok) {
+        throw new Error('Failed to fetch Firebase config.');
+    }
+    return response.json();
+}
+
+// Initialize Firebase for the client, potentially loading the config async.
+let app;
+if (typeof window !== 'undefined' && !getApps().length) {
+    // On the client, fetch the config and then initialize.
+    // This top-level await is supported in modern bundlers like Next.js.
+    app = initializeApp(await getFirebaseConfig());
+} else if (getApps().length > 0) {
+    app = getApp();
+} else {
+    // On the server, initialize with the basic config (without apiKey).
+    // Server-side operations will use the Admin SDK.
+    app = initializeApp(firebaseConfig);
+}
+
+
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
