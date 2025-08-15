@@ -79,22 +79,24 @@ export function AnalysisPageClient({ id }: { id: string }) {
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <Avatar className="h-12 w-12">
+        <Avatar className="h-16 w-16">
           <AvatarImage src={player.avatarUrl} alt={player.name} />
           <AvatarFallback>{player.name.charAt(0)}</AvatarFallback>
         </Avatar>
         <div>
-          <h1 className="font-headline text-2xl font-bold">{player.name}</h1>
-          <p className="text-muted-foreground">
-            Análisis de {analysis.shotType} &bull;{" "}
+          <p className="text-sm text-muted-foreground">{player.name}</p>
+          <h1 className="font-headline text-2xl font-bold">
+            Análisis de {analysis.shotType}
+          </h1>
+          <p className="font-semibold text-muted-foreground">
             {formattedDate || "..."}
+            {coach && (
+              <span className="ml-2 inline-flex items-center gap-1.5 font-normal">
+                <UserCheck className="h-4 w-4" />
+                Entrenador: {coach.name}
+              </span>
+            )}
           </p>
-           {coach && (
-            <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
-              <UserCheck className="h-4 w-4" />
-              Entrenador: {coach.name}
-            </p>
-          )}
         </div>
       </div>
 
