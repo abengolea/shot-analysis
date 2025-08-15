@@ -45,6 +45,7 @@ const initialState = {
     success: false,
     message: "",
     errors: null,
+    inputValues: {},
 };
 
 export function RegisterForm() {
@@ -73,28 +74,28 @@ export function RegisterForm() {
             <CardContent className="grid gap-4">
                 <div className="space-y-2">
                     <Label htmlFor="name">Nombre Completo</Label>
-                    <Input id="name" name="name" placeholder="Tu nombre" />
+                    <Input id="name" name="name" placeholder="Tu nombre" defaultValue={state.inputValues?.name || ''} />
                     {state.errors?.name && <p className="text-sm text-destructive">{state.errors.name[0]}</p>}
                 </div>
                  <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
-                    <Input id="email" name="email" type="email" placeholder="tu@email.com" />
+                    <Input id="email" name="email" type="email" placeholder="tu@email.com" defaultValue={state.inputValues?.email || ''} />
                     {state.errors?.email && <p className="text-sm text-destructive">{state.errors.email[0]}</p>}
                 </div>
                  <div className="space-y-2">
                     <Label htmlFor="password">Contraseña</Label>
-                    <Input id="password" name="password" type="password" placeholder="Tu contraseña segura" />
+                    <Input id="password" name="password" type="password" placeholder="Tu contraseña segura" defaultValue={state.inputValues?.password || ''} />
                     {state.errors?.password && <p className="text-sm text-destructive">{state.errors.password[0]}</p>}
                 </div>
                  <div className="space-y-2">
                     <Label htmlFor="dob">Fecha de Nacimiento</Label>
-                    <Input id="dob" name="dob" type="date" className="block" />
+                    <Input id="dob" name="dob" type="date" className="block" defaultValue={state.inputValues?.dob || ''} />
                      {state.errors?.dob && <p className="text-sm text-destructive">{state.errors.dob[0]}</p>}
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                         <Label htmlFor="country">País</Label>
-                        <Select name="country">
+                        <Select name="country" defaultValue={state.inputValues?.country || ''}>
                             <SelectTrigger id="country">
                                 <SelectValue placeholder="Selecciona tu país" />
                             </SelectTrigger>
@@ -110,7 +111,7 @@ export function RegisterForm() {
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="phone">Teléfono</Label>
-                        <Input id="phone" name="phone" type="tel" placeholder="+54911..." />
+                        <Input id="phone" name="phone" type="tel" placeholder="+54911..." defaultValue={state.inputValues?.phone || ''} />
                         {state.errors?.phone && <p className="text-sm text-destructive">{state.errors.phone[0]}</p>}
                     </div>
                 </div>

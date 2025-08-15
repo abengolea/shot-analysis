@@ -258,15 +258,24 @@ function getAgeGroup(dob: Date): Player['ageGroup'] {
 
 
 export async function registerPlayer(prevState: any, formData: FormData) {
-    const validatedFields = registerSchema.safeParse(Object.fromEntries(formData.entries()));
+    const rawData = Object.fromEntries(formData.entries());
+    const validatedFields = registerSchema.safeParse(rawData);
 
     if (!validatedFields.success) {
-        return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
+        return {
+            success: false,
+            message: "Datos de formulario inválidos.",
+            errors: validatedFields.error.flatten().fieldErrors,
+            inputValues: rawData,
+        };
     }
 
     const { name, email, password, dob, country, phone } = validatedFields.data;
 
     try {
+        console.log('Intentando crear usuario con:', email);
+        console.log('¿Está `auth` inicializado?', !!auth);
+
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
 
@@ -286,12 +295,12 @@ export async function registerPlayer(prevState: any, formData: FormData) {
         console.log("Nuevo jugador registrado y guardado en Firestore con UID: ", user.uid);
 
     } catch (error: any) {
-        console.error("Error de Registro:", error);
-        let message = "No se pudo completar el registro. Por favor, inténtalo de nuevo.";
+        console.error("Error específico de Firebase:", error.code, error.message);
+        let message = `Error de Firebase: ${error.message}`;
         if (error.code === 'auth/email-already-in-use') {
             message = "Este email ya está en uso. Por favor, utiliza otro."
         }
-        return { success: false, message, errors: null };
+        return { success: false, message, errors: null, inputValues: rawData };
     }
 
     redirect('/');
