@@ -158,7 +158,7 @@ export function DetailedChecklist({ categories, onChecklistChange, analysisId, c
             </TabsList>
             {categories.map((category) => (
                 <TabsContent value={category.category} key={category.category} className="mt-4">
-                    <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {category.items.map((item) => (
                            <ChecklistItem 
                                 key={item.id} 
