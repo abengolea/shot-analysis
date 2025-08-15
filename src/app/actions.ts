@@ -298,7 +298,7 @@ export async function registerPlayer(prevState: any, formData: FormData) {
     redirect('/');
 }
 
-export async function registerAdrian() {
+export async function registerAdrian(prevState: any, formData: FormData) {
     try {
         const email = 'adrian.bengolea@example.com';
         const password = 'adrian1234';
@@ -324,7 +324,7 @@ export async function registerAdrian() {
         console.log("Usuario Adrián Bengolea creado con éxito con UID:", user.uid);
         
         revalidatePath('/register');
-        return { success: true, message: `Usuario Adrián Bengolea creado con éxito.` };
+        return { success: true, message: `Usuario creado: ${email} / ${password}` };
     } catch (error: any) {
         console.error("Error creando a Adrian:", error);
         let message = "No se pudo crear el usuario.";
