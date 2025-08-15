@@ -38,29 +38,33 @@ let adminDb: AdminFirestore | undefined;
 let adminStorage: AdminStorage | undefined;
 
 try {
-  // Check if the service account environment variable is set
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    
-    // Initialize the admin app if it doesn't already exist
-    if (!getAdminApps().length) {
-      adminApp = initializeAdminApp({
-        credential: credential.cert(serviceAccount),
-        storageBucket: firebaseConfig.storageBucket,
-      });
+  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
+  
+  if (process.env.FIREBASE_ADMIN_PROJECT_ID && process.env.FIREBASE_ADMIN_CLIENT_EMAIL && privateKey) {
+    const firebaseAdminConfig = {
+      credential: credential.cert({
+        projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+        privateKey: privateKey,
+      }),
+      storageBucket: firebaseConfig.storageBucket,
+    };
+
+    if (getAdminApps().length === 0) {
+      adminApp = initializeAdminApp(firebaseAdminConfig);
     } else {
       adminApp = getAdminApp();
     }
-    
-    // Get admin services if the app was initialized
-    if (adminApp) {
-      adminAuth = getAdminAuth(adminApp);
-      adminDb = getAdminFirestore(adminApp);
-      adminStorage = getAdminStorage(adminApp);
-    }
   } else {
-    console.warn("FIREBASE_SERVICE_ACCOUNT no está configurada. Las funciones de administrador de Firebase no estarán disponibles.");
+      console.warn("Las variables de entorno de administrador de Firebase no están completamente configuradas. Las funciones de administrador de Firebase no estarán disponibles.");
   }
+
+  if (adminApp) {
+    adminAuth = getAdminAuth(adminApp);
+    adminDb = getAdminFirestore(adminApp);
+    adminStorage = getAdminStorage(adminApp);
+  }
+
 } catch (error) {
   console.error("Error al inicializar Firebase Admin SDK:", error);
 }
