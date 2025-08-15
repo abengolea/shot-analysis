@@ -19,6 +19,7 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { PlayerProgressChart } from "@/components/player-progress-chart";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 
 // Helper to format chart data from analyses
@@ -66,6 +67,11 @@ interface PlayerProfileClientProps {
 export function PlayerProfileClient({ player, analyses }: PlayerProfileClientProps) {
   
   const chartData = getChartData(analyses);
+  const [filter, setFilter] = useState<string>("all");
+
+  const filteredAnalyses = filter === 'all' 
+    ? analyses 
+    : analyses.filter(a => a.shotType === filter);
 
   return (
     <div className="flex flex-col gap-8">
@@ -95,43 +101,53 @@ export function PlayerProfileClient({ player, analyses }: PlayerProfileClientPro
                 <FileText className="h-6 w-6" /> Historial de Análisis
               </CardTitle>
               <CardDescription>
-                Revisa análisis de lanzamientos anteriores y sigue el progreso.
+                Revisa análisis de lanzamientos anteriores y sigue el progreso. Filtra por tipo de lanzamiento.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-col gap-4">
-                {analyses.length > 0 ? (
-                  analyses.map((analysis) => (
-                    <Link href={`/analysis/${analysis.id}`} key={analysis.id}>
-                      <div className="group flex items-center gap-4 rounded-lg border p-4 transition-all hover:bg-muted/50 hover:shadow-sm">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                          <Target className="h-6 w-6" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-semibold">Análisis de {analysis.shotType}</p>
-                          <p className="text-sm text-muted-foreground flex items-center gap-2">
-                            <Calendar className="h-4 w-4" />
-                            <FormattedDate dateString={analysis.createdAt} />
-                          </p>
-                        </div>
-                         {analysis.score !== undefined && (
-                            <div className="text-right">
-                                <p className="text-sm font-semibold text-muted-foreground">Puntuación</p>
-                                <p className="font-headline text-2xl font-bold text-primary">{analysis.score}</p>
+                <Tabs defaultValue="all" onValueChange={setFilter} className="w-full">
+                    <TabsList className="mb-4 grid w-full grid-cols-4">
+                        <TabsTrigger value="all">Todos</TabsTrigger>
+                        <TabsTrigger value="Tiro Libre">Tiro Libre</TabsTrigger>
+                        <TabsTrigger value="Lanzamiento de Media Distancia (Jump Shot)">Jump Shot</TabsTrigger>
+                        <TabsTrigger value="Lanzamiento de Tres">Tres Puntos</TabsTrigger>
+                    </TabsList>
+
+                    <div className="mt-4 flex flex-col gap-4">
+                        {filteredAnalyses.length > 0 ? (
+                        filteredAnalyses.map((analysis) => (
+                            <Link href={`/analysis/${analysis.id}`} key={analysis.id}>
+                            <div className="group flex items-center gap-4 rounded-lg border p-4 transition-all hover:bg-muted/50 hover:shadow-sm">
+                                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                                <Target className="h-6 w-6" />
+                                </div>
+                                <div className="flex-1">
+                                <p className="font-semibold">Análisis de {analysis.shotType}</p>
+                                <p className="text-sm text-muted-foreground flex items-center gap-2">
+                                    <Calendar className="h-4 w-4" />
+                                    <FormattedDate dateString={analysis.createdAt} />
+                                </p>
+                                </div>
+                                {analysis.score !== undefined && (
+                                    <div className="text-right">
+                                        <p className="text-sm font-semibold text-muted-foreground">Puntuación</p>
+                                        <p className="font-headline text-2xl font-bold text-primary">{analysis.score}</p>
+                                    </div>
+                                )}
+                                <p className="text-sm font-medium text-primary opacity-0 transition-all group-hover:translate-x-1 group-hover:opacity-100">
+                                Ver Detalles &rarr;
+                                </p>
                             </div>
-                        )}
-                         <p className="text-sm font-medium text-primary opacity-0 transition-all group-hover:translate-x-1 group-hover:opacity-100">
-                          Ver Detalles &rarr;
+                            </Link>
+                        ))
+                        ) : (
+                        <p className="py-8 text-center text-muted-foreground">
+                            No se han encontrado análisis para este tipo de lanzamiento.
                         </p>
-                      </div>
-                    </Link>
-                  ))
-                ) : (
-                  <p className="py-8 text-center text-muted-foreground">
-                    Aún no se han encontrado análisis para este jugador.
-                  </p>
-                )}
-              </div>
+                        )}
+                    </div>
+                </Tabs>
+
             </CardContent>
           </Card>
         </div>
