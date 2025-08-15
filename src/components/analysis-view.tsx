@@ -43,6 +43,7 @@ import {
   Pencil,
   Circle as CircleIcon,
   Eraser,
+  ListChecks,
 } from "lucide-react";
 import { DrillCard } from "./drill-card";
 import { DetailedChecklist } from "./detailed-checklist";
@@ -149,12 +150,15 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   return (
     <>
     <Tabs defaultValue="ai-analysis" className="w-full">
-      <TabsList className="grid w-full grid-cols-3">
+      <TabsList className="grid w-full grid-cols-4">
         <TabsTrigger value="ai-analysis">
           <Bot className="mr-2" /> Análisis IA
         </TabsTrigger>
         <TabsTrigger value="coach-feedback">
           <FilePenLine className="mr-2" /> Feedback del Coach
+        </TabsTrigger>
+        <TabsTrigger value="checklist">
+            <ListChecks className="mr-2" /> Checklist
         </TabsTrigger>
         <TabsTrigger value="improvement-plan">
           <Dumbbell className="mr-2" /> Plan de Mejora
@@ -276,16 +280,17 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               )}
             </CardContent>
           </Card>
-
-          {analysis.detailedChecklist && (
-            <DetailedChecklist
-              categories={checklistState}
-              onChecklistChange={handleChecklistChange}
-              analysisId={analysis.id}
-              currentScore={analysis.score}
-            />
-          )}
         </div>
+      </TabsContent>
+        <TabsContent value="checklist" className="mt-6">
+             {analysis.detailedChecklist && (
+                <DetailedChecklist
+                categories={checklistState}
+                onChecklistChange={handleChecklistChange}
+                analysisId={analysis.id}
+                currentScore={analysis.score}
+                />
+            )}
       </TabsContent>
       <TabsContent value="improvement-plan" className="mt-6">
         <Card>

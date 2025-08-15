@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useActionState, useEffect, useRef } from "react";
-import type { DetailedChecklistItem, ShotAnalysis, ChecklistCategory } from "@/lib/types";
+import type { DetailedChecklistItem, ChecklistCategory } from "@/lib/types";
 import {
   Card,
   CardContent,
@@ -10,21 +10,16 @@ import {
   CardTitle,
   CardFooter,
 } from "@/components/ui/card";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { CheckCircle, AlertCircle, XCircle, FilePenLine, Loader2, Save } from "lucide-react";
+import { CheckCircle, AlertCircle, XCircle, ListChecks, Loader2, Save } from "lucide-react";
 import { updateAnalysisScore } from "@/app/actions";
 import { useFormStatus } from "react-dom";
 import { Input } from "./ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 
 function ScoreForm({ analysisId, currentScore }: { analysisId: string, currentScore?: number }) {
@@ -147,33 +142,35 @@ export function DetailedChecklist({ categories, onChecklistChange, analysisId, c
     <Card>
       <CardHeader>
         <CardTitle className="font-headline flex items-center gap-2">
-          <FilePenLine className="h-6 w-6" />
+          <ListChecks className="h-6 w-6" />
           Checklist Detallado del Lanzamiento
         </CardTitle>
         <CardDescription>
-          Evalúa cada componente del lanzamiento y añade comentarios.
+          Evalúa cada componente del lanzamiento y añade comentarios. Los cambios se guardan automáticamente.
         </CardDescription>
       </CardHeader>
       <CardContent>
-         <Accordion type="multiple" className="w-full space-y-4" defaultValue={categories.map(c => c.category)}>
+         <Tabs defaultValue={categories[0]?.category || ''} className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+                 {categories.map((category) => (
+                    <TabsTrigger value={category.category} key={category.category}>{category.category}</TabsTrigger>
+                ))}
+            </TabsList>
             {categories.map((category) => (
-              <AccordionItem value={category.category} key={category.category} className="rounded-lg border px-4">
-                <AccordionTrigger className="text-lg font-semibold hover:no-underline">
-                  {category.category}
-                </AccordionTrigger>
-                <AccordionContent className="space-y-4 pt-2">
-                  {category.items.map((item) => (
-                    <ChecklistItem 
-                        key={item.id} 
-                        item={item} 
-                        categoryName={category.category}
-                        onItemChange={onChecklistChange} 
-                    />
-                  ))}
-                </AccordionContent>
-              </AccordionItem>
+                <TabsContent value={category.category} key={category.category} className="mt-4">
+                    <div className="space-y-4">
+                        {category.items.map((item) => (
+                           <ChecklistItem 
+                                key={item.id} 
+                                item={item} 
+                                categoryName={category.category}
+                                onItemChange={onChecklistChange} 
+                            />
+                        ))}
+                    </div>
+                </TabsContent>
             ))}
-        </Accordion>
+         </Tabs>
       </CardContent>
        <CardFooter className="flex-col items-stretch gap-4 border-t px-6 py-4">
           <ScoreForm analysisId={analysisId} currentScore={currentScore} />
