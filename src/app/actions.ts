@@ -6,12 +6,12 @@ import { z } from "zod";
 import { analyzeBasketballShot, type AnalyzeBasketballShotOutput } from "@/ai/flows/analyze-basketball-shot";
 import { generatePersonalizedDrills, type GeneratePersonalizedDrillsOutput } from "@/ai/flows/generate-personalized-drills";
 import { moderateContent } from '@/ai/flows/content-moderation';
-import { mockAnalyses, mockCoaches, mockPlayers } from "@/lib/mock-data";
 import type { Coach, Player, DetailedChecklistItem } from "@/lib/types";
-import { auth, db } from '@/lib/firebase';
+import { auth, db, storage, adminDb, adminStorage } from '@/lib/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, addDoc, collection } from 'firebase/firestore';
-
+import { doc, setDoc, addDoc, collection, getDoc, updateDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { Readable } from 'stream';
 
 // Assume we know who the logged-in user is. For now, it's the first player.
 const getCurrentUser = async () => {
@@ -21,16 +21,24 @@ const getCurrentUser = async () => {
         // NOTE: This will only work in environments where auth state is persisted across server actions
         // which might not be the case here. This is a simplification.
         // A real implementation would use session cookies or JWTs.
-        const playerDoc = await doc(db, "players", auth.currentUser.uid).get();
+        const playerDoc = await getDoc(doc(db, "players", auth.currentUser.uid));
         if (playerDoc.exists()) {
              return { id: auth.currentUser.uid, ...playerDoc.data() } as Player;
         }
     }
-    return mockPlayers[0];
+    // Fallback to a mock user if no one is logged in on the client.
+    // This part of the code might not be reached if UI prevents unauthed access.
+    const fallbackPlayerDoc = await getDoc(doc(db, "players", "1"));
+    if (fallbackPlayerDoc.exists()) {
+        return { id: "1", ...fallbackPlayerDoc.data() } as Player;
+    }
+    return null; // Should not happen if data is seeded
 }
 
 const analysisSchema = z.object({
   shotType: z.enum(['Tiro Libre', 'Lanzamiento de Media Distancia (Jump Shot)', 'Lanzamiento de Tres']),
+  'video-front': z.instanceof(File).refine(file => file.size > 0, 'El video frontal es requerido.'),
+  // Add other videos later, for now one is enough to prove the concept
 });
 
 const coachSchema = z.object({
@@ -56,66 +64,80 @@ const loginSchema = z.object({
 });
 
 
-// This is a placeholder for a database write
-async function saveAnalysis(analysisData: any) {
-  console.log("Guardando datos de análisis (simulado):", analysisData);
-  const newId = (mockAnalyses.length + 101).toString();
-  const newAnalysis = {
-      ...analysisData,
-      id: newId,
-      createdAt: new Date().toISOString(),
-      // In a real app, keyframes would come from video processing
-      keyframes: {
-        front: [
-            "https://placehold.co/300x300.png",
-            "https://placehold.co/300x300.png",
-            "https://placehold.co/300x300.png",
-            "https://placehold.co/300x300.png",
-        ],
-        back: [
-            "https://placehold.co/300x300.png",
-            "https://placehold.co/300x300.png",
-            "https://placehold.co/300x300.png",
-            "https://placehold.co/300x300.png",
-        ],
-        left: [
-            "https://placehold.co/300x300.png",
-            "https://placehold.co/300x300.png",
-            "https://placehold.co/300x300.png",
-            "https://placehold.co/300x300.png",
-        ],
-        right: [
-            "https://placehold.co/300x300.png",
-            "https://placehold.co/300x300.png",
-            "https://placehold.co/300x300.png",
-            "https://placehold.co/300x300.png",
-        ],
-      },
-  };
-  mockAnalyses.push(newAnalysis);
-  return newAnalysis;
+// This function now saves to Firestore
+async function saveAnalysis(analysisData: Omit<any, 'id' | 'createdAt'>) {
+    console.log("Guardando datos de análisis en Firestore:", analysisData);
+    const analysisCollection = collection(db, "analyses");
+    const docRef = await addDoc(analysisCollection, {
+        ...analysisData,
+        createdAt: new Date().toISOString(),
+    });
+    return { ...analysisData, id: docRef.id, createdAt: new Date().toISOString() };
 }
+
+
+async function uploadVideoToStorage(file: File, userId: string): Promise<string> {
+    if (!file) {
+        throw new Error("No file provided for upload.");
+    }
+
+    const storageBucket = adminStorage.bucket();
+    const filePath = `videos/${userId}/${Date.now()}-${file.name}`;
+    const fileRef = storageBucket.file(filePath);
+
+    // Convert file to buffer
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Stream the buffer to Firebase Storage
+    const stream = fileRef.createWriteStream({
+        metadata: {
+            contentType: file.type,
+        },
+    });
+
+    return new Promise((resolve, reject) => {
+        stream.on('error', (err) => {
+            console.error('Error subiendo a Firebase Storage:', err);
+            reject('No se pudo subir el video.');
+        });
+
+        stream.on('finish', async () => {
+            console.log(`Video ${file.name} subido a ${filePath}.`);
+            // Make the file public to get a download URL
+            await fileRef.makePublic();
+            const downloadURL = `https://storage.googleapis.com/${storageBucket.name}/${filePath}`;
+            resolve(downloadURL);
+        });
+
+        stream.end(buffer);
+    });
+}
+
 
 
 export async function startAnalysis(prevState: any, formData: FormData) {
   try {
     const validatedFields = analysisSchema.safeParse({
       shotType: formData.get("shotType"),
+      'video-front': formData.get('video-front'),
     });
 
     if (!validatedFields.success) {
+      console.log(validatedFields.error.flatten().fieldErrors);
       return { message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
     }
     
     const currentUser = await getCurrentUser();
+    if (!currentUser) {
+        return { message: "Usuario no autenticado." };
+    }
 
-    // In a real app, you would upload the video and get a URL.
-    // For this demo, we'll use a placeholder.
-    const videoUrl = "https://placehold.co/1280x720.png";
+    const videoFile = validatedFields.data['video-front'];
+    const videoUrl = await uploadVideoToStorage(videoFile, currentUser.id);
 
     const aiInput = {
       videoUrl,
-      // The AI flow expects a different age category format.
       ageCategory: currentUser.ageGroup === 'Amateur' ? 'Amateur adulto' : `Sub-${currentUser.ageGroup.replace('U','')}` as any,
       playerLevel: currentUser.playerLevel,
       shotType: validatedFields.data.shotType,
@@ -129,6 +151,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         playerId: currentUser.id,
         shotType: validatedFields.data.shotType,
         ...analysisResult,
+        videoUrl, // Save the actual storage URL
     };
 
     const savedAnalysis = await saveAnalysis(newAnalysisData);
@@ -138,7 +161,8 @@ export async function startAnalysis(prevState: any, formData: FormData) {
 
   } catch (error) {
     console.error("Error de Análisis:", error);
-    return { message: "No se pudo iniciar el análisis. Por favor, inténtalo de nuevo." };
+    const message = error instanceof Error ? error.message : "No se pudo iniciar el análisis. Por favor, inténtalo de nuevo.";
+    return { message };
   }
 }
 
@@ -172,9 +196,24 @@ export async function moderateAndAddComment(prevState: any, formData: FormData) 
         if (moderationResult.isHarmful) {
             return { message: `El comentario no pudo ser publicado: ${moderationResult.reason}` };
         }
+        
+        const currentUser = await getCurrentUser();
+        if (!currentUser) return { message: "Debes iniciar sesión para comentar." };
 
-        // In a real app, you would save the comment to the database here.
-        console.log(`(Simulado) Añadiendo comentario al análisis ${analysisId}: "${text}"`);
+        const commentData = {
+            analysisId,
+            text,
+            author: {
+                id: currentUser.id,
+                name: currentUser.name,
+                avatarUrl: currentUser.avatarUrl,
+            },
+            createdAt: new Date().toISOString(),
+        };
+
+        await addDoc(collection(db, "comments"), commentData);
+
+        console.log(`Comentario añadido al análisis ${analysisId}: "${text}"`);
 
         revalidatePath(`/analysis/${analysisId}`);
         return { message: 'Comentario publicado con éxito.', comment: text };
@@ -286,19 +325,22 @@ export async function updateAnalysisScore(prevState: any, formData: FormData) {
         return { success: false, message: "La puntuación debe ser un número entre 0 y 100." };
     }
     
-    const analysis = mockAnalyses.find(a => a.id === analysisId);
+    const analysisRef = doc(db, 'analyses', analysisId);
 
-    if (!analysis) {
-        return { success: false, message: "Análisis no encontrado." };
+    try {
+        await updateDoc(analysisRef, { score: score });
+        console.log(`Puntuación actualizada para el análisis ${analysisId}: ${score}`);
+        
+        const analysisDoc = await getDoc(analysisRef);
+        const playerId = analysisDoc.data()?.playerId;
+        
+        revalidatePath(`/players/${playerId}`);
+        revalidatePath(`/analysis/${analysisId}`);
+        return { success: true, message: `Puntuación guardada: ${score}` };
+    } catch (error) {
+        console.error("Error al actualizar la puntuación:", error);
+        return { success: false, message: "Análisis no encontrado o no se pudo actualizar." };
     }
-
-    // Simulate DB update
-    analysis.score = score;
-    console.log(`(Simulado) Puntuación actualizada para el análisis ${analysisId}: ${score}`);
-    
-    revalidatePath(`/players/${analysis.playerId}`);
-    revalidatePath(`/analysis/${analysisId}`);
-    return { success: true, message: `Puntuación guardada: ${score}` };
 }
 
 export async function login(prevState: any, formData: FormData) {
