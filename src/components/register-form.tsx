@@ -80,6 +80,9 @@ export function RegisterForm() {
             name: "",
             email: "",
             password: "",
+            dob: undefined,
+            country: "",
+            phone: "",
         },
     });
 
