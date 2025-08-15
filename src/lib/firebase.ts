@@ -7,11 +7,8 @@ import { initializeApp as initializeAdminApp, getApps as getAdminApps, getApp as
 import { getAuth as getAdminAuth, Auth as AdminAuth } from 'firebase-admin/auth';
 import { getFirestore as getAdminFirestore, Firestore as AdminFirestore } from 'firebase-admin/firestore';
 import { getStorage as getAdminStorage, Storage as AdminStorage } from 'firebase-admin/storage';
-import { getAppCheck } from "firebase-admin/app-check";
-
 
 // Your web app's Firebase configuration
-// This object should be populated with your actual Firebase project configuration
 const firebaseConfig: FirebaseOptions = {
   projectId: "shotanalisys",
   appId: "1:602998191800:web:92f34de8304fc30ac5264d",
@@ -22,7 +19,7 @@ const firebaseConfig: FirebaseOptions = {
   measurementId: "G-4J79G4X1B6",
 };
 
-// Initialize Firebase
+// Initialize Firebase Client SDK
 let app;
 if (getApps().length === 0) {
   app = initializeApp(firebaseConfig);
@@ -40,23 +37,33 @@ let adminAuth: AdminAuth | undefined;
 let adminDb: AdminFirestore | undefined;
 let adminStorage: AdminStorage | undefined;
 
-if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+try {
+  // Check if the service account environment variable is set
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    
+    // Initialize the admin app if it doesn't already exist
     if (!getAdminApps().length) {
-        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-        
-        adminApp = initializeAdminApp({
-            credential: credential.cert(serviceAccount),
-            storageBucket: firebaseConfig.storageBucket,
-        });
+      adminApp = initializeAdminApp({
+        credential: credential.cert(serviceAccount),
+        storageBucket: firebaseConfig.storageBucket,
+      });
     } else {
-        adminApp = getAdminApp();
+      adminApp = getAdminApp();
     }
+    
+    // Get admin services if the app was initialized
+    if (adminApp) {
+      adminAuth = getAdminAuth(adminApp);
+      adminDb = getAdminFirestore(adminApp);
+      adminStorage = getAdminStorage(adminApp);
+    }
+  } else {
+    console.warn("FIREBASE_SERVICE_ACCOUNT no está configurada. Las funciones de administrador de Firebase no estarán disponibles.");
+  }
+} catch (error) {
+  console.error("Error al inicializar Firebase Admin SDK:", error);
 }
 
-if (adminApp) {
-    adminAuth = getAdminAuth(adminApp);
-    adminDb = getAdminFirestore(adminApp);
-    adminStorage = getAdminStorage(adminApp);
-}
 
 export { app, auth, db, storage, adminApp, adminAuth, adminDb, adminStorage };
