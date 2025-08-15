@@ -230,7 +230,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               </CardHeader>
               <CardContent>
                 {derivedStrengths.length > 0 ? (
-                  <ul className="list-inside list-disc space-y-2 text-muted-foreground">
+                  <ul className="grid list-inside list-disc grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
                     {derivedStrengths.map((s, i) => (
                       <li key={i}>{s}</li>
                     ))}
@@ -250,7 +250,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               </CardHeader>
               <CardContent>
                 {derivedWeaknesses.length > 0 ? (
-                  <ul className="list-inside list-disc space-y-2 text-muted-foreground">
+                  <ul className="grid list-inside list-disc grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
                     {derivedWeaknesses.map((w, i) => (
                       <li key={i}>{w}</li>
                     ))}
