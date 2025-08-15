@@ -3,11 +3,11 @@ import { initializeApp, getApps, getApp, FirebaseOptions } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-import { initializeApp as initializeAdminApp, getApps as getAdminApps, getApp as getAdminApp, App as AdminApp } from 'firebase-admin/app';
-import { getAuth as getAdminAuth } from 'firebase-admin/auth';
-import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
-import { getStorage as getAdminStorage } from 'firebase-admin/storage';
-import { credential } from 'firebase-admin';
+import { initializeApp as initializeAdminApp, getApps as getAdminApps, getApp as getAdminApp, App as AdminApp, credential } from 'firebase-admin/app';
+import { getAuth as getAdminAuth, Auth as AdminAuth } from 'firebase-admin/auth';
+import { getFirestore as getAdminFirestore, Firestore as AdminFirestore } from 'firebase-admin/firestore';
+import { getStorage as getAdminStorage, Storage as AdminStorage } from 'firebase-admin/storage';
+
 
 // Your web app's Firebase configuration
 const firebaseConfig: FirebaseOptions = {
@@ -28,24 +28,31 @@ const db = getFirestore(app);
 const storage = getStorage(app);
 
 // Initialize Firebase Admin SDK for the server
-let adminApp: AdminApp;
+let adminApp: AdminApp | undefined;
+let adminAuth: AdminAuth | undefined;
+let adminDb: AdminFirestore | undefined;
+let adminStorage: AdminStorage | undefined;
 
-if (!getAdminApps().length) {
-    const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT 
-        ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
-        : {};
 
-    adminApp = initializeAdminApp({
-        credential: credential.cert(serviceAccount),
-        storageBucket: firebaseConfig.storageBucket,
-    });
-} else {
-    adminApp = getAdminApp();
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    if (!getAdminApps().length) {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        
+        adminApp = initializeAdminApp({
+            credential: credential.cert(serviceAccount),
+            storageBucket: firebaseConfig.storageBucket,
+        });
+    } else {
+        adminApp = getAdminApp();
+    }
 }
 
-const adminAuth = getAdminAuth(adminApp);
-const adminDb = getAdminFirestore(adminApp);
-const adminStorage = getAdminStorage(adminApp);
+
+if (adminApp) {
+    adminAuth = getAdminAuth(adminApp);
+    adminDb = getAdminFirestore(adminApp);
+    adminStorage = getAdminStorage(adminApp);
+}
 
 
 export { app, auth, db, storage, adminApp, adminAuth, adminDb, adminStorage };
