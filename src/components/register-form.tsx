@@ -2,13 +2,10 @@
 
 import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
-import { format } from "date-fns";
-import { CalendarIcon, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
 import { registerPlayer } from "@/app/actions";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -17,11 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   Card,
   CardContent,
@@ -90,7 +82,6 @@ export function RegisterForm() {
                 </div>
                  <div className="space-y-2">
                     <Label htmlFor="dob">Fecha de Nacimiento</Label>
-                    {/* The name attribute is passed to the input inside the Popover */}
                     <Input id="dob" name="dob" type="date" className="block" />
                      {state.errors?.dob && <p className="text-sm text-destructive">{state.errors.dob[0]}</p>}
                 </div>
