@@ -41,10 +41,10 @@ export function SidebarMenuContents() {
       <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={isActive("/analysis/new")}
+          isActive={isActive("/upload")}
           tooltip="Analizar Lanzamiento"
         >
-          <Link href="/analysis/new">
+          <Link href="/upload">
             <PlusSquare />
             Analizar Lanzamiento
           </Link>

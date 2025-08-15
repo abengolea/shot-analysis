@@ -50,7 +50,7 @@ export default function DashboardPage() {
 
         <div className="flex items-center gap-2">
             <Button asChild>
-              <Link href="/analysis/new">
+              <Link href="/upload">
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Analizar Nuevo Lanzamiento
               </Link>
