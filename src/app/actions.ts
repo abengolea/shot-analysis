@@ -8,9 +8,24 @@ import { generatePersonalizedDrills, type GeneratePersonalizedDrillsOutput } fro
 import { moderateContent } from '@/ai/flows/content-moderation';
 import { mockAnalyses, mockCoaches, mockPlayers } from "@/lib/mock-data";
 import type { Coach, Player, DetailedChecklistItem } from "@/lib/types";
+import { auth, db } from '@/lib/firebase';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, setDoc, addDoc, collection } from 'firebase/firestore';
+
 
 // Assume we know who the logged-in user is. For now, it's the first player.
 const getCurrentUser = async () => {
+    // This is a placeholder. In a real app, you'd get this from the session.
+    // For now, we will rely on client side auth checks.
+    if (auth.currentUser) {
+        // NOTE: This will only work in environments where auth state is persisted across server actions
+        // which might not be the case here. This is a simplification.
+        // A real implementation would use session cookies or JWTs.
+        const playerDoc = await doc(db, "players", auth.currentUser.uid).get();
+        if (playerDoc.exists()) {
+             return { id: auth.currentUser.uid, ...playerDoc.data() } as Player;
+        }
+    }
     return mockPlayers[0];
 }
 
@@ -184,24 +199,21 @@ export async function addCoach(prevState: any, formData: FormData) {
             return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
         }
 
-        const newCoach: Omit<Coach, 'specialties'> & { specialties?: string[] } = {
-            id: `c${mockCoaches.length + 1}`,
-            ...validatedFields.data,
+        const newCoachData = {
+             ...validatedFields.data,
             avatarUrl: validatedFields.data.avatarUrl || 'https://placehold.co/128x128.png',
             'data-ai-hint': 'male coach', // default hint
             rating: 0,
             reviews: 0,
+            playerIds: [],
         };
-        delete newCoach.specialties;
 
-
-        // In a real app, you would save the coach to the database here.
-        console.log("(Simulado) Añadiendo nuevo entrenador:", newCoach);
-        mockCoaches.push(newCoach as Coach);
+        const docRef = await addDoc(collection(db, "coaches"), newCoachData);
+        console.log("Nuevo entrenador añadido con ID: ", docRef.id);
         
         revalidatePath('/coaches');
         revalidatePath('/admin');
-        return { success: true, message: `Entrenador ${newCoach.name} añadido con éxito.` };
+        return { success: true, message: `Entrenador ${newCoachData.name} añadido con éxito.` };
 
     } catch (error) {
         console.error("Error al añadir entrenador:", error);
@@ -220,18 +232,23 @@ function getAgeGroup(dob: Date): Player['ageGroup'] {
 
 
 export async function registerPlayer(prevState: any, formData: FormData) {
+    const validatedFields = registerSchema.safeParse(Object.fromEntries(formData.entries()));
+
+    if (!validatedFields.success) {
+            return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
+    }
+
+    const { name, email, password, dob, country, phone } = validatedFields.data;
+
     try {
-        const validatedFields = registerSchema.safeParse(Object.fromEntries(formData.entries()));
+        // This is a simplified version. In a real app, you'd handle auth on the client
+        // and send the token to the server to create a session.
+        // For this environment, we'll call auth directly in the server action,
+        // which is not the standard recommended practice for web apps.
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
 
-        if (!validatedFields.success) {
-             return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
-        }
-        
-        // In a real app, you would hash the password here.
-        const { name, email, dob, password, country, phone } = validatedFields.data;
-
-        const newPlayer: Player = {
-            id: `p${mockPlayers.length + 1}`,
+        const newPlayer: Omit<Player, 'id'> = {
             name,
             email,
             dob,
@@ -243,15 +260,16 @@ export async function registerPlayer(prevState: any, formData: FormData) {
             avatarUrl: `https://placehold.co/100x100.png`
         };
 
-        // Simulate saving the new player
-        console.log("(Simulado) Registrando nuevo jugador:", newPlayer);
-        mockPlayers.push(newPlayer);
-        
-        // In a real app, you would also create a session and log the user in.
+        await setDoc(doc(db, "players", user.uid), newPlayer);
+        console.log("Nuevo jugador registrado y guardado en Firestore con UID: ", user.uid);
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error de Registro:", error);
-        return { success: false, message: "No se pudo completar el registro. Por favor, inténtalo de nuevo." };
+        let message = "No se pudo completar el registro. Por favor, inténtalo de nuevo.";
+        if (error.code === 'auth/email-already-in-use') {
+            message = "Este email ya está en uso. Por favor, utiliza otro."
+        }
+        return { success: false, message };
     }
 
     revalidatePath('/admin');
@@ -284,28 +302,37 @@ export async function updateAnalysisScore(prevState: any, formData: FormData) {
 }
 
 export async function login(prevState: any, formData: FormData) {
+    const validatedFields = loginSchema.safeParse(Object.fromEntries(formData.entries()));
+
+    if (!validatedFields.success) {
+        return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
+    }
+
+    const { email, password, role } = validatedFields.data;
+
     try {
-        const validatedFields = loginSchema.safeParse(Object.fromEntries(formData.entries()));
+        // As with registration, this is a simplified auth flow for this environment.
+        await signInWithEmailAndPassword(auth, email, password);
+        console.log(`Iniciando sesión como ${role} con email: ${email}`);
 
-        if (!validatedFields.success) {
-            return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
-        }
+        // In a real app, you would also check if the user's role matches.
+        // For example, check a 'role' field in their Firestore document.
 
-        // In a real app, you would verify email and password against a database.
-        // Here, we just simulate a successful login.
-        console.log(`(Simulado) Iniciando sesión como ${validatedFields.data.role} con email: ${validatedFields.data.email}`);
-
-        if (validatedFields.data.role === 'coach') {
+        if (role === 'coach') {
             redirect('/coach/dashboard');
         } else {
             redirect('/dashboard');
         }
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error de Inicio de Sesión:", error);
-        if (error instanceof Error && error.message.includes('NEXT_REDIRECT')) {
+         if (error instanceof Error && error.message.includes('NEXT_REDIRECT')) {
             throw error;
         }
-        return { success: false, message: "No se pudo iniciar sesión. Por favor, inténtalo de nuevo." };
+        let message = "No se pudo iniciar sesión. Por favor, revisa tus credenciales.";
+        if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+            message = "Email o contraseña incorrectos."
+        }
+        return { success: false, message };
     }
 }

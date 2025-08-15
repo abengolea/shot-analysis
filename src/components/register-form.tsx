@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -42,6 +42,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useFormStatus } from "react-dom";
+import { useToast } from "@/hooks/use-toast";
 
 const registerSchema = z.object({
   name: z.string().min(3, "El nombre debe tener al menos 3 caracteres."),
@@ -72,6 +73,7 @@ function SubmitButton() {
 
 export function RegisterForm() {
     const [state, formAction] = useActionState(registerPlayer, { success: false, message: "" });
+    const { toast } = useToast();
     const form = useForm<RegisterFormValues>({
         resolver: zodResolver(registerSchema),
         defaultValues: {
@@ -81,9 +83,19 @@ export function RegisterForm() {
         },
     });
 
+    useEffect(() => {
+        if (state?.message && !state.success) {
+            toast({
+                title: "Error de Registro",
+                description: state.message,
+                variant: "destructive",
+            });
+        }
+    }, [state, toast]);
+
   return (
     <Form {...form}>
-        <form action={formAction} className="w-full space-y-6">
+        <form onSubmit={form.handleSubmit(data => formAction(new FormData(form.control.fields._f.current as HTMLFormElement)))} className="w-full space-y-6">
             <Card className="w-full">
                 <CardHeader>
                     <CardTitle>Detalles del Jugador</CardTitle>
