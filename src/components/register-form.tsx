@@ -98,7 +98,7 @@ export function RegisterForm() {
 
   return (
     <Form {...form}>
-        <form onSubmit={form.handleSubmit(data => formAction(new FormData(form.control.fields._f.current as HTMLFormElement)))} className="w-full space-y-6">
+        <form action={formAction} className="w-full space-y-6">
             <Card className="w-full">
                 <CardHeader>
                     <CardTitle>Detalles del Jugador</CardTitle>
