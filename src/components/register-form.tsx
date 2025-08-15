@@ -44,7 +44,7 @@ import {
 import { useFormStatus } from "react-dom";
 import { useToast } from "@/hooks/use-toast";
 
-const clientRegisterSchema = z.object({
+const registerSchema = z.object({
   name: z.string().min(3, "El nombre debe tener al menos 3 caracteres."),
   email: z.string().email("Por favor, introduce un email válido."),
   password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
@@ -53,7 +53,7 @@ const clientRegisterSchema = z.object({
   phone: z.string().min(5, "Por favor, introduce un número de teléfono válido."),
 });
 
-type RegisterFormValues = z.infer<typeof clientRegisterSchema>;
+type RegisterFormValues = z.infer<typeof registerSchema>;
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -75,12 +75,11 @@ export function RegisterForm() {
     const [state, formAction] = useActionState(registerPlayer, { success: false, message: "" });
     const { toast } = useToast();
     const form = useForm<RegisterFormValues>({
-        resolver: zodResolver(clientRegisterSchema),
+        resolver: zodResolver(registerSchema),
         defaultValues: {
             name: "",
             email: "",
             password: "",
-            dob: undefined,
             country: "",
             phone: "",
         },
@@ -96,9 +95,21 @@ export function RegisterForm() {
         }
     }, [state, toast]);
 
+    const onFormSubmit = (data: RegisterFormValues) => {
+        const formData = new FormData();
+        Object.entries(data).forEach(([key, value]) => {
+            if (value instanceof Date) {
+                formData.append(key, value.toISOString());
+            } else if (value !== undefined && value !== null) {
+                formData.append(key, value as string);
+            }
+        });
+        formAction(formData);
+    }
+
   return (
     <Form {...form}>
-        <form action={formAction} className="w-full space-y-6">
+        <form onSubmit={form.handleSubmit(onFormSubmit)} className="w-full space-y-6">
             <Card className="w-full">
                 <CardHeader>
                     <CardTitle>Detalles del Jugador</CardTitle>
@@ -163,7 +174,7 @@ export function RegisterForm() {
                                         )}
                                         >
                                         {field.value ? (
-                                            format(field.value, "PPP")
+                                            format(field.value, "PPP", )
                                         ) : (
                                             <span>Elige una fecha</span>
                                         )}
