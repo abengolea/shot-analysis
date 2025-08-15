@@ -128,11 +128,11 @@ export async function startAnalysis(prevState: any, formData: FormData) {
     const videoPath = await uploadVideoToStorage(videoFile, currentUser.id);
 
     // The Cloud Function will now handle the AI analysis.
-    // We just need to create a placeholder/pending analysis document
+    // We just need to create aplaceholder/pending analysis document
     // that the function can update later.
     // The id of this doc can be derived from the video path to link them.
-    const docId = videoPath.split('/').pop()?.split('.')[0] || `${Date.now()}`;
-    const analysisCollection = collection(db, "pending_analyses");
+    const docId = videoPath.split('/').pop()?.replace(/\.[^/.]+$/, "") || `${Date.now()}`;
+    const analysisCollection = collection(adminDb!, "pending_analyses");
     
     await setDoc(doc(analysisCollection, docId), {
         playerId: currentUser.id,

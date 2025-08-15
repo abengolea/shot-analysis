@@ -44,16 +44,16 @@ import {
 import { useFormStatus } from "react-dom";
 import { useToast } from "@/hooks/use-toast";
 
-const registerSchema = z.object({
+const clientRegisterSchema = z.object({
   name: z.string().min(3, "El nombre debe tener al menos 3 caracteres."),
   email: z.string().email("Por favor, introduce un email válido."),
   password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
-  dob: z.coerce.date({ required_error: "La fecha de nacimiento es obligatoria." }),
+  dob: z.date({ required_error: "La fecha de nacimiento es obligatoria." }),
   country: z.string().min(2, "Por favor, selecciona un país."),
   phone: z.string().min(5, "Por favor, introduce un número de teléfono válido."),
 });
 
-type RegisterFormValues = z.infer<typeof registerSchema>;
+type RegisterFormValues = z.infer<typeof clientRegisterSchema>;
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -75,7 +75,7 @@ export function RegisterForm() {
     const [state, formAction] = useActionState(registerPlayer, { success: false, message: "" });
     const { toast } = useToast();
     const form = useForm<RegisterFormValues>({
-        resolver: zodResolver(registerSchema),
+        resolver: zodResolver(clientRegisterSchema),
         defaultValues: {
             name: "",
             email: "",
