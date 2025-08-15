@@ -273,16 +273,17 @@ export async function registerPlayer(prevState: any, formData: FormData) {
     const { name, email, password, dob, country, phone } = validatedFields.data;
 
     try {
-        if (!adminAuth) {
-          throw new Error("La configuración de autenticación de administrador no está disponible.");
+        if (!adminAuth || !adminDb) {
+          throw new Error("La configuración de administrador de Firebase no está disponible. Revisa las variables de entorno.");
         }
         
-        console.log('Intentando crear usuario con (Admin SDK):', email);
+        console.log('Intentando crear usuario con Admin SDK para:', email);
         const userRecord = await adminAuth.createUser({
             email,
             password,
             displayName: name,
         });
+        console.log('Usuario creado con Admin SDK, UID:', userRecord.uid);
 
         const newPlayer: Omit<Player, 'id'> = {
             name,
@@ -296,18 +297,11 @@ export async function registerPlayer(prevState: any, formData: FormData) {
             avatarUrl: `https://placehold.co/100x100.png`
         };
 
-        await setDoc(doc(db, "players", userRecord.uid), newPlayer);
-        console.log("Nuevo jugador registrado y guardado en Firestore con UID: ", userRecord.uid);
+        await setDoc(doc(adminDb, "players", userRecord.uid), newPlayer);
+        console.log("Datos del nuevo jugador guardados en Firestore, UID:", userRecord.uid);
         
-        // After successful creation, we can't redirect directly because the client needs
-        // to be signed in. We can't set a client-side session from the server action directly
-        // in this simplified setup.
-        // A full implementation would use custom tokens, but for now we redirect to login.
-        // Or even better, just sign in the user on the client after we know creation was successful.
-        // Let's try redirecting to dashboard. The client-side auth state might just work.
-
     } catch (error: any) {
-        console.error("Error específico de Firebase:", error.code, error.message);
+        console.error("Error específico de Firebase durante el registro:", error.code, error.message);
         let message = `No se pudo completar el registro. Por favor, inténtelo de nuevo más tarde.`;
         if (error.code === 'auth/email-already-exists') {
             message = "Este email ya está en uso. Por favor, utiliza otro."
@@ -317,10 +311,17 @@ export async function registerPlayer(prevState: any, formData: FormData) {
         return { success: false, message, errors: null, inputValues: rawData };
     }
     
-    // If creation was successful, attempt to sign the user in on the client side
-    // then redirect. The login action handles the redirection.
-    await signInWithEmailAndPassword(auth, email, password);
-    redirect('/');
+    // Si la creación fue exitosa en el servidor, intentamos iniciar sesión en el cliente
+    // Esto es necesario para establecer la sesión del navegador.
+    try {
+        await signInWithEmailAndPassword(auth, email, password);
+    } catch (clientAuthError: any) {
+         // Esto puede pasar, pero el usuario ya está creado. Es mejor redirigir a login.
+         console.error("Usuario creado en backend, pero error al iniciar sesión en cliente:", clientAuthError);
+         redirect('/login?status=registered');
+    }
+    
+    redirect('/dashboard');
 }
 
 export async function registerAdrian(prevState: any, formData: FormData) {
@@ -431,5 +432,3 @@ export async function login(prevState: any, formData: FormData) {
         return { success: false, message };
     }
 }
-
-    
