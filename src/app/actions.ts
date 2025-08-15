@@ -323,7 +323,7 @@ export async function registerAdrian() {
         await setDoc(doc(db, "players", user.uid), newPlayer);
         console.log("Usuario Adrián Bengolea creado con éxito con UID:", user.uid);
         
-        revalidatePath('/');
+        revalidatePath('/register');
         return { success: true, message: `Usuario Adrián Bengolea creado con éxito.` };
     } catch (error: any) {
         console.error("Error creando a Adrian:", error);
