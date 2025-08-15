@@ -52,7 +52,7 @@ const registerSchema = z.object({
   name: z.string().min(3, "El nombre debe tener al menos 3 caracteres."),
   email: z.string().email("Por favor, introduce un email válido."),
   password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
-  dob: z.coerce.date({ required_error: "La fecha de nacimiento es obligatoria." }),
+  dob: z.coerce.date({ required_error: "La fecha de nacimiento es obligatoria.", invalid_type_error: "La fecha de nacimiento no es válida." }),
   country: z.string().min(2, "Por favor, selecciona un país."),
   phone: z.string().min(5, "Por favor, introduce un número de teléfono válido."),
 });
@@ -261,7 +261,7 @@ export async function registerPlayer(prevState: any, formData: FormData) {
     const validatedFields = registerSchema.safeParse(Object.fromEntries(formData.entries()));
 
     if (!validatedFields.success) {
-            return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
+        return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
     }
 
     const { name, email, password, dob, country, phone } = validatedFields.data;
@@ -291,7 +291,7 @@ export async function registerPlayer(prevState: any, formData: FormData) {
         if (error.code === 'auth/email-already-in-use') {
             message = "Este email ya está en uso. Por favor, utiliza otro."
         }
-        return { success: false, message };
+        return { success: false, message, errors: null };
     }
 
     redirect('/');

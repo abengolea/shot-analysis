@@ -41,12 +41,18 @@ function SubmitButton() {
   );
 }
 
+const initialState = {
+    success: false,
+    message: "",
+    errors: null,
+};
+
 export function RegisterForm() {
-    const [state, formAction] = useActionState(registerPlayer, { success: false, message: "" });
+    const [state, formAction] = useActionState(registerPlayer, initialState);
     const { toast } = useToast();
 
     useEffect(() => {
-        if (state?.message && !state.success) {
+        if (state?.message && !state.success && !state.errors) {
             toast({
                 title: "Error de Registro",
                 description: state.message,
@@ -111,7 +117,7 @@ export function RegisterForm() {
             </CardContent>
             <CardFooter className="flex flex-col items-stretch">
                <SubmitButton />
-                 {state?.message && !state.success && (
+                 {state?.message && !state.success && !state.errors && (
                     <p className="mt-2 text-sm text-center text-destructive">{state.message}</p>
                 )}
             </CardFooter>
