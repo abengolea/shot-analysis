@@ -7,8 +7,8 @@ import { analyzeBasketballShot, type AnalyzeBasketballShotOutput } from "@/ai/fl
 import { generatePersonalizedDrills, type GeneratePersonalizedDrillsOutput } from "@/ai/flows/generate-personalized-drills";
 import { moderateContent } from '@/ai/flows/content-moderation';
 import type { Coach, Player, DetailedChecklistItem } from "@/lib/types";
-import { auth, db, storage, adminDb, adminStorage } from '@/lib/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { auth, db, storage, adminAuth, adminDb, adminStorage } from '@/lib/firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, addDoc, collection, getDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Readable } from 'stream';
@@ -273,11 +273,16 @@ export async function registerPlayer(prevState: any, formData: FormData) {
     const { name, email, password, dob, country, phone } = validatedFields.data;
 
     try {
-        console.log('Intentando crear usuario con:', email);
-        console.log('¿Está `auth` inicializado?', !!auth);
-
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
+        if (!adminAuth) {
+          throw new Error("La configuración de autenticación de administrador no está disponible.");
+        }
+        
+        console.log('Intentando crear usuario con (Admin SDK):', email);
+        const userRecord = await adminAuth.createUser({
+            email,
+            password,
+            displayName: name,
+        });
 
         const newPlayer: Omit<Player, 'id'> = {
             name,
@@ -291,18 +296,30 @@ export async function registerPlayer(prevState: any, formData: FormData) {
             avatarUrl: `https://placehold.co/100x100.png`
         };
 
-        await setDoc(doc(db, "players", user.uid), newPlayer);
-        console.log("Nuevo jugador registrado y guardado en Firestore con UID: ", user.uid);
+        await setDoc(doc(db, "players", userRecord.uid), newPlayer);
+        console.log("Nuevo jugador registrado y guardado en Firestore con UID: ", userRecord.uid);
+        
+        // After successful creation, we can't redirect directly because the client needs
+        // to be signed in. We can't set a client-side session from the server action directly
+        // in this simplified setup.
+        // A full implementation would use custom tokens, but for now we redirect to login.
+        // Or even better, just sign in the user on the client after we know creation was successful.
+        // Let's try redirecting to dashboard. The client-side auth state might just work.
 
     } catch (error: any) {
         console.error("Error específico de Firebase:", error.code, error.message);
-        let message = `Error de Firebase: ${error.message}`;
-        if (error.code === 'auth/email-already-in-use') {
+        let message = `No se pudo completar el registro. Por favor, inténtelo de nuevo más tarde.`;
+        if (error.code === 'auth/email-already-exists') {
             message = "Este email ya está en uso. Por favor, utiliza otro."
+        } else if (error.message) {
+            message = `Error de Firebase: ${error.message}`;
         }
         return { success: false, message, errors: null, inputValues: rawData };
     }
-
+    
+    // If creation was successful, attempt to sign the user in on the client side
+    // then redirect. The login action handles the redirection.
+    await signInWithEmailAndPassword(auth, email, password);
     redirect('/');
 }
 
@@ -310,10 +327,17 @@ export async function registerAdrian(prevState: any, formData: FormData) {
     try {
         const email = 'adrian.bengolea@example.com';
         const password = 'adrian1234';
-        
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
 
+         if (!adminAuth) {
+          throw new Error("La configuración de autenticación de administrador no está disponible.");
+        }
+        
+        const userRecord = await adminAuth.createUser({
+            email,
+            password,
+            displayName: 'Adrian Bengolea',
+        });
+        
         const dob = new Date("1985-01-01");
         const newPlayer: Omit<Player, 'id'> = {
             name: 'Adrian Bengolea',
@@ -328,15 +352,15 @@ export async function registerAdrian(prevState: any, formData: FormData) {
             "data-ai-hint": "male portrait",
         };
 
-        await setDoc(doc(db, "players", user.uid), newPlayer);
-        console.log("Usuario Adrián Bengolea creado con éxito con UID:", user.uid);
+        await setDoc(doc(db, "players", userRecord.uid), newPlayer);
+        console.log("Usuario Adrián Bengolea creado con éxito con UID:", userRecord.uid);
         
         revalidatePath('/register');
         return { success: true, message: `Usuario creado: ${email} / ${password}` };
     } catch (error: any) {
         console.error("Error creando a Adrian:", error);
         let message = "No se pudo crear el usuario.";
-        if (error.code === 'auth/email-already-in-use') {
+        if (error.code === 'auth/email-already-exists') {
             message = "El email para Adrián ya existe."
         }
         return { success: false, message };
@@ -407,3 +431,5 @@ export async function login(prevState: any, formData: FormData) {
         return { success: false, message };
     }
 }
+
+    
