@@ -267,10 +267,6 @@ export async function registerPlayer(prevState: any, formData: FormData) {
     const { name, email, password, dob, country, phone } = validatedFields.data;
 
     try {
-        // This is a simplified version. In a real app, you'd handle auth on the client
-        // and send the token to the server to create a session.
-        // For this environment, we'll call auth directly in the server action,
-        // which is not the standard recommended practice for web apps.
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
 
@@ -299,8 +295,46 @@ export async function registerPlayer(prevState: any, formData: FormData) {
     }
 
     revalidatePath('/admin');
-    redirect('/'); // Redirect to landing page after successful registration
+    redirect('/');
 }
+
+export async function registerAdrian() {
+    try {
+        const email = 'adrian.bengolea@example.com';
+        const password = 'adrian1234';
+        
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        const dob = new Date("1985-01-01");
+        const newPlayer: Omit<Player, 'id'> = {
+            name: 'Adrian Bengolea',
+            email,
+            dob,
+            country: 'AR',
+            phone: '+54-911-555-1234',
+            ageGroup: getAgeGroup(dob),
+            playerLevel: 'Intermedio',
+            status: 'active',
+            avatarUrl: `https://placehold.co/100x100.png`,
+            "data-ai-hint": "male portrait",
+        };
+
+        await setDoc(doc(db, "players", user.uid), newPlayer);
+        console.log("Usuario Adrián Bengolea creado con éxito con UID:", user.uid);
+        
+        revalidatePath('/');
+        return { success: true, message: `Usuario Adrián Bengolea creado con éxito.` };
+    } catch (error: any) {
+        console.error("Error creando a Adrian:", error);
+        let message = "No se pudo crear el usuario.";
+        if (error.code === 'auth/email-already-in-use') {
+            message = "El email para Adrián ya existe."
+        }
+        return { success: false, message };
+    }
+}
+
 
 export async function updateAnalysisScore(prevState: any, formData: FormData) {
     const analysisId = formData.get('analysisId') as string;

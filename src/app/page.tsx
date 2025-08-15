@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BasketballIcon } from "@/components/icons";
+import { registerAdrian } from "@/app/actions";
 
 const features = [
   {
@@ -52,6 +53,16 @@ const testimonials = [
   },
 ];
 
+function TempRegisterButton() {
+    return (
+        <form action={registerAdrian} className="my-4">
+            <Button type="submit" variant="destructive">
+                Registrar a Adrián Bengolea (Temporal)
+            </Button>
+        </form>
+    )
+}
+
 export default function LandingPage() {
   return (
     <div className="flex flex-1 flex-col">
@@ -60,12 +71,15 @@ export default function LandingPage() {
             <BasketballIcon className="h-8 w-8 text-primary" />
             <span>ShotVision AI</span>
         </Link>
-        <Button asChild variant="outline">
-            <Link href="/login">
-                <LogIn className="mr-2 h-4 w-4"/>
-                Ingresar
-            </Link>
-        </Button>
+        <div className="flex items-center gap-4">
+            <TempRegisterButton />
+            <Button asChild variant="outline">
+                <Link href="/login">
+                    <LogIn className="mr-2 h-4 w-4"/>
+                    Ingresar
+                </Link>
+            </Button>
+        </div>
        </header>
 
       <div className="flex flex-1 flex-col gap-16 md:gap-24">
