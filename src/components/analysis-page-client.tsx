@@ -95,35 +95,37 @@ export function AnalysisPageClient({ id }: { id: string }) {
         <div className="lg:col-span-2">
             <AnalysisView analysis={analysis} player={player} />
         </div>
-        <div className="lg:col-span-1">
-            <Card>
-                <CardHeader>
-                    <CardTitle className="font-headline flex items-center gap-2">
-                        <MessageSquare className="h-6 w-6" />
-                        Feedback y Comentarios
-                    </CardTitle>
-                    <CardDescription>
-                        Conversación privada entre entrenador y jugador.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-6">
-                   <div className="flex flex-col gap-4 max-h-96 overflow-y-auto pr-2">
-                       {comments.map(comment => (
-                           <div key={comment.id} className="flex items-start gap-3">
-                               <Avatar className="h-8 w-8">
-                                   <AvatarFallback>{comment.author.charAt(0)}</AvatarFallback>
-                               </Avatar>
-                               <div className="flex-1 rounded-lg bg-muted p-3">
-                                   <p className="text-sm font-semibold">{comment.author}</p>
-                                   <p className="text-sm text-muted-foreground">{comment.text}</p>
-                               </div>
-                           </div>
-                       ))}
-                   </div>
-                   <CommentForm analysisId={analysis.id}/>
-                </CardContent>
-            </Card>
-        </div>
+        {player.coachId && (
+            <div className="lg:col-span-1">
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="font-headline flex items-center gap-2">
+                            <MessageSquare className="h-6 w-6" />
+                            Feedback y Comentarios
+                        </CardTitle>
+                        <CardDescription>
+                            Conversación privada entre entrenador y jugador.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-6">
+                    <div className="flex flex-col gap-4 max-h-96 overflow-y-auto pr-2">
+                        {comments.map(comment => (
+                            <div key={comment.id} className="flex items-start gap-3">
+                                <Avatar className="h-8 w-8">
+                                    <AvatarFallback>{comment.author.charAt(0)}</AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1 rounded-lg bg-muted p-3">
+                                    <p className="text-sm font-semibold">{comment.author}</p>
+                                    <p className="text-sm text-muted-foreground">{comment.text}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <CommentForm analysisId={analysis.id}/>
+                    </CardContent>
+                </Card>
+            </div>
+        )}
       </div>
     </div>
   );
