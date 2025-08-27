@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Reglas temporales para desarrollo - PERMITIR TODO A USUARIOS AUTENTICADOS
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Reglas específicas para producción (comentadas por ahora)
+    /*
+    // Reglas para usuarios autenticados
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Reglas para coaches
+    match /coaches/{coachId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == coachId;
+    }
+    
+    // Reglas para jugadores
+    match /players/{playerId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (
+        request.auth.uid == playerId || 
+        resource.data.coachId == request.auth.uid
+      );
+    }
+    
+    // Reglas para análisis de tiros
+    match /shotAnalysis/{analysisId} {
+      allow read: if request.auth != null && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.coachId == request.auth.uid
+      );
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.coachId == request.auth.uid
+      );
+    }
+    
+    // Reglas para ejercicios personalizados
+    match /drills/{drillId} {
+      allow read: if request.auth != null && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.coachId == request.auth.uid
+      );
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.coachId == request.auth.uid
+      );
+    }
+    
+    // Reglas para progreso del jugador
+    match /playerProgress/{progressId} {
+      allow read: if request.auth != null && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.coachId == request.auth.uid
+      );
+      allow write: if request.auth != null && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.coachId == request.auth.uid
+      );
+    }
+    */
+  }
+}

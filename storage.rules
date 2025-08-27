@@ -1,0 +1,43 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Reglas para videos de análisis de tiros
+    match /shot-videos/{userId}/{videoId} {
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        // Permitir que coaches vean videos de sus jugadores
+        exists(/databases/$(firestore.default)/documents/players/$(userId)) &&
+        get(/databases/$(firestore.default)/documents/players/$(userId)).data.coachId == request.auth.uid
+      );
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Reglas para imágenes de perfil
+    match /profile-images/{userId}/{imageId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Reglas para documentos de análisis
+    match /analysis-docs/{userId}/{docId} {
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        // Permitir que coaches vean documentos de sus jugadores
+        exists(/databases/$(firestore.default)/documents/players/$(userId)) &&
+        get(/databases/$(firestore.default)/documents/players/$(userId)).data.coachId == request.auth.uid
+      );
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Reglas para ejercicios y materiales de entrenamiento
+    match /training-materials/{userId}/{materialId} {
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        // Permitir que coaches vean materiales de sus jugadores
+        exists(/databases/$(firestore.default)/documents/players/$(userId)) &&
+        get(/databases/$(firestore.default)/documents/players/$(userId)).data.coachId == request.auth.uid
+      );
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

@@ -1,0 +1,22 @@
+# Settings to manage and configure a Firebase App Hosting backend.
+# https://firebase.google.com/docs/app-hosting/configure
+
+runConfig:
+  # Increase this value if you'd like to automatically spin up
+  # more instances in response to increased traffic.
+  maxInstances: 1
+  # The server action timeout can be increased to a maximum of 10 minutes.
+  # The default is 60s.
+  timeoutSeconds: 120
+
+# Defines a "flow" that can be deployed to Cloud Functions.
+# This can be triggered via an HTTP request or any other supported
+# event trigger.
+# https://firebase.google.com/docs/functions
+flows:
+  - id: processUploadedVideo
+    entryPoint: processUploadedVideo
+    # By default, flows are not publicly accessible
+    # https://firebase.google.com/docs/functions/securing-functions
+    # We'll need to secure this in a production environment.
+    allowInsecure: true
