@@ -10,6 +10,11 @@
 - Automated Video Classification: Categorize videos by player, date, and shot type (free throw, three-pointer, etc.).
 - Content Moderation: AI tool monitors uploads for harmful content
 
+## Capture Guidelines (product constraint)
+- Preferred angle: Back (behind the player) to see trajectory and rim entry.
+- Durations: 40s for Back; 30s for Front and Side angles.
+- The AI extracts keyframes equally from all provided angles.
+
 ## Payments / Monetización (Argentina primero)
 
 - Moneda principal: ARS; USD solo referencia.

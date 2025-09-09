@@ -31,6 +31,17 @@ const AnalyzeBasketballShotInputSchema = z.object({
     timestamp: z.number().describe('Timestamp in seconds'),
     description: z.string().describe('Brief description of what happens at this moment')
   })).describe('Available keyframes extracted from the video for the AI to select from'),
+  // Optional prompt configuration to guide the analysis prompt (admin-tuned)
+  promptConfig: z.object({
+    intro: z.string().optional(),
+    fluidezHelp: z.string().optional(),
+    setPointHelp: z.string().optional(),
+    resources: z.array(z.string()).optional(),
+    categoryGuides: z.record(z.object({
+      guide: z.string().optional(),
+      resources: z.array(z.string()).optional(),
+    })).optional(),
+  }).optional(),
 });
 export type AnalyzeBasketballShotInput = z.infer<typeof AnalyzeBasketballShotInputSchema>;
 
@@ -43,7 +54,12 @@ const ChecklistItemSchema = z.object({
   id: z.string().describe('Stable id for the checklist item (slug-like).'),
   name: z.string().describe('Name of the checklist item'),
   description: z.string().describe('Short description of what is being evaluated'),
+  // legacy status 3 niveles
   status: z.enum(['Correcto', 'Mejorable', 'Incorrecto']).describe('Evaluation status'),
+  // nuevo sistema opcional numérico 1..5
+  rating: z.number().int().min(1).max(5).optional().describe('Optional 1..5 rating if available'),
+  // ítem especial: Fluidez / Armonía (1..10)
+  rating10: z.number().int().min(1).max(10).optional().describe('Optional 1..10 rating for Fluidez/Armonía'),
   comment: z.string().describe('Brief coach-like comment. If not enough evidence due to missing angles, explicitly say: "No evaluable por falta de ángulo X"'),
 });
 
@@ -98,11 +114,29 @@ IMPORTANTE: NO intentes generar imágenes. Solo analiza el contenido del video y
 - Recomendaciones específicas (3-5, accionables)
 - Un checklist detallado y estructurado (4–6 categorías, 3–5 ítems por categoría) usando los estados: Correcto | Mejorable | Incorrecto. 
   Si falta evidencia por no contar con ciertos ángulos, marca el ítem con el estado más prudente (por ejemplo "Mejorable") e indica en el comentario: "No evaluable por falta de ángulo <front/back/left/right>".
+  IMPORTANTE: Debe existir SIEMPRE una categoría llamada exactamente "Fluidez / Armonía (transferencia energética)" que contenga un ítem con el mismo nombre y el campo rating10 (1..10) además del comentario que explique por qué recibió esa puntuación. Esta métrica es la más importante (65% del score final).
 
-  Debes INCLUIR obligatoriamente estos 3 ítems en el checklist (en una categoría como "Timing y Giro" o similar):
-  - id: "tiempo_lanzamiento", name: "Tiempo de lanzamiento (captura → liberación)", description: "Tiempo desde que el jugador toma el balón hasta que lo suelta". En el comentario escribe el tiempo estimado en segundos, por ejemplo: "Tiempo: 0.62s". Si no es medible, indícalo.
-  - id: "muneca_cargada", name: "Muñeca cargada antes del ascenso", description: "La muñeca de tiro debe estar flexionada (cargada) antes de iniciar el ascenso de la pelota". Si no está claramente cargada, marca Incorrecto o Mejorable y explica que la muñeca debe estar cargada.
-  - id: "giro_pelota", name: "Giro de la pelota (backspin)", description: "El balón debe tener un giro limpio hacia atrás en el aire". Comenta la calidad del backspin (limpio/bajo/irregular). Si no hay evidencia, indícalo.
+  Debes INCLUIR obligatoriamente estos 3 ítems en el checklist, en las categorías indicadas:
+  - id: "muneca_cargada", name: "Muñeca cargada antes del ascenso" — categoría: "Preparación".
+  - id: "tiempo_lanzamiento", name: "Tiempo de lanzamiento (captura → liberación)" — categoría: "Ascenso y Liberación". En el comentario escribe el tiempo estimado, por ejemplo: "Tiempo: 0.62s". Si no es medible, indícalo.
+  - id: "giro_pelota", name: "Giro de la pelota (backspin)" — categoría: "Ascenso y Liberación". Comenta la calidad del backspin (limpio/bajo/irregular). Si no hay evidencia, indícalo.
+
+  Añade TAMBIÉN el ítem obligatorio de Set Point en "Ascenso y Liberación":
+  - id: "set_point", name: "Set point (inicio del empuje de la pelota)", description: "Altura y continuidad del punto donde comienza el empuje del balón". Reglas:
+    * En categorías menores hasta Sub-12/Sub-13: empuje desde el pecho hasta debajo de la pera.
+    * Con el correr de los años: el set point debe subir gradualmente desde la pera hacia arriba, sin superar la altura de la frente.
+    * Un set point por encima de la frente NO es recomendable porque afecta la fluidez/armonía.
+    * Se trabaja tiros de un solo tiempo (1-time): la pelota sube y NO se detiene (un único movimiento continuo) para asegurar transferencia energética. Evalúa y comenta explícitamente si hay pausa/corte en el ascenso.
+  En el comentario del set point, explica si la altura es adecuada para la edad y si el movimiento es de un solo tiempo, indicando recomendaciones específicas.
+
+Si existe configuración de prompts de admin, considérela como guía adicional para redactar el análisis:
+- Intro adicional: {{promptConfig.intro}}
+- Guía de Fluidez/Armonía: {{promptConfig.fluidezHelp}}
+- Guía de Set Point: {{promptConfig.setPointHelp}}
+- Recursos globales: {{promptConfig.resources}}
+- Guías por categoría (si existen): {{promptConfig.categoryGuides}}
+
+Si hay guías por categoría en promptConfig.categoryGuides, úselas para orientar la evaluación y los comentarios de cada categoría del checklist cuando apliquen.
 
 ADEMÁS, selecciona los 6 keyframes más importantes de los disponibles:
 

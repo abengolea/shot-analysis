@@ -2,6 +2,14 @@
 
 Este manual explica cómo preparar datos, entrenar el modelo temporal (TCN), exportar a ONNX e integrar el modelo en la app.
 
+## 0. Lineamientos de captura (para dataset y uso en app)
+- Ángulo preferido: Trasero (desde atrás del jugador). Si no está disponible, usar Frontal.
+- Duración recomendada: 40 segundos para Trasera; 30 segundos para Frontal y Laterales.
+- Encuadre: cuerpo completo. Desde atrás, que se vea el aro para observar la parábola y si la pelota entra.
+- Estabilidad: trípode o apoyo; evitar zoom digital y movimientos bruscos.
+- Iluminación: buena luz; evitar contraluces fuertes.
+- Resolución/fps: 1080p a 30 fps o más (60 fps ideal para entrenamiento).
+
 ## 1. Preparar entorno
 
 Requisitos:

@@ -26,6 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { Switch } from "@/components/ui/switch";
 
 function SubmitButton({ loading }: { loading: boolean }) {
   return (
@@ -47,6 +48,7 @@ const registerSchema = z.object({
   email: z.string().email("Por favor, introduce un email válido."),
   password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
   role: z.enum(['player', 'coach'], { required_error: "Por favor, selecciona un rol." }),
+  publicRankingOptIn: z.boolean().optional(),
 });
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
@@ -64,6 +66,7 @@ export function RegisterForm() {
             email: "",
             password: "",
             role: "player" as const,
+            publicRankingOptIn: false,
         },
     });
 
@@ -73,6 +76,7 @@ export function RegisterForm() {
             const userData = {
                 name: data.name,
                 role: data.role,
+                ...(data.role === 'player' ? { publicRankingOptIn: !!data.publicRankingOptIn } : {}),
             };
 
             const result = await signUp(data.email, data.password, userData);
@@ -177,6 +181,20 @@ export function RegisterForm() {
                         <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
                     )}
                 </div>
+                {form.getValues("role") === 'player' && (
+                  <div className="space-y-2 rounded-lg border p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>Hacer públicas mis puntuaciones para el ranking</Label>
+                        <p className="text-xs text-muted-foreground">Podrás cambiarlo luego en tu perfil.</p>
+                      </div>
+                      <Switch
+                        checked={!!form.watch("publicRankingOptIn")}
+                        onCheckedChange={(v) => form.setValue("publicRankingOptIn", v)}
+                      />
+                    </div>
+                  </div>
+                )}
                 <div className="mt-4 p-4 bg-blue-50 rounded-lg">
                     <p className="text-sm text-blue-700">
                         💡 <strong>Nota:</strong> Solo necesitamos estos datos básicos para crear tu cuenta. 

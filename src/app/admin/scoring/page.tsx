@@ -39,14 +39,11 @@ export default function ScoringWeightsPage() {
               // Si estamos en Tres y no hay pesos, usar preset exacto solicitado
               if (shotType === 'tres') {
                 setWeights({
-                  'Fluidez / Armonía (transferencia energética)': 65,
-                  'Base y Pies (Base, Equilibrio, Estabilidad)': 6,
-                  'Preparación (posición previa)': 4,
-                  'Ascenso / Elevación': 5,
-                  'Movimiento y Timing': 6,
-                  'Liberación (Release, Timing y Giro)': 6,
-                  'Seguimiento (Follow-through, finalización)': 4,
-                  'Técnica de brazos (alineación y extensión)': 4,
+                  'Fluidez / Armonía (transferencia energética)': 60,
+                  'Preparación': 8,
+                  'Ascenso': 19, // incluye Set Point 8% + Alineación del codo 7% + 4% resto ascenso
+                  'Liberación': 10,
+                  'Finalización y Seguimiento': 3,
                 });
                 setAutoInit(true);
               } else {
@@ -57,16 +54,13 @@ export default function ScoringWeightsPage() {
               }
             } else {
               if (shotType === 'tres') {
-                // Prefill con preset enviado por el entrenador (porcentajes) SOLO para Tres
+                // Preset solicitado para Tres (65% Fluidez + 35% distribuido)
                 setWeights({
-                  'Fluidez / Armonía (transferencia energética)': 65,
-                  'Base y Pies (Base, Equilibrio, Estabilidad)': 6,
-                  'Preparación (posición previa)': 4,
-                  'Ascenso / Elevación': 5,
-                  'Movimiento y Timing': 6,
-                  'Liberación (Release, Timing y Giro)': 6,
-                  'Seguimiento (Follow-through, finalización)': 4,
-                  'Técnica de brazos (alineación y extensión)': 4,
+                  'Fluidez / Armonía (transferencia energética)': 60,
+                  'Preparación': 8,
+                  'Ascenso': 19,
+                  'Liberación': 10,
+                  'Finalización y Seguimiento': 3,
                 });
                 setAutoInit(true);
               } else {

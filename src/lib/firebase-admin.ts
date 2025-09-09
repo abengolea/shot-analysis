@@ -7,8 +7,8 @@ import { getStorage as getAdminStorage, Storage as AdminStorage } from 'firebase
 
 // Configuración del proyecto
 const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID || "shotanalisys";
-// Usar la variable de entorno del .env.local
-const storageBucket = process.env.FIREBASE_ADMIN_STORAGE_BUCKET || "shotanalisys.firebasestorage.app";
+// Preferir el bucket estándar appspot.com
+const storageBucket = process.env.FIREBASE_ADMIN_STORAGE_BUCKET || "shotanalisys.appspot.com";
 
 console.log("🔍 Firebase Admin - Variables de entorno:");
 console.log("  - FIREBASE_ADMIN_PROJECT_ID:", process.env.FIREBASE_ADMIN_PROJECT_ID);
@@ -24,7 +24,7 @@ let adminStorage: AdminStorage | undefined;
 
 try {
   const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
-  
+
   if (process.env.FIREBASE_ADMIN_CLIENT_EMAIL && privateKey) {
     const firebaseAdminConfig = {
       credential: credential.cert({
@@ -33,25 +33,34 @@ try {
         privateKey: privateKey,
       }),
       storageBucket,
-    };
+    } as any;
 
-    console.log("🔍 Firebase Admin - Configuración:");
+    console.log("🔍 Firebase Admin - Configuración (Service Account):");
     console.log("  - projectId:", projectId);
     console.log("  - storageBucket:", storageBucket);
-    console.log("  - ✅ Usando bucket de .env.local:", storageBucket);
 
     if (getAdminApps().length === 0) {
       adminApp = initializeAdminApp(firebaseAdminConfig);
-      console.log("✅ Firebase Admin App creado");
+      console.log("✅ Firebase Admin App creado (service account)");
     } else {
       adminApp = getAdminApp();
       console.log("✅ Firebase Admin App obtenido existente");
     }
-    
-    console.log("✅ Firebase Admin SDK inicializado correctamente");
   } else {
-      console.warn("⚠️ Las variables de entorno de administrador de Firebase no están completamente configuradas.");
-      console.warn("📝 Asegúrate de que FIREBASE_ADMIN_CLIENT_EMAIL y FIREBASE_ADMIN_PRIVATE_KEY estén definidos en .env.local");
+    // Fallback a credenciales por defecto del entorno (App Hosting / GCP ADC)
+    console.warn("⚠️ Service account incompleto. Intentando Application Default Credentials (ADC)...");
+    const firebaseAdminConfig = {
+      credential: credential.applicationDefault(),
+      projectId,
+      storageBucket,
+    } as any;
+    if (getAdminApps().length === 0) {
+      adminApp = initializeAdminApp(firebaseAdminConfig);
+      console.log("✅ Firebase Admin App creado con ADC");
+    } else {
+      adminApp = getAdminApp();
+      console.log("✅ Firebase Admin App obtenido existente");
+    }
   }
 
   if (adminApp) {
@@ -66,11 +75,9 @@ try {
       console.log("✅ Admin Storage disponible, bucket:", bucket.name);
       console.log("🔍 Verificando bucket name:", bucket.name);
       
-      // Verificar que el bucket sea el correcto
-      if (bucket.name === "shotanalisys.firebasestorage.app") {
-        console.log("✅ Bucket correcto configurado!");
-      } else {
-        console.error("❌ BUCKET INCORRECTO! Esperado: shotanalisys.firebasestorage.app, Actual:", bucket.name);
+      // Aviso si el bucket no es el estándar
+      if (bucket.name !== storageBucket) {
+        console.warn("⚠️ Bucket en uso distinto al configurado:", storageBucket, "Actual:", bucket.name);
       }
     } else {
       console.error("❌ Admin Storage NO está disponible");

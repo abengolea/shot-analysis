@@ -160,10 +160,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
 
       if (role === 'player') {
-        // Es un jugador - solo datos básicos
+        // Es un jugador - datos básicos + opt-in de ranking si se envió
         await setDoc(doc(db, 'players', newUser.uid), {
           ...baseUserData,
-          // Los demás campos se completarán en el perfil
+          ...(typeof (userData as any).publicRankingOptIn === 'boolean'
+            ? { publicRankingOptIn: Boolean((userData as any).publicRankingOptIn) }
+            : {}),
         });
       } else {
         // Es un entrenador - solo datos básicos

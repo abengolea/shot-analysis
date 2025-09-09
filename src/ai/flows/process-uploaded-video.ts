@@ -89,11 +89,28 @@ const processUploadedVideoFlow = ai.defineFlow(
         ? 'Amateur adulto'
         : (`Sub-${player.ageGroup.replace('U', '')}` as any);
 
+    // 4.5. Load admin prompt config for this shot type (if any)
+    let promptConfig: any | undefined = undefined;
+    try {
+      const cfgRef = doc(adminDb, 'config',
+        (pendingData.shotType || '').toLowerCase().includes('tres') ? 'prompts_tres'
+        : ((pendingData.shotType || '').toLowerCase().includes('media') || (pendingData.shotType || '').toLowerCase().includes('jump')) ? 'prompts_media'
+        : (pendingData.shotType || '').toLowerCase().includes('libre') ? 'prompts_libre'
+        : 'prompts_general'
+      );
+      const cfgSnap = await getDoc(cfgRef);
+      const cfgData = cfgSnap.exists() ? (cfgSnap.data() as any) : undefined;
+      promptConfig = cfgData?.config;
+    } catch (e) {
+      console.warn('Could not load prompt config', e);
+    }
+
     const aiInput = {
       videoUrl: videoUrl, // Use the GCS URI
       ageCategory: ageCategory,
       playerLevel: player.playerLevel,
       shotType: pendingData.shotType,
+      promptConfig,
     };
 
     console.log('Calling analyzeBasketballShot flow with input:', aiInput);

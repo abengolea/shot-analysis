@@ -16,12 +16,31 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const data = snap.data() as any;
     const bucket = adminStorage.bucket();
 
-    const uploadExtracted = async (filePath: string, angleKey: 'front'|'left'|'right'|'back', count: number) => {
+    const uploadExtracted = async (
+      source: { storagePath?: string | null; httpUrl?: string | null },
+      angleKey: 'front'|'left'|'right'|'back',
+      count: number
+    ) => {
+      const urls: string[] = [];
       try {
-        const file = bucket.file(filePath);
-        const [buf] = await file.download();
-        const extracted = await extractKeyframesFromBuffer(buf, count);
-        const urls: string[] = [];
+        let videoBuffer: Buffer | null = null;
+        if (source.storagePath) {
+          try {
+            const file = bucket.file(source.storagePath);
+            const [buf] = await file.download();
+            videoBuffer = buf;
+          } catch (e) {
+            console.warn(`⚠️ No se pudo descargar de Storage (${source.storagePath}). Intentando HTTP si existe...`);
+          }
+        }
+        if (!videoBuffer && source.httpUrl && /^https?:\/\//i.test(source.httpUrl)) {
+          const resp = await fetch(source.httpUrl);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const ab = await resp.arrayBuffer();
+          videoBuffer = Buffer.from(ab);
+        }
+        if (!videoBuffer) return urls;
+        const extracted = await extractKeyframesFromBuffer(videoBuffer, count);
         for (const kf of extracted) {
           const kfName = `rebuild_${angleKey}_${kf.index}_${Date.now()}.jpg`;
           const storagePath = `keyframes/${data.playerId || 'unknown'}/${analysisId}/${kfName}`;
@@ -29,11 +48,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           await bucket.file(storagePath).makePublic();
           urls.push(`https://storage.googleapis.com/${process.env.FIREBASE_ADMIN_STORAGE_BUCKET}/${storagePath}`);
         }
-        return urls;
       } catch (e) {
-        console.warn(`⚠️ No se pudo extraer para ${angleKey} desde ${filePath}`, e);
-        return [] as string[];
+        console.warn(`⚠️ No se pudo extraer para ${angleKey}`, e);
       }
+      return urls;
     };
 
     const toStoragePath = (publicUrl: string | null) => {
@@ -54,10 +72,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const backPath = toStoragePath(data.videoBackUrl || null);
 
     const [frontK, leftK, rightK, backK] = await Promise.all([
-      frontPath ? uploadExtracted(frontPath, 'front', 16) : Promise.resolve([]),
-      leftPath ? uploadExtracted(leftPath, 'left', 12) : Promise.resolve([]),
-      rightPath ? uploadExtracted(rightPath, 'right', 12) : Promise.resolve([]),
-      backPath ? uploadExtracted(backPath, 'back', 12) : Promise.resolve([]),
+      uploadExtracted({ storagePath: frontPath, httpUrl: data.videoUrl || null }, 'front', 16),
+      uploadExtracted({ storagePath: leftPath, httpUrl: data.videoLeftUrl || null }, 'left', 12),
+      uploadExtracted({ storagePath: rightPath, httpUrl: data.videoRightUrl || null }, 'right', 12),
+      uploadExtracted({ storagePath: backPath, httpUrl: data.videoBackUrl || null }, 'back', 12),
     ]);
 
     const keyframes = { front: frontK, left: leftK, right: rightK, back: backK };

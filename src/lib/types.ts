@@ -27,6 +27,19 @@ export type Player = BaseUser & {
   wingspan?: number; // en centímetros
   weight?: number; // en kilogramos
   dominantHand?: 'Derecha' | 'Izquierda' | 'Ambidiestro';
+  // Configuración de ranking público (opt-in voluntario)
+  publicRankingOptIn?: boolean;
+  publicAlias?: string;
+  publicShowCountry?: boolean;
+  publicShowClub?: boolean;
+  club?: string;
+  // Agregados públicos para rankings
+  publicCategory?: 'U11' | 'U13' | 'U15' | 'U17' | 'U21' | 'Mayores';
+  publicHighestScore?: number; // mejor puntuación histórica (0..100)
+  publicGeneralAverageScore?: number; // promedio general de todas las puntuaciones
+  publicBestByShot?: { libre?: number; media?: number; tres?: number };
+  publicBestDates?: { libre?: string; media?: string; tres?: string; overall?: string };
+  publicUpdatedAt?: string; // ISO
 };
 
 export type DetailedChecklistItem = {

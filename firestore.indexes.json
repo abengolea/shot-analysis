@@ -13,6 +13,46 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "players",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publicRankingOptIn", "order": "ASCENDING" },
+        { "fieldPath": "publicCategory", "order": "ASCENDING" },
+        { "fieldPath": "publicGeneralAverageScore", "order": "DESCENDING" },
+        { "fieldPath": "publicHighestScore", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "players",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publicRankingOptIn", "order": "ASCENDING" },
+        { "fieldPath": "publicCategory", "order": "ASCENDING" },
+        { "fieldPath": "publicBestByShot.libre", "order": "DESCENDING" },
+        { "fieldPath": "publicGeneralAverageScore", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "players",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publicRankingOptIn", "order": "ASCENDING" },
+        { "fieldPath": "publicCategory", "order": "ASCENDING" },
+        { "fieldPath": "publicBestByShot.media", "order": "DESCENDING" },
+        { "fieldPath": "publicGeneralAverageScore", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "players",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "publicRankingOptIn", "order": "ASCENDING" },
+        { "fieldPath": "publicCategory", "order": "ASCENDING" },
+        { "fieldPath": "publicBestByShot.tres", "order": "DESCENDING" },
+        { "fieldPath": "publicGeneralAverageScore", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

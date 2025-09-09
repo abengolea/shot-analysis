@@ -71,9 +71,19 @@ function ChecklistItem({
     switch (r) {
       case 5: return 'Excelente';
       case 4: return 'Correcto';
-      case 3: return 'Mejorable';
-      case 2: return 'Incorrecto leve';
-      case 1: return 'Incorrecto';
+      case 3: {
+        // Etiqueta especial para mano no dominante en liberación (3 estados): 3 = sin otorgar, sin penalizar
+        if (item.id === 'mano_no_dominante_liberacion') return 'Mejorable (sin empuje claro)';
+        return 'Mejorable';
+      }
+      case 2: {
+        if (item.id === 'mano_no_dominante_liberacion') return 'Empuje leve (penaliza -20%)';
+        return 'Incorrecto leve';
+      }
+      case 1: {
+        if (item.id === 'mano_no_dominante_liberacion') return 'Empuje fuerte (penaliza -30%)';
+        return 'Incorrecto';
+      }
       default: return 'Mejorable';
     }
   };
@@ -95,6 +105,17 @@ function ChecklistItem({
       </div>
       <p className="text-sm text-muted-foreground">{item.description}</p>
 
+      {/* Nota UX: ítems de mano no dominante */}
+      {(item.id === 'mano_no_dominante_ascenso' || item.id === 'mano_no_dominante_liberacion') && (
+        <div className="rounded-md border p-2 text-xs bg-blue-50 text-blue-800">
+          {item.id === 'mano_no_dominante_ascenso' ? (
+            <span>Ascenso (2%): Debe acompañar sin interferir. Binario: Correcto (≥4) u Incorrecto (&lt;4).</span>
+          ) : (
+            <span>Liberación (3%): Sin empuje (≥4) = otorga 3%. Empuje leve (=2) penaliza -20% del total. Empuje fuerte (=1) penaliza -30%.</span>
+          )}
+        </div>
+      )}
+
       {item.name === 'Fluidez / Armonía (transferencia energética)' && (
         <div className="rounded-md border p-3 bg-primary/5">
           <div className="mb-2 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-amber-800 text-xs">
@@ -115,6 +136,9 @@ function ChecklistItem({
             className="w-full accent-primary"
             disabled={!editable}
           />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Describe brevemente la razón de esta puntuación para que el jugador reciba una devolución clara.
+          </p>
         </div>
       )}
       
@@ -186,7 +210,7 @@ export function DetailedChecklist({ categories, onChecklistChange, analysisId, c
                  {categories.map((category) => (
                     <TabsTrigger
                         value={category.category}
-                        key={category.category}
+                        key={`tab-${category.category}`}
                         className="min-w-[160px] whitespace-normal text-center"
                     >
                         {category.category}
@@ -194,11 +218,11 @@ export function DetailedChecklist({ categories, onChecklistChange, analysisId, c
                 ))}
             </TabsList>
             {categories.map((category) => (
-                <TabsContent value={category.category} key={category.category} className="mt-4">
+                <TabsContent value={category.category} key={`tabc-${category.category}`} className="mt-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {category.items.map((item) => (
+                        {category.items.map((item, idx) => (
                            <ChecklistItem 
-                                key={item.id} 
+                                key={`ci-${category.category}|${item.id}|${idx}`} 
                                 item={item} 
                                 categoryName={category.category}
                                 onItemChange={onChecklistChange} 

@@ -73,8 +73,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   const [localKeyframes, setLocalKeyframes] = useState<typeof safeKeyframes>(safeKeyframes);
 
-  // Solo mostrar ángulos que tengan videos
-  const availableAngles = Object.entries(safeKeyframes)
+  // Solo mostrar ángulos que tengan keyframes disponibles (preferir estado local)
+  const availableAngles = Object.entries(localKeyframes)
     .filter(([angle, urls]) => {
       const hasUrls = urls && Array.isArray(urls) && urls.length > 0;
       console.log(`🔍 Ángulo ${angle}:`, urls, '¿Tiene URLs?', hasUrls);
@@ -83,11 +83,11 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     .map(([angle, _]) => angle);
 
   console.log('📹 Ángulos disponibles:', availableAngles);
-  console.log('🔍 safeKeyframes completo:', safeKeyframes);
-  console.log('🔍 safeKeyframes.front:', safeKeyframes.front);
-  console.log('🔍 safeKeyframes.back:', safeKeyframes.back);
-  console.log('🔍 safeKeyframes.left:', safeKeyframes.left);
-  console.log('🔍 safeKeyframes.right:', safeKeyframes.right);
+  console.log('🔍 localKeyframes completo:', localKeyframes);
+  console.log('🔍 localKeyframes.front:', localKeyframes.front);
+  console.log('🔍 localKeyframes.back:', localKeyframes.back);
+  console.log('🔍 localKeyframes.left:', localKeyframes.left);
+  console.log('🔍 localKeyframes.right:', localKeyframes.right);
 
   // Verificar si el análisis es parcial (menos de 4 ángulos)
   const isPartialAnalysis = availableAngles.length < 4;
@@ -110,7 +110,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     };
     // Helper to decide destination
     const toPrep = (name: string) => /pies|base|posición de los pies|ancho/i.test(name);
-    const toRelease = (name: string) => /ascenso|liberación|liberacion|piernas|impulso de piernas|uso de piernas/i.test(name);
+    const toAscenso = (name: string) => /ascenso|elevaci[oó]n|tiempo\s*de\s*lanzamiento|captura\s*[→\->]\s*liberaci[oó]n|codo|alineaci[oó]n\s*del\s*codo|set\s*point/i.test(name);
+    const toLiberacion = (name: string) => /liberaci[oó]n|extensi[oó]n\s*del\s*brazo|follow\s*-?through|giro\s*de\s*la\s*pelota|giro\s*de\s*bal[oó]n|back\s*spin|backspin/i.test(name);
     const isTimingCat = (catName: string) => /timing\s*y?\s*giro/i.test(catName);
     const isBackspinItem = (name: string) => /giro\s*de\s*la\s*pelota|giro\s*de\s*bal[oó]n|back\s*spin|backspin/i.test(name);
     const isTiempoLanzamiento = (it: DetailedChecklistItem) =>
@@ -150,8 +151,10 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
           }
         } else if (toPrep(itemName) || isFeetCat) {
           getBucket('Preparación').items.push(normalizedItem);
-        } else if (toRelease(itemName)) {
-          getBucket('Ascenso y Liberación').items.push(normalizedItem);
+        } else if (toAscenso(itemName)) {
+          getBucket('Ascenso').items.push(normalizedItem);
+        } else if (toLiberacion(itemName)) {
+          getBucket('Liberación').items.push(normalizedItem);
         } else {
           getBucket(cat.category).items.push(normalizedItem);
         }
@@ -160,9 +163,147 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     // Asegurar existencia de la categoría de Fluidez/Armonía (aunque venga vacía desde IA)
     const fluidezCategoryName = 'Fluidez / Armonía (transferencia energética)';
     if (!buckets[fluidezCategoryName]) buckets[fluidezCategoryName] = { category: fluidezCategoryName, items: [] } as ChecklistCategory;
+    // Inyectar ítem por defecto si falta
+    const hasFluidezItem = (buckets[fluidezCategoryName].items || []).some(
+      (it) => (it.name || '').trim() === fluidezCategoryName
+    );
+    if (!hasFluidezItem) {
+      const defaultFluidez: DetailedChecklistItem = {
+        id: 'fluidez_armonia',
+        name: fluidezCategoryName,
+        description: 'Evaluación de la transferencia energética coordinada a lo largo de todo el movimiento. Puntúa de 1 (muy pobre) a 10 (excelente).',
+        rating: 4,
+        comment: '',
+        // incluir rating10 (campo opcional para este ítem especial)
+        rating10: (typeof (analysis as any).fluidezScore10 === 'number' ? (analysis as any).fluidezScore10 : 5) as any,
+      } as unknown as DetailedChecklistItem;
+      buckets[fluidezCategoryName].items.push(defaultFluidez);
+    }
+
+    // Asegurar existencia de las categorías "Ascenso" y "Liberación"
+    const ascensoCatName = 'Ascenso';
+    const liberacionCatName = 'Liberación';
+    if (!buckets[ascensoCatName]) buckets[ascensoCatName] = { category: ascensoCatName, items: [] } as ChecklistCategory;
+    if (!buckets[liberacionCatName]) buckets[liberacionCatName] = { category: liberacionCatName, items: [] } as ChecklistCategory;
+    // Inyectar ítem por defecto de Set Point si falta
+    const setPointName = 'Set point (inicio del empuje de la pelota)';
+    const hasSetPointItem = (buckets[ascensoCatName].items || []).some(
+      (it) => /set\s*point/i.test(it.id || '') || (it.name || '').trim().toLowerCase() === setPointName.toLowerCase()
+    );
+    if (!hasSetPointItem) {
+      const defaultSetPoint: DetailedChecklistItem = {
+        id: 'set_point',
+        name: setPointName,
+        description: 'Altura de inicio del empuje y continuidad (un solo tiempo). Para Sub-12/13: pecho a debajo de la pera. En mayores: subir gradualmente sin superar la frente.',
+        rating: 3,
+        comment: '',
+      } as DetailedChecklistItem;
+      buckets[ascensoCatName].items.push(defaultSetPoint);
+    }
+
+    // Inyectar ítem por defecto: Mano no dominante durante el ascenso (binario, 2%)
+    const ascensoHandId = 'mano_no_dominante_ascenso';
+    const hasAscensoHand = (buckets[ascensoCatName].items || []).some(
+      (it) => (it.id || '').trim() === ascensoHandId || /mano\s*no\s*dominante.*ascenso/i.test(it.name || '')
+    );
+    if (!hasAscensoHand) {
+      const defaultAscensoHand: DetailedChecklistItem = {
+        id: ascensoHandId,
+        name: 'Posición de la mano no dominante (ascenso)',
+        description: 'Debe acompañar sin interferir la dirección ni la fuerza de la mano dominante. No empuja ni desvía la pelota durante el ascenso.',
+        rating: 3,
+        comment: '',
+      } as DetailedChecklistItem;
+      buckets[ascensoCatName].items.push(defaultAscensoHand);
+    }
+
+    // Si quedó una categoría legacy "Ascenso y Liberación", migrar sus ítems y eliminarla
+    const legacyAL = buckets['Ascenso y Liberación'];
+    if (legacyAL && Array.isArray(legacyAL.items) && legacyAL.items.length) {
+      for (const it of legacyAL.items) {
+        const nm = (it.name || '');
+        if (toLiberacion(nm)) buckets['Liberación'].items.push(it as DetailedChecklistItem);
+        else buckets['Ascenso'].items.push(it as DetailedChecklistItem);
+      }
+      delete buckets['Ascenso y Liberación'];
+    }
+
+    // Diagnóstico: registrar ids duplicados por categoría antes de deduplicar
+    try {
+      Object.keys(buckets).forEach((catName) => {
+        const counts: Record<string, number> = {};
+        (buckets[catName].items || []).forEach((it) => {
+          const id = (it.id || '').trim();
+          if (!id) return;
+          counts[id] = (counts[id] || 0) + 1;
+        });
+        const dupIds = Object.keys(counts).filter((k) => counts[k] > 1);
+        if (dupIds.length) {
+          console.warn('Checklist: ids duplicados detectados en categoría', catName, dupIds);
+        }
+      });
+    } catch {}
+
+    // Deduplicar por id dentro de cada categoría para evitar keys duplicadas (p.ej. giro_pelota)
+    Object.keys(buckets).forEach((catName) => {
+      const seen = new Set<string>();
+      const deduped: DetailedChecklistItem[] = [];
+      for (const it of buckets[catName].items) {
+        const key = (it.id || '').trim();
+        if (!key) { deduped.push(it as DetailedChecklistItem); continue; }
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(it as DetailedChecklistItem);
+      }
+      buckets[catName].items = deduped;
+    });
+
+    // Asegurar ítem Backspin en Liberación si falta (después de migrar y deduplicar)
+    const backspinName = 'Giro de la pelota (backspin)';
+    const hasBackspinItem = (buckets[liberacionCatName].items || []).some(
+      (it) => /(^|\s)giro_pelota(\s|$)/i.test(it.id || '') || /giro\s*de\s*la\s*pelota|back\s*spin|backspin/i.test((it.name || ''))
+    );
+    if (!hasBackspinItem) {
+      const defaultBackspin: DetailedChecklistItem = {
+        id: 'giro_pelota',
+        name: backspinName,
+        description: 'El balón debe tener un giro limpio hacia atrás en el aire. Comenta la calidad del backspin (limpio/bajo/irregular).',
+        rating: 3,
+        comment: '',
+      } as DetailedChecklistItem;
+      buckets[liberacionCatName].items.push(defaultBackspin);
+    }
+
+    // Inyectar ítem por defecto: Mano no dominante en la liberación (3% + posibles penalizaciones)
+    const liberacionHandId = 'mano_no_dominante_liberacion';
+    const hasLiberacionHand = (buckets[liberacionCatName].items || []).some(
+      (it) => (it.id || '').trim() === liberacionHandId || /mano\s*no\s*dominante.*liberaci[oó]n/i.test(it.name || '')
+    );
+    if (!hasLiberacionHand) {
+      const defaultLiberacionHand: DetailedChecklistItem = {
+        id: liberacionHandId,
+        name: 'Mano no dominante en la liberación',
+        description: 'Debe acompañar y “apagarse” en la suelta; no empuja ni añade fuerza lateral/frontal. Dedos hacia arriba al finalizar. Si empuja (leve/fuerte), se penaliza el puntaje total.',
+        rating: 3,
+        comment: '',
+      } as DetailedChecklistItem;
+      buckets[liberacionCatName].items.push(defaultLiberacionHand);
+    }
+
+    // Segunda pasada de deduplicación por seguridad
+    Object.keys(buckets).forEach((catName) => {
+      const seen = new Set<string>();
+      buckets[catName].items = buckets[catName].items.filter((it) => {
+        const key = (it.id || '').trim();
+        if (!key) return true;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    });
 
     // Orden estable esperado en UI
-    const order = ['Preparación', 'Ascenso y Liberación', fluidezCategoryName, 'Finalización y Seguimiento'];
+    const order = ['Preparación', 'Ascenso', 'Liberación', fluidezCategoryName, 'Finalización y Seguimiento'];
     const ordered: ChecklistCategory[] = [];
     order.forEach((n) => {
       if (!buckets[n]) return;
@@ -285,6 +426,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const canEdit = userProfile?.role === 'coach' && userProfile.id === (player.coachId || '');
+  const [rebuilding, setRebuilding] = useState(false);
 
   type KeyframeComment = { id?: string; comment: string; coachName?: string; createdAt: string };
   const [keyframeComments, setKeyframeComments] = useState<KeyframeComment[]>([]);
@@ -893,12 +1035,33 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     <div className="text-center py-4">
                       <Camera className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                       <p className="text-muted-foreground mb-4">Video subido para análisis</p>
+                      {/* Botón de utilidad para generar fotogramas en dev */}
+                      <div className="flex items-center justify-center">
+                        <Button
+                          variant="secondary"
+                          disabled={rebuilding}
+                          onClick={async () => {
+                            try {
+                              setRebuilding(true);
+                              const res = await fetch(`/api/analyses/${safeAnalysis.id}/rebuild-keyframes/dev`, { method: 'POST' });
+                              const data = await res.json();
+                              if (res.ok && data?.keyframes) {
+                                setLocalKeyframes(data.keyframes);
+                              }
+                            } finally {
+                              setRebuilding(false);
+                            }
+                          }}
+                        >
+                          {rebuilding ? 'Generando fotogramas…' : 'Generar fotogramas (dev)'}
+                        </Button>
+                      </div>
                     </div>
                     {safeAnalysis.videoUrl && (
-                      <div className="max-w-2xl mx-auto">
+                      <div className="max-w-xl mx-auto">
                         <video 
                           controls 
-                          className="w-full rounded-lg shadow-lg"
+                          className="w-full rounded-lg shadow-lg max-h-[420px]"
                           src={safeAnalysis.videoUrl}
                         >
                           Tu navegador no soporta el elemento video.

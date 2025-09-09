@@ -16,6 +16,7 @@ import { User, Shield, Calendar, MapPin, Phone, Award, Briefcase, GraduationCap,
 import { Player, Coach } from "@/lib/types";
 import { storage } from "@/lib/firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { Switch } from "@/components/ui/switch";
 
 export default function ProfilePage() {
   const { user, userProfile, updateUserProfile } = useAuth();
@@ -359,6 +360,54 @@ export default function ProfilePage() {
               ) : (
                 // Campos específicos del jugador
                 <div className="space-y-4">
+                  {/* Configuración de Ranking Público */}
+                  <div className="rounded-lg border p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="font-medium">Publicar mi ranking</Label>
+                        <p className="text-xs text-muted-foreground">Tu perfil aparecerá en los rankings públicos por categoría.</p>
+                      </div>
+                      <Switch
+                        checked={!!formData.publicRankingOptIn}
+                        disabled={!isEditing}
+                        onCheckedChange={(v) => handleInputChange('publicRankingOptIn', v)}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="publicAlias">Alias Público</Label>
+                        <Input
+                          id="publicAlias"
+                          placeholder="Ej: ElTirador23"
+                          value={formData.publicAlias || ''}
+                          onChange={(e) => handleInputChange('publicAlias', e.target.value)}
+                          disabled={!isEditing}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Mostrar País</Label>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={!!formData.publicShowCountry}
+                            disabled={!isEditing}
+                            onCheckedChange={(v) => handleInputChange('publicShowCountry', v)}
+                          />
+                          <span className="text-sm text-muted-foreground">Si está activo, se mostrará tu país</span>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Mostrar Club</Label>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={!!formData.publicShowClub}
+                            disabled={!isEditing}
+                            onCheckedChange={(v) => handleInputChange('publicShowClub', v)}
+                          />
+                          <span className="text-sm text-muted-foreground">Si está activo, se mostrará tu club</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="dob">Fecha de Nacimiento</Label>

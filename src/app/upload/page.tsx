@@ -123,24 +123,25 @@ export default function UploadPage() {
       });
       return;
     }
-    if (!selectedVideo) {
+    if (!selectedVideo && !backVideo) {
       toast({
         title: "Error",
-        description: "Debes seleccionar un video primero",
+        description: "Debes subir el video trasero o, si no lo tenés, el frontal.",
         variant: "destructive",
       });
       return;
     }
 
-    // En modo Lite backend puede extraer frames; no forzar aquí
-
-    // Agregar el video y frames al FormData
-    formData.append('video-front', selectedVideo);
+    // Agregar el video principal y ángulos al FormData (preferir back)
+    if (backVideo) {
+      formData.append('video-back', backVideo);
+      if (selectedVideo) formData.append('video-front', selectedVideo);
+    } else if (selectedVideo) {
+      formData.append('video-front', selectedVideo);
+    }
     if (leftVideo) formData.append('video-left', leftVideo);
     if (rightVideo) formData.append('video-right', rightVideo);
-    if (backVideo) formData.append('video-back', backVideo);
-    // Ya no enviamos frames del cliente; el backend extrae con FFmpeg
-    
+
     // Mostrar modal de análisis en curso
     setAnalyzingOpen(true);
     if (analyzingTimerRef.current) {
@@ -154,8 +155,7 @@ export default function UploadPage() {
         description: 'El análisis está tardando más de lo normal. Verifica tu conexión y vuelve a intentar.',
         variant: 'destructive',
       });
-    }, 120000); // 120s watchdog
-    // Llamar a la acción del servidor
+    }, 120000);
     formAction(formData);
   };
 
@@ -363,12 +363,28 @@ export default function UploadPage() {
 
               {/* Información del video */}
               <div className="p-4 bg-blue-50 rounded-lg">
-                <h3 className="font-semibold text-blue-800 mb-2">Video Seleccionado</h3>
+                <h3 className="font-semibold text-blue-800 mb-2">Videos Seleccionados</h3>
                 <p className="text-sm text-blue-600">
-                  <strong>Archivo:</strong> {selectedVideo.name}<br/>
-                  <strong>Tamaño:</strong> {(selectedVideo.size / 1024 / 1024).toFixed(2)} MB<br/>
-                  Los frames clave se generan automáticamente al analizar
+                  {backVideo ? (
+                    <>
+                      <strong>Trasera:</strong> {backVideo.name} — {(backVideo.size / 1024 / 1024).toFixed(2)} MB<br/>
+                      {selectedVideo && (
+                        <>
+                          <strong>Frontal:</strong> {selectedVideo.name} — {(selectedVideo.size / 1024 / 1024).toFixed(2)} MB<br/>
+                        </>
+                      )}
+                    </>
+                  ) : selectedVideo ? (
+                    <>
+                      <strong>Frontal:</strong> {selectedVideo.name} — {(selectedVideo.size / 1024 / 1024).toFixed(2)} MB<br/>
+                    </>
+                  ) : (
+                    <>Aún no seleccionaste video</>
+                  )}
+                  {leftVideo && (<><strong>Lateral Izquierdo:</strong> {leftVideo.name} — {(leftVideo.size / 1024 / 1024).toFixed(2)} MB<br/></>)}
+                  {rightVideo && (<><strong>Lateral Derecho:</strong> {rightVideo.name} — {(rightVideo.size / 1024 / 1024).toFixed(2)} MB<br/></>)}
                 </p>
+                <p className="text-xs text-blue-700 mt-2">Duración recomendada: 40s para Trasera; 30s para Frontal/Laterales.</p>
               </div>
 
 
@@ -389,10 +405,10 @@ export default function UploadPage() {
               <Video className="h-12 w-12 mx-auto mb-2 text-amber-600" />
               <h3 className="font-semibold mb-2">Pasos para el Análisis</h3>
               <ol className="text-sm space-y-1 text-left max-w-md mx-auto">
-                <li>1. Sube o graba el video Frontal (obligatorio)</li>
-                <li>2. Opcional: Sube videos Lateral Izquierdo, Lateral Derecho y Trasera</li>
-                <li>3. Espera la extracción automática de 8 frames clave del frontal</li>
-                <li>4. Completa el tipo de lanzamiento y envía para análisis</li>
+                <li>1. Sube o graba el video Trasero (preferido). Si no lo tenés, subí el Frontal.</li>
+                <li>2. Opcional: agregá Lateral Izquierdo, Lateral Derecho y el que te falte.</li>
+                <li>3. La IA extrae frames de todos los videos por igual.</li>
+                <li>4. Completa el tipo de lanzamiento y envía para análisis.</li>
               </ol>
             </div>
           </CardContent>
@@ -420,9 +436,9 @@ export default function UploadPage() {
           </AlertDialogHeader>
           <div className="text-sm space-y-2">
             <ol className="list-decimal pl-5 space-y-2">
-              <li>Graba ~30 segundos por video e intentá incluir la mayor cantidad de lanzamientos posibles.</li>
+              <li>Graba 40 segundos para la cámara trasera; 30 segundos para las demás.</li>
               <li>Iluminación: buena luz; evitá contraluces fuertes y escenas oscuras.</li>
-              <li>Encuadre: que se vea el cuerpo entero. Si filmás desde atrás, que se vea también el aro.</li>
+              <li>Encuadre: que se vea el cuerpo entero y, desde atrás, el aro para ver la parábola y si entra.</li>
               <li>Estabilidad: apoyá el teléfono o usá trípode; evitá el zoom digital y los movimientos bruscos.</li>
               <li>Orientación: horizontal (apaisado) recomendada.</li>
               <li>Distancia: 4 a 6 metros para que entre el cuerpo completo sin recortes.</li>

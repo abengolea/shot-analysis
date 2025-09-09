@@ -305,7 +305,7 @@ async function processVideoFrames(framesData: string, userId: string, analysisId
     }
 }
 
-async function uploadVideoToStorage(file: File, userId: string): Promise<string> {
+async function uploadVideoToStorage(file: File, userId: string, options: { maxSeconds?: number } = {}): Promise<string> {
     if (!file) {
         throw new Error("No file provided for upload.");
     }
@@ -322,11 +322,11 @@ async function uploadVideoToStorage(file: File, userId: string): Promise<string>
         const bucket = adminStorage.bucket();
         console.log(`🔍 Bucket de Storage: ${bucket.name}`);
         
-        // Convertir File a Buffer y estandarizar a 720p/20fps/<=30s (modo Lite)
+        // Convertir File a Buffer y estandarizar a 720p/20fps con tope de duración
         const arrayBuffer = await file.arrayBuffer();
         const inputBuffer = Buffer.from(arrayBuffer);
         const { outputBuffer, contentType } = await standardizeVideoBuffer(inputBuffer, {
-            maxSeconds: 30,
+            maxSeconds: options.maxSeconds ?? 30,
             targetHeight: 720,
             targetFps: 20,
             dropAudio: false,
@@ -354,7 +354,7 @@ async function uploadVideoToStorage(file: File, userId: string): Promise<string>
                     uploadedBy: userId,
                     originalName: originalName,
                     standardized: 'true',
-                    targetProfile: '720p_20fps_30s_h264_aac',
+                    targetProfile: `720p_20fps_${String(options.maxSeconds ?? 30)}s_h264_aac`,
                     uploadedAt: new Date().toISOString()
                 }
             }
@@ -376,9 +376,9 @@ async function uploadVideoToStorage(file: File, userId: string): Promise<string>
         
         // Manejo específico de errores de bucket
         if (error && typeof error === 'object' && 'code' in error) {
-            if (error.code === 404) {
+            if ((error as any).code === 404) {
                 throw new Error(`Bucket de Storage no encontrado. Verifica la configuración de FIREBASE_ADMIN_STORAGE_BUCKET en .env.local`);
-            } else if (error.code === 403) {
+            } else if ((error as any).code === 403) {
                 throw new Error(`Permisos insuficientes para subir al bucket de Storage. Verifica las reglas de Storage.`);
             }
         }
@@ -416,16 +416,18 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         }
         console.log("✅ shotType recibido:", shotType);
 
-        // Verificar que tenemos video frontal y leer videos opcionales
-        const videoFile = formData.get('video-front') as File;
+        // Verificar que tenemos video trasero preferido o frontal como alternativa, y leer videos opcionales
+        const formBack = formData.get('video-back') as File | null;
+        const formFront = formData.get('video-front') as File | null;
         const videoLeft = formData.get('video-left') as File | null;
         const videoRight = formData.get('video-right') as File | null;
-        const videoBack = formData.get('video-back') as File | null;
-        if (!videoFile || videoFile.size === 0) {
-            console.log("❌ No se recibió video válido");
-            return { message: "Video frontal es requerido.", error: true };
+        const primaryFile: File | null = (formBack && formBack.size > 0) ? formBack : (formFront && formFront.size > 0 ? formFront : null);
+        const primaryIsBack = !!(formBack && formBack.size > 0);
+        if (!primaryFile) {
+            console.log("❌ No se recibió video válido (trasero o frontal)");
+            return { message: "Video trasero es obligatorio (si no tenés, subí el frontal).", error: true };
         }
-        console.log("✅ Video recibido:", videoFile.name, "Tamaño:", videoFile.size);
+        console.log("✅ Video principal recibido:", primaryFile.name, "Tamaño:", primaryFile.size, "Ángulo:", primaryIsBack ? 'back' : 'front');
 
         // Frames del cliente ya no son necesarios; el backend extrae con FFmpeg
         const framesData = (formData.get('frames') as string) || '[]';
@@ -503,27 +505,34 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         const billing = billingInfo as { type: 'free' | 'credit'; year: number };
         console.log('✅ Permiso de análisis otorgado vía', billing.type);
 
-        // Subir videos
-        console.log("📤 Subiendo video frontal...");
-        const videoPath = await uploadVideoToStorage(videoFile, currentUser.id);
-        console.log("✅ Video frontal subido a:", videoPath);
+        // Subir videos (principal: back 40s si existe, sino front 30s; laterales y el restante a 30s)
+        console.log("📤 Subiendo video principal...");
+        const primaryMaxSeconds = primaryIsBack ? 40 : 30;
+        const videoPath = await uploadVideoToStorage(primaryFile, currentUser.id, { maxSeconds: primaryMaxSeconds });
+        console.log("✅ Video principal subido a:", videoPath);
+        let videoFrontUrl: string | null = primaryIsBack ? null : videoPath;
+        let videoBackUrl: string | null = primaryIsBack ? videoPath : null;
         let videoLeftUrl: string | null = null;
         let videoRightUrl: string | null = null;
-        let videoBackUrl: string | null = null;
         if (videoLeft && videoLeft.size > 0) {
             console.log("📤 Subiendo video lateral izquierdo...");
-            videoLeftUrl = await uploadVideoToStorage(videoLeft, currentUser.id);
+            videoLeftUrl = await uploadVideoToStorage(videoLeft, currentUser.id, { maxSeconds: 30 });
             console.log("✅ Lateral izquierdo:", videoLeftUrl);
         }
         if (videoRight && videoRight.size > 0) {
             console.log("📤 Subiendo video lateral derecho...");
-            videoRightUrl = await uploadVideoToStorage(videoRight, currentUser.id);
+            videoRightUrl = await uploadVideoToStorage(videoRight, currentUser.id, { maxSeconds: 30 });
             console.log("✅ Lateral derecho:", videoRightUrl);
         }
-        if (videoBack && videoBack.size > 0) {
-            console.log("📤 Subiendo video trasero...");
-            videoBackUrl = await uploadVideoToStorage(videoBack, currentUser.id);
-            console.log("✅ Trasero:", videoBackUrl);
+        if (primaryIsBack === false && formBack && formBack.size > 0) {
+            console.log("📤 Subiendo video trasero adicional...");
+            videoBackUrl = await uploadVideoToStorage(formBack, currentUser.id, { maxSeconds: 40 });
+            console.log("✅ Trasero adicional:", videoBackUrl);
+        }
+        if (primaryIsBack === true && formFront && formFront.size > 0) {
+            console.log("📤 Subiendo video frontal adicional...");
+            videoFrontUrl = await uploadVideoToStorage(formFront, currentUser.id, { maxSeconds: 30 });
+            console.log("✅ Frontal adicional:", videoFrontUrl);
         }
 
         // Guardar análisis
@@ -532,6 +541,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             playerId: currentUser.id,
             shotType: shotType,
             videoUrl: videoPath,
+            videoFrontUrl: videoFrontUrl,
             videoLeftUrl: videoLeftUrl,
             videoRightUrl: videoRightUrl,
             videoBackUrl: videoBackUrl,
@@ -547,14 +557,15 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         console.log("📊 Datos del análisis a guardar:", analysisData);
         const analysisRef = await db.collection('analyses').add(analysisData);
         console.log(`✅ Análisis guardado en Firestore, ID: ${analysisRef.id}`);
-        
+
         // Rango confirmado desde el cliente (opcional)
         const rangeStart = Number(formData.get('rangeStart') || '0') || 0;
         const rangeEnd = Number(formData.get('rangeEnd') || '0');
         const hasRange = rangeEnd > rangeStart + 0.05;
 
-        // PROCESAR FRAMES REALES DEL VIDEO (preferir backend con FFmpeg; fallback: frames del cliente)
-        console.log("🎬 Procesando frames del video...");
+        // PROCESAR FRAMES REALES DEL VIDEO (igualitario por ángulo)
+        try {
+        console.log("🎬 Procesando frames del video (todos los ángulos disponibles)...");
         let keyframeUrls: { front: string[], back: string[], left: string[], right: string[] } = { 
             front: [], 
             back: [], 
@@ -565,230 +576,191 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         let keyframesForAI: Array<{ index: number; timestamp: number; description: string }> = [];
         
         try {
-            // Intentar extraer keyframes en backend desde el video estandarizado (más robusto)
-            const keyframesFromBackendFront = await (async () => {
-                try {
-                    const bucket = adminStorage!.bucket();
-                    const file = bucket.file(`videos/${currentUser.id}/${videoPath.split('/').pop()}`);
-                    const [buf] = await file.download();
-                    const extracted = await extractKeyframesFromBuffer(buf, 16);
-                    // Subir cada frame a Storage público
-                    const uploadedUrls: string[] = [];
-                    for (const kf of extracted) {
-                        const kfName = `kf_${kf.index}_${Date.now()}.jpg`;
-                        const storagePath = `keyframes/${currentUser.id}/${analysisRef.id}/${kfName}`;
-                        await bucket.file(storagePath).save(kf.imageBuffer, { metadata: { contentType: 'image/jpeg' } });
-                        await bucket.file(storagePath).makePublic();
-                        uploadedUrls.push(`https://storage.googleapis.com/${process.env.FIREBASE_ADMIN_STORAGE_BUCKET}/${storagePath}`);
-                    }
-                    return { urls: uploadedUrls, ai: extracted.map((e, i) => ({ index: i, timestamp: e.timestamp, description: `Frame ${i+1}` })) };
-                } catch (e) {
-                    console.warn('⚠️ Backend keyframe extraction failed (front), will fallback to client frames if available.', e);
-                    return null;
-                }
-            })();
-
-            // Extraer para otros ángulos si existen
-            const extractForAngle = async (angleUrl: string | null, angleKey: 'left'|'right'|'back') => {
+            const bucket = adminStorage!.bucket();
+            // Helper para extraer y subir
+            const extractAndUpload = async (angleUrl: string | null, angleKey: 'front'|'back'|'left'|'right', framesCount: number) => {
                 if (!angleUrl) return [] as string[];
-                try {
-                    const bucket = adminStorage!.bucket();
-                    const file = bucket.file(`videos/${currentUser.id}/${angleUrl.split('/').pop()}`);
-                    const [buf] = await file.download();
-                    const extracted = await extractKeyframesFromBuffer(buf, 12);
-                    const uploadedUrls: string[] = [];
-                    for (const kf of extracted) {
-                        const kfName = `kf_${angleKey}_${kf.index}_${Date.now()}.jpg`;
-                        const storagePath = `keyframes/${currentUser.id}/${analysisRef.id}/${kfName}`;
-                        await bucket.file(storagePath).save(kf.imageBuffer, { metadata: { contentType: 'image/jpeg' } });
-                        await bucket.file(storagePath).makePublic();
-                        uploadedUrls.push(`https://storage.googleapis.com/${process.env.FIREBASE_ADMIN_STORAGE_BUCKET}/${storagePath}`);
-                    }
-                    return uploadedUrls;
-                } catch (e) {
-                    console.warn(`⚠️ Backend keyframe extraction failed for ${angleKey}`, e);
-                    return [] as string[];
-                }
-            };
-
-            let framesForDetection: Array<{ index: number; timestamp: number; url: string }> = [];
-            if (keyframesFromBackendFront && keyframesFromBackendFront.urls.length > 0) {
-                keyframeUrls.front = keyframesFromBackendFront.urls;
-                keyframesForAI = keyframesFromBackendFront.ai;
-                framesForDetection = keyframesFromBackendFront.urls.map((url, i) => ({ index: i, timestamp: keyframesForAI[i]?.timestamp ?? i, url }));
-            } else {
-                // Fallback a frames del cliente (solo frontal)
-                const framesResult = await processVideoFrames(framesData, currentUser.id, analysisRef.id);
-                keyframeUrls.front = framesResult.keyframeUrls.front;
-                keyframesForAI = framesResult.keyframesForAI;
-                framesForDetection = framesResult.framesForAIDetection.map((f) => ({ index: f.index, timestamp: f.timestamp, url: f.url }));
-            }
-
-            // Extraer para laterales y trasero si hay videos
-            keyframeUrls.left = await extractForAngle(videoLeftUrl, 'left');
-            keyframeUrls.right = await extractForAngle(videoRightUrl, 'right');
-            keyframeUrls.back = await extractForAngle(videoBackUrl, 'back');
-
-            // Segmentar intentos con heurística Lite sobre el video estandarizado
-            let attempts: Array<{ start: number; end: number }> = [];
-            try {
-                const bucket = adminStorage!.bucket();
-                const file = bucket.file(`videos/${currentUser.id}/${videoPath.split('/').pop()}`);
+                const file = bucket.file(`videos/${currentUser.id}/${angleUrl.split('/').pop()}`);
                 const [buf] = await file.download();
-                // 1) segmentación heurística inicial
-                const heurBase = await segmentAttemptsByMotionFromBuffer(buf, { fps: 6, minSeparationSec: 1.0, peakStd: 2.2 });
-                const heur = hasRange ? [{ start: Math.max(0, rangeStart), end: Math.max(rangeStart + 0.1, rangeEnd) }] : heurBase;
-                // 2) para cada segmento, pedir a la IA inicio/fin precisos con thumbnails
-                const refined: Array<{ start: number; end: number }> = [];
-                for (const w of heur.length ? heur : [{ start: 0, end: Math.min(30, 3) }]) {
-                    const thumbsStart = await extractFramesBetweenDataUrlsFromBuffer(buf, Math.max(0, w.start - 0.5), w.start + 1.0, 8);
-                    const thumbsEnd = await extractFramesBetweenDataUrlsFromBuffer(buf, Math.max(w.start, (w.end || w.start) - 1.0), (w.end || w.start), 8);
-                    let startTs = w.start;
-                    let endTs = w.end;
-                    try {
-                        const { detectStartFrame } = await import('@/ai/flows/detect-start-frame');
-                        const ds = await detectStartFrame({ frames: thumbsStart, shotType: shotType });
-                        startTs = ds.startTimestamp;
-                    } catch {}
-                    try {
-                        const { detectEndFrame } = await import('@/ai/flows/detect-end-frame');
-                        const de = await detectEndFrame({ frames: thumbsEnd, shotType: shotType });
-                        endTs = de.endTimestamp;
-                    } catch {}
-                    // sanity: siempre recortar al rango confirmado si existe
-                    if (hasRange) {
-                        startTs = Math.max(rangeStart, startTs);
-                        endTs = Math.min(rangeEnd, endTs);
-                    }
-                    if (!(endTs > startTs)) {
-                        endTs = Math.max(startTs + 0.6, hasRange ? rangeEnd : (w.end || startTs + 0.6));
-                    }
-                    refined.push({ start: Math.max(0, startTs), end: endTs });
+                const extracted = await extractKeyframesFromBuffer(buf, framesCount);
+                const uploadedUrls: string[] = [];
+                for (const kf of extracted) {
+                    const kfName = `kf_${angleKey}_${kf.index}_${Date.now()}.jpg`;
+                    const storagePath = `keyframes/${currentUser.id}/${analysisRef.id}/${kfName}`;
+                    await bucket.file(storagePath).save(kf.imageBuffer, { metadata: { contentType: 'image/jpeg' } });
+                    await bucket.file(storagePath).makePublic();
+                    uploadedUrls.push(`https://storage.googleapis.com/${process.env.FIREBASE_ADMIN_STORAGE_BUCKET}/${storagePath}`);
                 }
-                // ordenar y fusionar solapes mínimos
-                refined.sort((a, b) => a.start - b.start);
-                const merged: Array<{ start: number; end: number }> = [];
-                for (const r of refined) {
-                    if (!merged.length || r.start > merged[merged.length - 1].end - 0.1) {
-                        merged.push({ ...r });
-                    } else {
-                        merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, r.end);
-                    }
+                return uploadedUrls;
+            };
+
+            // Extraer para todos los ángulos disponibles
+            keyframeUrls.front = await extractAndUpload(videoFrontUrl, 'front', 12);
+            keyframeUrls.back  = await extractAndUpload(videoBackUrl,  'back',  12);
+            keyframeUrls.left  = await extractAndUpload(videoLeftUrl,  'left',  12);
+            keyframeUrls.right = await extractAndUpload(videoRightUrl, 'right', 12);
+
+            // Para IA: usar keyframes del video principal como referencia temporal
+            const primaryFileRef = bucket.file(`videos/${currentUser.id}/${videoPath.split('/').pop()}`);
+            const [primaryBuf] = await primaryFileRef.download();
+            const primaryExtracted = await extractKeyframesFromBuffer(primaryBuf, 16);
+            keyframesForAI = primaryExtracted.map((e, i) => ({ index: i, timestamp: e.timestamp, description: `Frame ${i+1}` }));
+
+            // Si no hay nada en algún ángulo pero el principal existe, no copiamos; dejamos vacío para respetar "igualitario" (no inventar)
+        } catch (e) {
+            console.warn('⚠️ Extracción de keyframes falló parcialmente. Continuando con lo disponible.', e);
+        }
+
+        // Segmentar intentos con heurística Lite sobre el video principal estandarizado
+        let attempts: Array<{ start: number; end: number }> = [];
+        try {
+            const bucket = adminStorage!.bucket();
+            const file = bucket.file(`videos/${currentUser.id}/${videoPath.split('/').pop()}`);
+            const [buf] = await file.download();
+            const heurBase = await segmentAttemptsByMotionFromBuffer(buf, { fps: 6, minSeparationSec: 1.0, peakStd: 2.2 });
+            const heur = hasRange ? [{ start: Math.max(0, rangeStart), end: Math.max(rangeStart + 0.1, rangeEnd) }] : heurBase;
+            const refined: Array<{ start: number; end: number }> = [];
+            for (const w of heur.length ? heur : [{ start: 0, end: Math.min(30, 3) }]) {
+                const thumbsStart = await extractFramesBetweenDataUrlsFromBuffer(buf, Math.max(0, w.start - 0.5), w.start + 1.0, 8);
+                const thumbsEnd = await extractFramesBetweenDataUrlsFromBuffer(buf, Math.max(w.start, (w.end || w.start) - 1.0), (w.end || w.start), 8);
+                let startTs = w.start;
+                let endTs = w.end;
+                try {
+                    const { detectStartFrame } = await import('@/ai/flows/detect-start-frame');
+                    const ds = await detectStartFrame({ frames: thumbsStart, shotType: shotType });
+                    startTs = ds.startTimestamp;
+                } catch {}
+                try {
+                    const { detectEndFrame } = await import('@/ai/flows/detect-end-frame');
+                    const de = await detectEndFrame({ frames: thumbsEnd, shotType: shotType });
+                    endTs = de.endTimestamp;
+                } catch {}
+                if (hasRange) {
+                    startTs = Math.max(rangeStart, startTs);
+                    endTs = Math.min(rangeEnd, endTs);
                 }
-                attempts = merged;
-            } catch (e) {
-                console.warn('⚠️ No se pudo segmentar intentos con IA (modo normal). Usando fallback si aplica.', e);
+                if (!(endTs > startTs)) {
+                    endTs = Math.max(startTs + 0.6, hasRange ? rangeEnd : (w.end || startTs + 0.6));
+                }
+                refined.push({ start: Math.max(0, startTs), end: endTs });
             }
+            refined.sort((a, b) => a.start - b.start);
+            const merged: Array<{ start: number; end: number }> = [];
+            for (const r of refined) {
+                if (!merged.length || r.start > merged[merged.length - 1].end - 0.1) {
+                    merged.push({ ...r });
+                } else {
+                    merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, r.end);
+                }
+            }
+            attempts = merged;
+        } catch (e) {
+            console.warn('⚠️ No se pudo segmentar intentos con IA (modo normal). Usando fallback si aplica.', e);
+        }
 
-            // Intentar detectar el frame inicial con IA usando los frames subidos
-            let detectedStartIndex: number | null = null;
-            let detectedStartTimestamp: number | null = null;
-            try {
-                const { detectStartFrame } = await import('@/ai/flows/detect-start-frame');
-                const detection = await detectStartFrame({
-                    frames: framesForDetection.map((f) => ({ ...f, dataUrl: 'data:image/jpeg;base64,' })),
-                    shotType: shotType,
-                });
-                detectedStartIndex = detection.startIndex;
-                detectedStartTimestamp = detection.startTimestamp;
-                console.log('🤖 IA detectó inicio en frame', detectedStartIndex, 'ts', detectedStartTimestamp, 'conf', detection.confidence);
-            } catch (detErr) {
-                console.warn('⚠️ No se pudo ejecutar la detección IA de inicio:', detErr);
-            }
-            
-            console.log("✅ Frames reales procesados exitosamente");
-            
-            // EJECUTAR ANÁLISIS DE IA CON FRAMES REALES
-            console.log("🤖 Iniciando análisis de IA con frames reales...");
-            const { analyzeBasketballShot } = await import('@/ai/flows/analyze-basketball-shot');
-            
-            // Mapear los campos correctamente para la IA
-            const ageCategory = mapAgeGroupToCategory(currentUser.ageGroup || 'Amateur');
-            const playerLevel = mapPlayerLevel(currentUser.playerLevel || 'Principiante');
-            
-            console.log("📹 Analizando video con IA...");
-            console.log("🔍 Parámetros para IA:", {
-                videoUrl: videoPath,
+        // Intentar detectar el frame inicial con IA usando los frames del principal
+        let detectedStartIndex: number | null = null;
+        let detectedStartTimestamp: number | null = null;
+        try {
+            const { detectStartFrame } = await import('@/ai/flows/detect-start-frame');
+            const detection = await detectStartFrame({
+                frames: keyframesForAI.slice(0, 8).map((f) => ({ index: f.index, timestamp: f.timestamp, url: '', dataUrl: 'data:image/jpeg;base64,' })),
                 shotType: shotType,
-                ageCategory: ageCategory,
-                playerLevel: playerLevel,
-                availableKeyframes: keyframesForAI
             });
-            
-            const analysisResult = await analyzeBasketballShot({
-                videoUrl: videoPath,
-                shotType: shotType,
-                ageCategory: ageCategory, // already mapped to correct type
-                playerLevel: playerLevel, // already mapped to correct type
-                availableKeyframes: Array.isArray(keyframesForAI) ? keyframesForAI : []
-            });
-            console.log("✅ Análisis de IA completado con selección de frames reales:", analysisResult);
-            
-            // Selección de IA (frontal). Fallback: si no hay selección, usar todos los extraídos por ángulo
-            const selectedFront = (analysisResult.selectedKeyframes || [])
-                .map((index: number) => keyframeUrls.front[index])
-                .filter(Boolean);
-            const selectedKeyframeUrls = {
-                front: selectedFront.length > 0 ? selectedFront : keyframeUrls.front,
-                back: keyframeUrls.back,
-                left: keyframeUrls.left,
-                right: keyframeUrls.right,
-            };
-            
-            console.log("🎯 Frames seleccionados por la IA:", analysisResult.selectedKeyframes);
-            
-            // Calcular score promedio 1..5 a partir del checklist
-            const mapStatusToRating = (s?: string): number | null => {
-                if (!s) return null;
-                if (s === 'Incorrecto') return 1;
-                if (s === 'Incorrecto leve') return 2;
-                if (s === 'Mejorable') return 3;
-                if (s === 'Correcto') return 4;
-                if (s === 'Excelente') return 5;
-                return null;
-            };
-            const allRatings: number[] = (analysisResult.detailedChecklist || [])
-              .flatMap((c: any) => c.items || [])
-              .map((it: any) => (typeof it.rating === 'number' ? it.rating : mapStatusToRating(it.status)))
-              .filter((v: any) => typeof v === 'number');
-            const score: number | null = allRatings.length > 0 ? Number((allRatings.reduce((a:number,b:number)=>a+b,0)/allRatings.length).toFixed(2)) : null;
-            const scoreLabel = (r:number) => r>=4.5?'Excelente':r>=4?'Correcto':r>=3?'Mejorable':r>=2?'Incorrecto leve':'Incorrecto';
+            detectedStartIndex = detection.startIndex;
+            detectedStartTimestamp = detection.startTimestamp;
+            console.log('🤖 IA detectó inicio en frame', detectedStartIndex, 'ts', detectedStartTimestamp, 'conf', detection.confidence);
+        } catch (detErr) {
+            console.warn('⚠️ No se pudo ejecutar la detección IA de inicio:', detErr);
+        }
+        
+        console.log("✅ Frames procesados exitosamente");
+        
+        // EJECUTAR ANÁLISIS DE IA
+        console.log("🤖 Iniciando análisis de IA...");
+        const { analyzeBasketballShot } = await import('@/ai/flows/analyze-basketball-shot');
+        
+        // Mapear los campos correctamente para la IA
+        const ageCategory = mapAgeGroupToCategory(currentUser.ageGroup || 'Amateur');
+        const playerLevel = mapPlayerLevel(currentUser.playerLevel || 'Principiante');
+        
+        console.log("📹 Analizando video con IA...");
+        console.log("🔍 Parámetros para IA:", {
+            videoUrl: videoPath,
+            shotType: shotType,
+            ageCategory: ageCategory,
+            playerLevel: playerLevel,
+            availableKeyframes: keyframesForAI
+        });
+        
+        const analysisResult = await analyzeBasketballShot({
+            videoUrl: videoPath,
+            shotType: shotType,
+            ageCategory: ageCategory,
+            playerLevel: playerLevel,
+            availableKeyframes: Array.isArray(keyframesForAI) ? keyframesForAI : []
+        });
+        console.log("✅ Análisis de IA completado:", analysisResult);
+        
+        // Ensamblar keyframes por ángulo (igualitario)
+        const selectedKeyframeUrls = {
+            front: keyframeUrls.front,
+            back: keyframeUrls.back,
+            left: keyframeUrls.left,
+            right: keyframeUrls.right,
+        };
+        
+        // Calcular score
+        const mapStatusToRating = (s?: string): number | null => {
+            if (!s) return null;
+            if (s === 'Incorrecto') return 1;
+            if (s === 'Incorrecto leve') return 2;
+            if (s === 'Mejorable') return 3;
+            if (s === 'Correcto') return 4;
+            if (s === 'Excelente') return 5;
+            return null;
+        };
+        const allRatings: number[] = (analysisResult.detailedChecklist || [])
+          .flatMap((c: any) => c.items || [])
+          .map((it: any) => (typeof it.rating === 'number' ? it.rating : mapStatusToRating(it.status)))
+          .filter((v: any) => typeof v === 'number');
+        const score: number | null = allRatings.length > 0 ? Number((allRatings.reduce((a:number,b:number)=>a+b,0)/allRatings.length).toFixed(2)) : null;
+        const scoreLabel = (r:number) => r>=4.5?'Excelente':r>=4?'Correcto':r>=3?'Mejorable':r>=2?'Incorrecto leve':'Incorrecto';
 
-            // Actualizar el análisis con los resultados de IA y frames seleccionados
-            if (db) {
-                await db.collection('analyses').doc(analysisRef.id).update({
-                    status: 'analyzed',
-                    analysisResult: analysisResult,
-                    // Copiamos el checklist al nivel superior para facilitar el render
-                    detailedChecklist: analysisResult.detailedChecklist || [],
-                    keyframes: selectedKeyframeUrls,
-                    score: score,
-                    scoreLabel: score != null ? scoreLabel(score) : null,
-                    attempts: attempts,
-                    startFrameDetection: detectedStartIndex != null ? {
-                        index: detectedStartIndex,
-                        timestamp: detectedStartTimestamp,
-                    } : null,
-                    keyframeAnalysis: analysisResult.keyframeAnalysis,
-                    updatedAt: new Date().toISOString()
-                });
-            }
-            
-            console.log("✅ Análisis actualizado con resultados de IA y frames reales seleccionados");
-            
-            const finalResult = { 
-                message: "Video analizado exitosamente con IA usando frames reales. Revisa los resultados.",
-                analysisId: analysisRef.id,
-                videoUrl: videoPath,
-                shotType: shotType,
+        // Actualizar el análisis con resultados
+        if (db) {
+            await db.collection('analyses').doc(analysisRef.id).update({
                 status: 'analyzed',
                 analysisResult: analysisResult,
-                redirectTo: '/dashboard'
-            };
-            
-            console.log("🎯 Resultado final con IA y frames reales:", finalResult);
-            return finalResult;
-            
+                detailedChecklist: analysisResult.detailedChecklist || [],
+                keyframes: selectedKeyframeUrls,
+                score: score,
+                scoreLabel: score != null ? scoreLabel(score) : null,
+                attempts: attempts,
+                startFrameDetection: detectedStartIndex != null ? {
+                    index: detectedStartIndex,
+                    timestamp: detectedStartTimestamp,
+                } : null,
+                keyframeAnalysis: analysisResult.keyframeAnalysis,
+                updatedAt: new Date().toISOString()
+            });
+        }
+        
+        console.log("✅ Análisis actualizado con resultados de IA y frames por ángulo");
+        
+        const finalResult = { 
+            message: "Video analizado exitosamente con IA.",
+            analysisId: analysisRef.id,
+            videoUrl: videoPath,
+            shotType: shotType,
+            status: 'analyzed',
+            analysisResult: analysisResult,
+            redirectTo: '/dashboard'
+        };
+        
+        console.log("🎯 Resultado final:", finalResult);
+        return finalResult;
+        
         } catch (framesError) {
             console.error("❌ Error procesando frames reales:", framesError);
             console.log("⚠️ Continuando sin frames...");
