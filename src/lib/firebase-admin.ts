@@ -7,7 +7,14 @@ import { getStorage as getAdminStorage, Storage as AdminStorage } from 'firebase
 
 // Configuración del proyecto
 const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID || "shotanalisys";
-const storageBucket = process.env.FIREBASE_ADMIN_STORAGE_BUCKET || "shotanalisys.appspot.com";
+// Usar la variable de entorno del .env.local
+const storageBucket = process.env.FIREBASE_ADMIN_STORAGE_BUCKET || "shotanalisys.firebasestorage.app";
+
+console.log("🔍 Firebase Admin - Variables de entorno:");
+console.log("  - FIREBASE_ADMIN_PROJECT_ID:", process.env.FIREBASE_ADMIN_PROJECT_ID);
+console.log("  - FIREBASE_ADMIN_STORAGE_BUCKET:", process.env.FIREBASE_ADMIN_STORAGE_BUCKET);
+console.log("  - FIREBASE_ADMIN_CLIENT_EMAIL:", process.env.FIREBASE_ADMIN_CLIENT_EMAIL ? "✅ Configurado" : "❌ No configurado");
+console.log("  - FIREBASE_ADMIN_PRIVATE_KEY:", process.env.FIREBASE_ADMIN_PRIVATE_KEY ? "✅ Configurado" : "❌ No configurado");
 
 // Initialize Firebase Admin SDK for the server
 let adminApp: AdminApp | undefined;
@@ -28,10 +35,17 @@ try {
       storageBucket,
     };
 
+    console.log("🔍 Firebase Admin - Configuración:");
+    console.log("  - projectId:", projectId);
+    console.log("  - storageBucket:", storageBucket);
+    console.log("  - ✅ Usando bucket de .env.local:", storageBucket);
+
     if (getAdminApps().length === 0) {
       adminApp = initializeAdminApp(firebaseAdminConfig);
+      console.log("✅ Firebase Admin App creado");
     } else {
       adminApp = getAdminApp();
+      console.log("✅ Firebase Admin App obtenido existente");
     }
     
     console.log("✅ Firebase Admin SDK inicializado correctamente");
@@ -45,6 +59,22 @@ try {
     adminDb = getAdminFirestore(adminApp);
     adminStorage = getAdminStorage(adminApp);
     console.log("✅ Servicios de Firebase Admin inicializados");
+    
+    // Verificar que adminStorage esté disponible
+    if (adminStorage) {
+      const bucket = adminStorage.bucket();
+      console.log("✅ Admin Storage disponible, bucket:", bucket.name);
+      console.log("🔍 Verificando bucket name:", bucket.name);
+      
+      // Verificar que el bucket sea el correcto
+      if (bucket.name === "shotanalisys.firebasestorage.app") {
+        console.log("✅ Bucket correcto configurado!");
+      } else {
+        console.error("❌ BUCKET INCORRECTO! Esperado: shotanalisys.firebasestorage.app, Actual:", bucket.name);
+      }
+    } else {
+      console.error("❌ Admin Storage NO está disponible");
+    }
   }
 
 } catch (error) {

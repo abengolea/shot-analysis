@@ -16,34 +16,27 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, MessageSquare, Send, UserCheck } from "lucide-react";
-import { moderateAndAddComment } from "@/app/actions";
+// import { moderateAndAddComment } from "@/app/actions";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
 
 function CommentForm({ analysisId }: { analysisId: string }) {
-    const [state, formAction] = useActionState(moderateAndAddComment, { message: "" });
-    const { pending } = useFormStatus();
+    // TODO: Implementar funcionalidad de comentarios
+    // const [state, formAction] = useActionState(moderateAndAddComment, { message: "" });
+    // const { pending } = useFormStatus();
 
     return (
-        <form action={formAction} className="grid w-full gap-2">
-            <input type="hidden" name="analysisId" value={analysisId} />
-            <Textarea placeholder="Escribe tu mensaje aquí." name="comment" />
-            {state?.message && <p className={`text-sm ${state.comment ? 'text-green-600' : 'text-destructive'}`}>{state.message}</p>}
-            <Button type="submit" disabled={pending}>
-                {pending ? (
-                    <>
-                        <Send className="mr-2 h-4 w-4 animate-pulse" />
-                        Enviando...
-                    </>
-                ) : (
-                    <>
-                        <Send className="mr-2 h-4 w-4" />
-                        Publicar Comentario
-                    </>
-                )}
+        <div className="grid w-full gap-2 p-4 border rounded-lg bg-muted/50">
+            <p className="text-sm text-muted-foreground">
+                Funcionalidad de comentarios en desarrollo
+            </p>
+            <Textarea placeholder="Escribe tu mensaje aquí." name="comment" disabled />
+            <Button disabled>
+                <Send className="mr-2 h-4 w-4" />
+                Publicar Comentario
             </Button>
-        </form>
+        </div>
     );
 }
 

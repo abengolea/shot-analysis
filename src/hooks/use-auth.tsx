@@ -83,6 +83,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
       
+      // Marcar el status como 'active' al confirmar email verificado
+      try {
+        // Intentar actualizar en players; si no existe, en coaches
+        const playerRef = doc(db, 'players', user.uid);
+        const playerSnap = await getDoc(playerRef);
+        if (playerSnap.exists()) {
+          await setDoc(playerRef, { status: 'active', updatedAt: new Date() }, { merge: true });
+        } else {
+          const coachRef = doc(db, 'coaches', user.uid);
+          const coachSnap = await getDoc(coachRef);
+          if (coachSnap.exists()) {
+            await setDoc(coachRef, { status: 'active', updatedAt: new Date() }, { merge: true });
+          }
+        }
+      } catch (e) {
+        console.warn('No se pudo actualizar el status a active:', e);
+      }
+
       return { success: true, message: 'Inicio de sesión exitoso' };
     } catch (error: any) {
       console.error('Error de inicio de sesión:', error);

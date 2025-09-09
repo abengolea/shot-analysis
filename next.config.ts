@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '100mb',
+    },
+  },
   webpack: (config, { isServer }) => {
     if (!isServer) {
       // Configuración para el lado del cliente
@@ -26,8 +31,16 @@ const nextConfig: NextConfig = {
         assert: false,
         os: false,
         path: false,
+        canvas: false,
       };
     }
+    
+    // Resolver problemas con Konva
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'canvas': false,
+    };
+    
     return config;
   },
   images: {
@@ -38,7 +51,42 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'storage.googleapis.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
+  },
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+                     {
+             key: 'Content-Security-Policy',
+             value: [
+               "default-src 'self'",
+               "script-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost:9999 https://localhost:9999",
+               "script-src-elem 'self' 'unsafe-eval' 'unsafe-inline' http://localhost:9999 https://localhost:9999",
+               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+               "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
+               "img-src 'self' data: https: blob:",
+               "font-src 'self' data: https://fonts.gstatic.com",
+               "connect-src 'self' https: wss: http://localhost:9999 https://localhost:9999",
+               "media-src 'self' https: blob:",
+               "object-src 'none'",
+               "base-uri 'self'",
+               "form-action 'self'",
+               "frame-ancestors 'none'",
+               "worker-src 'self' blob:",
+               "child-src 'self' blob:",
+             ].join('; '),
+           },
+        ],
+      },
+    ];
   },
 };
 

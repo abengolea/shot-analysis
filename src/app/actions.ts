@@ -3,437 +3,871 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { analyzeBasketballShot, type AnalyzeBasketballShotOutput } from "@/ai/flows/analyze-basketball-shot";
-import { generatePersonalizedDrills, type GeneratePersonalizedDrillsOutput } from "@/ai/flows/generate-personalized-drills";
-import { moderateContent } from '@/ai/flows/content-moderation';
-import type { Coach, Player, DetailedChecklistItem } from "@/lib/types";
-import { auth, db, storage } from '@/lib/firebase';
 import { adminAuth, adminDb, adminStorage } from '@/lib/firebase-admin';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, addDoc, collection, getDoc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { Readable } from 'stream';
+// Acción: añadir entrenador desde el formulario de registro de coaches
+const AddCoachSchema = z.object({
+    name: z.string().min(2, "Nombre demasiado corto"),
+    experience: z.string().min(10, "Describe mejor la experiencia"),
+    ratePerAnalysis: z.coerce.number().min(0, "Tarifa inválida"),
+    avatarUrl: z.string().url("URL inválida").optional().or(z.literal("").transform(() => undefined)),
+});
 
-// Assume we know who the logged-in user is. For now, it's the first player.
-const getCurrentUser = async () => {
-    // This is a placeholder. In a real app, you'd get this from the session.
-    // For now, we will rely on client side auth checks.
-    if (auth.currentUser) {
-        // NOTE: This will only work in environments where auth state is persisted across server actions
-        // which might not be the case here. This is a simplification.
-        // A real implementation would use session cookies or JWTs.
-        const playerDoc = await getDoc(doc(db, "players", auth.currentUser.uid));
-        if (playerDoc.exists()) {
-             return { id: auth.currentUser.uid, ...playerDoc.data() } as Player;
+type AddCoachState = {
+    success: boolean;
+    message: string;
+    errors?: Record<string, string[]>;
+};
+
+export async function addCoach(prevState: AddCoachState, formData: FormData): Promise<AddCoachState> {
+    try {
+        if (!adminDb) {
+            return { success: false, message: 'Servidor sin Admin SDK' };
         }
+        const parsed = AddCoachSchema.safeParse({
+            name: String(formData.get('name') || ''),
+            experience: String(formData.get('experience') || ''),
+            ratePerAnalysis: formData.get('ratePerAnalysis'),
+            avatarUrl: String(formData.get('avatarUrl') || ''),
+        });
+        if (!parsed.success) {
+            const fieldErrors: Record<string, string[]> = {};
+            for (const [key, val] of Object.entries(parsed.error.flatten().fieldErrors)) {
+                if (val && val.length) fieldErrors[key] = val as string[];
+            }
+            return { success: false, message: 'Revisa los campos del formulario.', errors: fieldErrors };
+        }
+
+        const data = parsed.data;
+        const nowIso = new Date().toISOString();
+        const payload = {
+            name: data.name,
+            experience: data.experience,
+            ratePerAnalysis: Number(data.ratePerAnalysis),
+            avatarUrl: data.avatarUrl || null,
+            status: 'pending',
+            createdAt: nowIso,
+            updatedAt: nowIso,
+        } as const;
+
+        await adminDb.collection('coaches').add(payload as any);
+        return { success: true, message: 'Entrenador agregado correctamente.' };
+    } catch (e) {
+        console.error('Error agregando entrenador:', e);
+        return { success: false, message: 'No se pudo agregar el entrenador.' };
     }
-    // Fallback to a mock user if no one is logged in on the client.
-    // This part of the code might not be reached if UI prevents unauthed access.
-    const fallbackPlayerDoc = await getDoc(doc(db, "players", "1"));
-    if (fallbackPlayerDoc.exists()) {
-        return { id: "1", ...fallbackPlayerDoc.data() } as Player;
+}
+// Regalar créditos (análisis) a un jugador desde el panel admin
+export async function giftAnalyses(_prevState: any, formData: FormData) {
+    try {
+        const userId = String(formData.get('userId') || '');
+        const count = Number(formData.get('count') || 0);
+        if (!userId || !count || count <= 0) {
+            return { success: false, message: 'Parámetros inválidos' };
+        }
+        if (!adminDb) {
+            return { success: false, message: 'Servidor sin Admin SDK' };
+        }
+        const db = adminDb!;
+        const nowIso = new Date().toISOString();
+        await db.runTransaction(async (tx: any) => {
+            const walletRef = db.collection('wallets').doc(userId);
+            const walletSnap = await tx.get(walletRef);
+            const base = walletSnap.exists ? walletSnap.data() : {
+                userId,
+                credits: 0,
+                freeAnalysesUsed: 0,
+                yearInUse: new Date().getFullYear(),
+                historyPlusActive: false,
+                historyPlusValidUntil: null,
+                currency: 'ARS',
+                createdAt: nowIso,
+            };
+            const newCredits = (base.credits || 0) + count;
+            tx.set(walletRef, { ...base, credits: newCredits, updatedAt: nowIso }, { merge: true });
+        });
+        return { success: true, message: `Se regalaron ${count} análisis.` };
+    } catch (e) {
+        console.error('Error regalando análisis:', e);
+        return { success: false, message: 'Error al regalar análisis' };
     }
-    return null; // Should not happen if data is seeded
 }
 
-const analysisSchema = z.object({
-  shotType: z.enum(['Tiro Libre', 'Lanzamiento de Media Distancia (Jump Shot)', 'Lanzamiento de Tres']),
-  'video-front': z.instanceof(File).refine(file => file.size > 0, 'El video frontal es requerido.'),
-  // Add other videos later, for now one is enough to prove the concept
-});
+// Actualizar estado del jugador (active | pending | suspended)
+export async function adminUpdatePlayerStatus(_prev: any, formData: FormData) {
+    try {
+        const userId = String(formData.get('userId') || '');
+        const status = String(formData.get('status') || '');
+        if (!userId || !['active','pending','suspended'].includes(status)) {
+            return { success: false, message: 'Parámetros inválidos' };
+        }
+        if (!adminDb) return { success: false, message: 'Servidor sin Admin SDK' };
+        await adminDb.collection('players').doc(userId).set({ status, updatedAt: new Date() }, { merge: true });
+        revalidatePath('/admin');
+        revalidatePath(`/admin/players/${userId}`);
+        return { success: true };
+    } catch (e) {
+        console.error('Error actualizando estado:', e);
+        return { success: false };
+    }
+}
 
-const coachSchema = z.object({
-    name: z.string().min(3, "El nombre es requerido."),
-    experience: z.string().min(10, "La experiencia es requerida."),
-    ratePerAnalysis: z.coerce.number().min(1, "La tarifa debe ser positiva."),
-    avatarUrl: z.string().url("Debe ser una URL válida.").optional().or(z.literal('')),
-});
+// Editar wallet: créditos y gratis usados
+export async function adminUpdateWallet(_prev: any, formData: FormData) {
+    try {
+        const userId = String(formData.get('userId') || '');
+        const credits = Number(formData.get('credits') || 0);
+        const freeAnalysesUsed = Number(formData.get('freeAnalysesUsed') || 0);
+        const redirectTo = String(formData.get('redirectTo') || '');
+        if (!userId || credits < 0 || freeAnalysesUsed < 0) {
+            return { success: false, message: 'Parámetros inválidos' };
+        }
+        if (!adminDb) return { success: false, message: 'Servidor sin Admin SDK' };
+        const walletRef = adminDb.collection('wallets').doc(userId);
+        const nowIso = new Date().toISOString();
+        await walletRef.set({ userId, credits, freeAnalysesUsed, updatedAt: nowIso }, { merge: true });
+        revalidatePath('/admin');
+        revalidatePath(`/admin/players/${userId}`);
+        if (redirectTo) {
+            redirect(redirectTo);
+        }
+        return { success: true };
+    } catch (e) {
+        console.error('Error actualizando wallet:', e);
+        return { success: false };
+    }
+}
 
-const registerSchema = z.object({
-  name: z.string().min(3, "El nombre debe tener al menos 3 caracteres."),
-  email: z.string().email("Por favor, introduce un email válido."),
-  password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
-  dob: z.coerce.date({ required_error: "La fecha de nacimiento es obligatoria.", invalid_type_error: "La fecha de nacimiento no es válida." }),
-  country: z.string().min(2, "Por favor, selecciona un país."),
-  phone: z.string().min(5, "Por favor, introduce un número de teléfono válido."),
-});
+// Activar/desactivar History+ y fecha de vencimiento
+export async function adminSetHistoryPlus(_prev: any, formData: FormData) {
+    try {
+        const userId = String(formData.get('userId') || '');
+        const active = formData.get('historyPlusActive') != null;
+        const validUntilStr = String(formData.get('historyPlusValidUntil') || '');
+        const validUntil = validUntilStr ? new Date(validUntilStr).toISOString() : null;
+        if (!userId) return { success: false };
+        if (!adminDb) return { success: false };
+        const walletRef = adminDb.collection('wallets').doc(userId);
+        const nowIso = new Date().toISOString();
+        await walletRef.set({ userId, historyPlusActive: active, historyPlusValidUntil: validUntil, updatedAt: nowIso }, { merge: true });
+        revalidatePath('/admin');
+        revalidatePath(`/admin/players/${userId}`);
+        return { success: true };
+    } catch (e) {
+        console.error('Error configurando History+:', e);
+        return { success: false };
+    }
+}
 
-const loginSchema = z.object({
-  email: z.string().email("Por favor, introduce un email válido."),
-  password: z.string().min(1, "La contraseña es requerida."),
-  role: z.enum(['player', 'coach'])
-});
+// Enviar link de reseteo de contraseña al email del jugador
+export async function adminSendPasswordReset(_prev: any, formData: FormData) {
+    try {
+        const userId = String(formData.get('userId') || '');
+        if (!userId) return { success: false };
+        if (!adminDb || !adminAuth) return { success: false };
+        const playerDoc = await adminDb.collection('players').doc(userId).get();
+        const email = playerDoc.exists ? String(playerDoc.data()?.email || '') : '';
+        if (!email) return { success: false, message: 'Email no encontrado' };
+        const link = await adminAuth.generatePasswordResetLink(email);
+        console.log(`🔗 Password reset link for ${email}: ${link}`);
+        return { success: true, link };
+    } catch (e) {
+        console.error('Error enviando reset password:', e);
+        return { success: false };
+    }
+}
 
+import { standardizeVideoBuffer, extractKeyframesFromBuffer, segmentAttemptsByMotionFromBuffer, extractFramesBetweenDataUrlsFromBuffer } from '@/lib/ffmpeg';
+
+// Funciones de mapeo para la IA
+type AgeCategory = 'Sub-10' | 'Sub-13' | 'Sub-15' | 'Sub-18' | 'Amateur adulto' | 'Profesional';
+type PlayerLevel = 'Principiante' | 'Intermedio' | 'Avanzado';
+
+function mapAgeGroupToCategory(ageGroup: string): AgeCategory {
+    switch (ageGroup) {
+        case 'U10': return 'Sub-10';
+        case 'U13': return 'Sub-13';
+        case 'U15': return 'Sub-15';
+        case 'U18': return 'Sub-18';
+        case 'Amateur': return 'Amateur adulto';
+        case 'SemiPro': return 'Profesional';
+        case 'Pro': return 'Profesional';
+        default: return 'Amateur adulto';
+    }
+}
+
+function mapPlayerLevel(playerLevel: string): PlayerLevel {
+    switch (playerLevel) {
+        case 'Principiante': return 'Principiante';
+        case 'Intermedio': return 'Intermedio';
+        case 'Avanzado': return 'Avanzado';
+        default: return 'Principiante';
+    }
+}
+
+// Obtener usuario actual usando Firebase Admin SDK
+const getCurrentUser = async (userId: string) => {
+    try {
+        console.log(`🔍 Obteniendo usuario actual con Admin SDK: ${userId}`);
+        
+        if (!adminDb) {
+            throw new Error("Firebase Admin Firestore no está inicializado");
+        }
+        
+        // Buscar en la colección de jugadores
+        const playerDoc = await adminDb.collection('players').doc(userId).get();
+        
+        if (playerDoc.exists) {
+            const playerData = playerDoc.data();
+            console.log(`✅ Jugador encontrado: ${playerData?.name}`);
+            return { 
+                id: userId, 
+                name: playerData?.name || 'Usuario',
+                playerLevel: playerData?.playerLevel || 'Por definir',
+                ageGroup: playerData?.ageGroup || 'Por definir',
+                ...playerData 
+            };
+        }
+        
+        console.log(`❌ Usuario no encontrado: ${userId}`);
+        return null;
+    } catch (error) {
+        console.error('❌ Error obteniendo usuario con Admin SDK:', error);
+        return null;
+    }
+}
+
+// Función para procesar frames reales del video
+async function processVideoFrames(framesData: string, userId: string, analysisId: string): Promise<{
+  keyframeUrls: { front: string[], back: string[], left: string[], right: string[] };
+  keyframesForAI: Array<{ index: number; timestamp: number; description: string }>;
+  framesForAIDetection: Array<{ index: number; timestamp: number; url: string; description?: string }>;
+}> {
+    try {
+        console.log(`🎬 Procesando frames reales del video...`);
+        
+        // Parsear los frames del cliente
+        const frames = JSON.parse(framesData) as Array<{dataUrl: string; timestamp: number; description: string}>;
+        console.log(`✅ ${frames.length} frames recibidos del cliente`);
+        
+        const keyframeUrls = { 
+            front: [] as string[], 
+            back: [] as string[], 
+            left: [] as string[], 
+            right: [] as string[]
+        };
+        
+        const keyframesForAI: Array<{ index: number; timestamp: number; description: string }> = [];
+        const framesForAIDetection: Array<{ index: number; timestamp: number; url: string; description?: string }> = [];
+        
+        // Procesar cada frame
+        for (let i = 0; i < frames.length; i++) {
+            const frame = frames[i];
+            
+            // Convertir data URL a buffer
+            const base64Data = frame.dataUrl.split(',')[1];
+            const buffer = Buffer.from(base64Data, 'base64');
+            
+            // Crear nombre de archivo único
+            const fileName = `keyframe_${i}_${Date.now()}.jpg`;
+            const storagePath = `keyframes/${userId}/${analysisId}/${fileName}`;
+            
+            // Subir a Firebase Storage
+            if (adminStorage) {
+                await adminStorage.bucket().file(storagePath).save(buffer, {
+                    metadata: { contentType: 'image/jpeg' }
+                });
+                
+                // Hacer público y obtener URL
+                await adminStorage.bucket().file(storagePath).makePublic();
+                const publicUrl = `https://storage.googleapis.com/${process.env.FIREBASE_ADMIN_STORAGE_BUCKET}/${storagePath}`;
+                
+                // Agregar a keyframes front (por ahora todos van a front)
+                keyframeUrls.front.push(publicUrl);
+                
+                // Agregar a keyframes para IA
+                keyframesForAI.push({
+                    index: i,
+                    timestamp: frame.timestamp,
+                    description: frame.description
+                });
+                framesForAIDetection.push({ index: i, timestamp: frame.timestamp, url: publicUrl, description: frame.description });
+                
+                console.log(`✅ Frame ${i} procesado y subido: ${publicUrl}`);
+            }
+        }
+        
+        console.log(`🎯 ${keyframeUrls.front.length} frames procesados exitosamente`);
+        return { keyframeUrls, keyframesForAI, framesForAIDetection };
+        
+    } catch (error) {
+        console.error('❌ Error procesando frames del video:', error);
+        throw new Error(`No se pudieron procesar los frames: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+    }
+}
 
 async function uploadVideoToStorage(file: File, userId: string): Promise<string> {
     if (!file) {
         throw new Error("No file provided for upload.");
     }
-    if (!adminStorage) {
-        throw new Error("Admin Storage not initialized. Make sure FIREBASE_SERVICE_ACCOUNT is set.");
+    
+    try {
+        console.log(`Iniciando subida con Firebase Admin SDK: ${file.name} para usuario: ${userId}`);
+        
+        // Verificar que adminStorage esté disponible
+        if (!adminStorage) {
+            throw new Error("Firebase Admin Storage no está inicializado. Verifica la configuración.");
+        }
+        
+        // Obtener el bucket
+        const bucket = adminStorage.bucket();
+        console.log(`🔍 Bucket de Storage: ${bucket.name}`);
+        
+        // Convertir File a Buffer y estandarizar a 720p/20fps/<=30s (modo Lite)
+        const arrayBuffer = await file.arrayBuffer();
+        const inputBuffer = Buffer.from(arrayBuffer);
+        const { outputBuffer, contentType } = await standardizeVideoBuffer(inputBuffer, {
+            maxSeconds: 30,
+            targetHeight: 720,
+            targetFps: 20,
+            dropAudio: false,
+        });
+        
+        // Crear referencia única para el archivo
+        const timestamp = Date.now();
+        const originalName = file.name || 'video';
+        const baseName = originalName.includes('.') ? originalName.substring(0, originalName.lastIndexOf('.')) : originalName;
+        const fileName = `${timestamp}-${baseName}.mp4`;
+        const filePath = `videos/${userId}/${fileName}`;
+        
+        console.log(`📁 Subiendo archivo a: ${filePath}`);
+        console.log(`📊 Tamaño del archivo estandarizado: ${outputBuffer.length} bytes`);
+        
+        // Crear referencia en Firebase Admin Storage
+        const fileRef = bucket.file(filePath);
+        
+        // Subir el archivo usando Firebase Admin SDK
+        console.log(`Subiendo archivo a Firebase Storage con Admin SDK...`);
+        await fileRef.save(outputBuffer, {
+            metadata: {
+                contentType: contentType || 'video/mp4',
+                metadata: {
+                    uploadedBy: userId,
+                    originalName: originalName,
+                    standardized: 'true',
+                    targetProfile: '720p_20fps_30s_h264_aac',
+                    uploadedAt: new Date().toISOString()
+                }
+            }
+        });
+        
+        // Hacer el archivo público para obtener URL
+        await fileRef.makePublic();
+        
+        // Obtener la URL pública
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+        
+        console.log(`✅ Video subido exitosamente con Admin SDK a: ${publicUrl}`);
+        console.log(`📁 Ruta en Storage: ${filePath}`);
+        
+        return publicUrl;
+        
+    } catch (error) {
+        console.error('❌ Error subiendo video con Firebase Admin SDK:', error);
+        
+        // Manejo específico de errores de bucket
+        if (error && typeof error === 'object' && 'code' in error) {
+            if (error.code === 404) {
+                throw new Error(`Bucket de Storage no encontrado. Verifica la configuración de FIREBASE_ADMIN_STORAGE_BUCKET en .env.local`);
+            } else if (error.code === 403) {
+                throw new Error(`Permisos insuficientes para subir al bucket de Storage. Verifica las reglas de Storage.`);
+            }
+        }
+        
+        throw new Error(`No se pudo subir el video: ${error instanceof Error ? error.message : 'Error desconocido'}`);
     }
-
-    const storageBucket = adminStorage.bucket();
-    const filePath = `videos/${userId}/${Date.now()}-${file.name}`;
-    const fileRef = storageBucket.file(filePath);
-
-    // Convert file to buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    // Stream the buffer to Firebase Storage
-    const stream = fileRef.createWriteStream({
-        metadata: {
-            contentType: file.type,
-        },
-    });
-
-    return new Promise((resolve, reject) => {
-        stream.on('error', (err) => {
-            console.error('Error subiendo a Firebase Storage:', err);
-            reject('No se pudo subir el video.');
-        });
-
-        stream.on('finish', async () => {
-            console.log(`Video ${file.name} subido a ${filePath}.`);
-            // The Cloud Function will be triggered on finalize. We resolve with the gs:// path.
-            const gsPath = `gs://${storageBucket.name}/${filePath}`;
-            resolve(gsPath);
-        });
-
-        stream.end(buffer);
-    });
 }
-
-
 
 export async function startAnalysis(prevState: any, formData: FormData) {
-  try {
-    const validatedFields = analysisSchema.safeParse({
-      shotType: formData.get("shotType"),
-      'video-front': formData.get('video-front'),
-    });
-
-    if (!validatedFields.success) {
-      console.log(validatedFields.error.flatten().fieldErrors);
-      return { message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
-    }
-    
-    const currentUser = await getCurrentUser();
-    if (!currentUser) {
-        return { message: "Usuario no autenticado." };
-    }
-
-    const videoFile = validatedFields.data['video-front'];
-    // This now returns the gs:// path
-    const videoPath = await uploadVideoToStorage(videoFile, currentUser.id);
-
-    // The Cloud Function will now handle the AI analysis.
-    // We just need to create aplaceholder/pending analysis document
-    // that the function can update later.
-    // The id of this doc can be derived from the video path to link them.
-    const docId = videoPath.split('/').pop()?.replace(/\.[^/.]+$/, "") || `${Date.now()}`;
-    const analysisCollection = collection(adminDb!, "pending_analyses");
-    
-    await setDoc(doc(analysisCollection, docId), {
-        playerId: currentUser.id,
-        shotType: validatedFields.data.shotType,
-        videoPath: videoPath,
-        status: 'uploaded',
-        createdAt: new Date().toISOString(),
-    });
-    
-    // Redirect to dashboard, the new analysis will appear once processed.
-    revalidatePath(`/dashboard`);
-    redirect(`/dashboard?status=processing`);
-
-  } catch (error) {
-    console.error("Error de Análisis:", error);
-    const message = error instanceof Error ? error.message : "No se pudo iniciar el análisis. Por favor, inténtalo de nuevo.";
-    return { message };
-  }
-}
-
-export async function getDrills(
-    analysisSummary: string, 
-    ageGroup: 'U10' | 'U13' | 'U15' | 'U18' | 'Amateur' | 'SemiPro' | 'Pro'
-): Promise<{ drills?: GeneratePersonalizedDrillsOutput['drills']; error?: string }> {
     try {
-        const result = await generatePersonalizedDrills({
-            analysisJson: JSON.stringify({ summary: analysisSummary }),
-            resources: "Conos, balón de baloncesto, pared",
-            ageGroup: ageGroup,
-        });
-        return { drills: result.drills };
-    } catch (error) {
-        console.error("Error de Generación de Ejercicios:", error);
-        return { error: "No se pudieron generar los ejercicios." };
-    }
-}
-
-export async function moderateAndAddComment(prevState: any, formData: FormData) {
-    const text = formData.get('comment') as string;
-    const analysisId = formData.get('analysisId') as string;
-
-    if (!text || text.trim().length === 0) {
-        return { message: 'El comentario no puede estar vacío.' };
-    }
-
-    try {
-        const moderationResult = await moderateContent({ text });
-        if (moderationResult.isHarmful) {
-            return { message: `El comentario no pudo ser publicado: ${moderationResult.reason}` };
-        }
+        console.log("🚀 Iniciando análisis con frames reales...");
         
-        const currentUser = await getCurrentUser();
-        if (!currentUser) return { message: "Debes iniciar sesión para comentar." };
+        // Verificar variables de entorno
+        console.log("🔍 Variables de entorno:");
+        console.log("  - GOOGLE_API_KEY:", process.env.GOOGLE_API_KEY ? "✅ Configurado" : "❌ No configurado");
+        console.log("  - GEMINI_API_KEY:", process.env.GEMINI_API_KEY ? "✅ Configurado" : "❌ No configurado");
+        
+        // Log de todos los datos recibidos
+        const formDataEntries = Array.from(formData.entries());
+        console.log("📝 Todos los datos del formulario:", formDataEntries);
+        
+        // Verificar que tenemos userId
+        const userId = formData.get('userId') as string;
+        if (!userId) {
+            console.log("❌ No se recibió userId");
+            return { message: "ID de usuario requerido.", error: true };
+        }
+        console.log("✅ userId recibido:", userId);
 
-        const commentData = {
-            analysisId,
-            text,
-            author: {
-                id: currentUser.id,
-                name: currentUser.name,
-                avatarUrl: currentUser.avatarUrl,
-            },
+        // Verificar que tenemos shotType
+        const shotType = formData.get('shotType') as string;
+        if (!shotType) {
+            console.log("❌ No se recibió shotType");
+            return { message: "Tipo de lanzamiento requerido.", error: true };
+        }
+        console.log("✅ shotType recibido:", shotType);
+
+        // Verificar que tenemos video frontal y leer videos opcionales
+        const videoFile = formData.get('video-front') as File;
+        const videoLeft = formData.get('video-left') as File | null;
+        const videoRight = formData.get('video-right') as File | null;
+        const videoBack = formData.get('video-back') as File | null;
+        if (!videoFile || videoFile.size === 0) {
+            console.log("❌ No se recibió video válido");
+            return { message: "Video frontal es requerido.", error: true };
+        }
+        console.log("✅ Video recibido:", videoFile.name, "Tamaño:", videoFile.size);
+
+        // Frames del cliente ya no son necesarios; el backend extrae con FFmpeg
+        const framesData = (formData.get('frames') as string) || '[]';
+
+        // Verificar Firebase Admin
+        if (!adminDb || !adminStorage) {
+            console.log("❌ Firebase Admin no está inicializado");
+            return { message: "Error de configuración del servidor.", error: true };
+        }
+        console.log("✅ Firebase Admin inicializado");
+        const db = adminDb!;
+        const storage = adminStorage!;
+
+        // Obtener usuario
+        console.log("🔍 Obteniendo usuario:", userId);
+        const currentUser = await getCurrentUser(userId);
+        if (!currentUser) {
+            console.log("❌ Usuario no encontrado");
+            return { message: "Usuario no autenticado.", error: true };
+        }
+        console.log("✅ Usuario encontrado:", currentUser.name);
+
+        // ENFORCE: 2 gratis por año o consumir créditos (Argentina)
+        console.log("💳 Verificando límites y créditos...");
+        const currentYear = new Date().getFullYear();
+        let billingInfo: { type: 'free' | 'credit'; year: number } | null = null;
+        try {
+            await db.runTransaction(async (tx: any) => {
+                const walletRef = db.collection('wallets').doc(userId);
+                const walletSnap = await tx.get(walletRef);
+                let data: any = walletSnap.exists ? walletSnap.data() : null;
+                if (!data) {
+                    data = {
+                        userId,
+                        credits: 0,
+                        freeAnalysesUsed: 0,
+                        yearInUse: currentYear,
+                        historyPlusActive: false,
+                        historyPlusValidUntil: null,
+                        currency: 'ARS',
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                    };
+                    tx.set(walletRef, data);
+                }
+                // Reset anual si cambió el año
+                if (Number(data.yearInUse) !== currentYear) {
+                    data.freeAnalysesUsed = 0;
+                    data.yearInUse = currentYear;
+                }
+                if ((data.freeAnalysesUsed || 0) < 2) {
+                    data.freeAnalysesUsed = (data.freeAnalysesUsed || 0) + 1;
+                    data.updatedAt = new Date().toISOString();
+                    tx.update(walletRef, { freeAnalysesUsed: data.freeAnalysesUsed, yearInUse: data.yearInUse, updatedAt: data.updatedAt });
+                    billingInfo = { type: 'free', year: currentYear };
+                } else if ((data.credits || 0) > 0) {
+                    data.credits = Number(data.credits) - 1;
+                    data.updatedAt = new Date().toISOString();
+                    tx.update(walletRef, { credits: data.credits, updatedAt: data.updatedAt });
+                    billingInfo = { type: 'credit', year: currentYear };
+                } else {
+                    billingInfo = null;
+                }
+            });
+        } catch (e) {
+            console.error('❌ Error verificando límites/créditos:', e);
+            return { message: 'No se pudo verificar tu saldo. Intenta nuevamente.', error: true };
+        }
+        if (!billingInfo) {
+            return {
+                message: 'Alcanzaste el límite de 2 análisis gratis este año y no tenés créditos. Comprá un análisis o pack para continuar.',
+                error: true,
+            };
+        }
+        const billing = billingInfo as { type: 'free' | 'credit'; year: number };
+        console.log('✅ Permiso de análisis otorgado vía', billing.type);
+
+        // Subir videos
+        console.log("📤 Subiendo video frontal...");
+        const videoPath = await uploadVideoToStorage(videoFile, currentUser.id);
+        console.log("✅ Video frontal subido a:", videoPath);
+        let videoLeftUrl: string | null = null;
+        let videoRightUrl: string | null = null;
+        let videoBackUrl: string | null = null;
+        if (videoLeft && videoLeft.size > 0) {
+            console.log("📤 Subiendo video lateral izquierdo...");
+            videoLeftUrl = await uploadVideoToStorage(videoLeft, currentUser.id);
+            console.log("✅ Lateral izquierdo:", videoLeftUrl);
+        }
+        if (videoRight && videoRight.size > 0) {
+            console.log("📤 Subiendo video lateral derecho...");
+            videoRightUrl = await uploadVideoToStorage(videoRight, currentUser.id);
+            console.log("✅ Lateral derecho:", videoRightUrl);
+        }
+        if (videoBack && videoBack.size > 0) {
+            console.log("📤 Subiendo video trasero...");
+            videoBackUrl = await uploadVideoToStorage(videoBack, currentUser.id);
+            console.log("✅ Trasero:", videoBackUrl);
+        }
+
+        // Guardar análisis
+        console.log(`💾 Guardando análisis en Firestore...`);
+        const analysisData: any = {
+            playerId: currentUser.id,
+            shotType: shotType,
+            videoUrl: videoPath,
+            videoLeftUrl: videoLeftUrl,
+            videoRightUrl: videoRightUrl,
+            videoBackUrl: videoBackUrl,
+            status: 'uploaded',
             createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            playerName: currentUser.name,
+            playerLevel: currentUser.playerLevel || 'Por definir',
+            ageGroup: currentUser.ageGroup || 'Por definir',
+            billing: { type: billing.type, year: billing.year },
         };
+        
+        console.log("📊 Datos del análisis a guardar:", analysisData);
+        const analysisRef = await db.collection('analyses').add(analysisData);
+        console.log(`✅ Análisis guardado en Firestore, ID: ${analysisRef.id}`);
+        
+        // Rango confirmado desde el cliente (opcional)
+        const rangeStart = Number(formData.get('rangeStart') || '0') || 0;
+        const rangeEnd = Number(formData.get('rangeEnd') || '0');
+        const hasRange = rangeEnd > rangeStart + 0.05;
 
-        await addDoc(collection(db, "comments"), commentData);
+        // PROCESAR FRAMES REALES DEL VIDEO (preferir backend con FFmpeg; fallback: frames del cliente)
+        console.log("🎬 Procesando frames del video...");
+        let keyframeUrls: { front: string[], back: string[], left: string[], right: string[] } = { 
+            front: [], 
+            back: [], 
+            left: [], 
+            right: [] 
+        };
+        
+        let keyframesForAI: Array<{ index: number; timestamp: number; description: string }> = [];
+        
+        try {
+            // Intentar extraer keyframes en backend desde el video estandarizado (más robusto)
+            const keyframesFromBackendFront = await (async () => {
+                try {
+                    const bucket = adminStorage!.bucket();
+                    const file = bucket.file(`videos/${currentUser.id}/${videoPath.split('/').pop()}`);
+                    const [buf] = await file.download();
+                    const extracted = await extractKeyframesFromBuffer(buf, 16);
+                    // Subir cada frame a Storage público
+                    const uploadedUrls: string[] = [];
+                    for (const kf of extracted) {
+                        const kfName = `kf_${kf.index}_${Date.now()}.jpg`;
+                        const storagePath = `keyframes/${currentUser.id}/${analysisRef.id}/${kfName}`;
+                        await bucket.file(storagePath).save(kf.imageBuffer, { metadata: { contentType: 'image/jpeg' } });
+                        await bucket.file(storagePath).makePublic();
+                        uploadedUrls.push(`https://storage.googleapis.com/${process.env.FIREBASE_ADMIN_STORAGE_BUCKET}/${storagePath}`);
+                    }
+                    return { urls: uploadedUrls, ai: extracted.map((e, i) => ({ index: i, timestamp: e.timestamp, description: `Frame ${i+1}` })) };
+                } catch (e) {
+                    console.warn('⚠️ Backend keyframe extraction failed (front), will fallback to client frames if available.', e);
+                    return null;
+                }
+            })();
 
-        console.log(`Comentario añadido al análisis ${analysisId}: "${text}"`);
+            // Extraer para otros ángulos si existen
+            const extractForAngle = async (angleUrl: string | null, angleKey: 'left'|'right'|'back') => {
+                if (!angleUrl) return [] as string[];
+                try {
+                    const bucket = adminStorage!.bucket();
+                    const file = bucket.file(`videos/${currentUser.id}/${angleUrl.split('/').pop()}`);
+                    const [buf] = await file.download();
+                    const extracted = await extractKeyframesFromBuffer(buf, 12);
+                    const uploadedUrls: string[] = [];
+                    for (const kf of extracted) {
+                        const kfName = `kf_${angleKey}_${kf.index}_${Date.now()}.jpg`;
+                        const storagePath = `keyframes/${currentUser.id}/${analysisRef.id}/${kfName}`;
+                        await bucket.file(storagePath).save(kf.imageBuffer, { metadata: { contentType: 'image/jpeg' } });
+                        await bucket.file(storagePath).makePublic();
+                        uploadedUrls.push(`https://storage.googleapis.com/${process.env.FIREBASE_ADMIN_STORAGE_BUCKET}/${storagePath}`);
+                    }
+                    return uploadedUrls;
+                } catch (e) {
+                    console.warn(`⚠️ Backend keyframe extraction failed for ${angleKey}`, e);
+                    return [] as string[];
+                }
+            };
 
-        revalidatePath(`/analysis/${analysisId}`);
-        return { message: 'Comentario publicado con éxito.', comment: text };
+            let framesForDetection: Array<{ index: number; timestamp: number; url: string }> = [];
+            if (keyframesFromBackendFront && keyframesFromBackendFront.urls.length > 0) {
+                keyframeUrls.front = keyframesFromBackendFront.urls;
+                keyframesForAI = keyframesFromBackendFront.ai;
+                framesForDetection = keyframesFromBackendFront.urls.map((url, i) => ({ index: i, timestamp: keyframesForAI[i]?.timestamp ?? i, url }));
+            } else {
+                // Fallback a frames del cliente (solo frontal)
+                const framesResult = await processVideoFrames(framesData, currentUser.id, analysisRef.id);
+                keyframeUrls.front = framesResult.keyframeUrls.front;
+                keyframesForAI = framesResult.keyframesForAI;
+                framesForDetection = framesResult.framesForAIDetection.map((f) => ({ index: f.index, timestamp: f.timestamp, url: f.url }));
+            }
+
+            // Extraer para laterales y trasero si hay videos
+            keyframeUrls.left = await extractForAngle(videoLeftUrl, 'left');
+            keyframeUrls.right = await extractForAngle(videoRightUrl, 'right');
+            keyframeUrls.back = await extractForAngle(videoBackUrl, 'back');
+
+            // Segmentar intentos con heurística Lite sobre el video estandarizado
+            let attempts: Array<{ start: number; end: number }> = [];
+            try {
+                const bucket = adminStorage!.bucket();
+                const file = bucket.file(`videos/${currentUser.id}/${videoPath.split('/').pop()}`);
+                const [buf] = await file.download();
+                // 1) segmentación heurística inicial
+                const heurBase = await segmentAttemptsByMotionFromBuffer(buf, { fps: 6, minSeparationSec: 1.0, peakStd: 2.2 });
+                const heur = hasRange ? [{ start: Math.max(0, rangeStart), end: Math.max(rangeStart + 0.1, rangeEnd) }] : heurBase;
+                // 2) para cada segmento, pedir a la IA inicio/fin precisos con thumbnails
+                const refined: Array<{ start: number; end: number }> = [];
+                for (const w of heur.length ? heur : [{ start: 0, end: Math.min(30, 3) }]) {
+                    const thumbsStart = await extractFramesBetweenDataUrlsFromBuffer(buf, Math.max(0, w.start - 0.5), w.start + 1.0, 8);
+                    const thumbsEnd = await extractFramesBetweenDataUrlsFromBuffer(buf, Math.max(w.start, (w.end || w.start) - 1.0), (w.end || w.start), 8);
+                    let startTs = w.start;
+                    let endTs = w.end;
+                    try {
+                        const { detectStartFrame } = await import('@/ai/flows/detect-start-frame');
+                        const ds = await detectStartFrame({ frames: thumbsStart, shotType: shotType });
+                        startTs = ds.startTimestamp;
+                    } catch {}
+                    try {
+                        const { detectEndFrame } = await import('@/ai/flows/detect-end-frame');
+                        const de = await detectEndFrame({ frames: thumbsEnd, shotType: shotType });
+                        endTs = de.endTimestamp;
+                    } catch {}
+                    // sanity: siempre recortar al rango confirmado si existe
+                    if (hasRange) {
+                        startTs = Math.max(rangeStart, startTs);
+                        endTs = Math.min(rangeEnd, endTs);
+                    }
+                    if (!(endTs > startTs)) {
+                        endTs = Math.max(startTs + 0.6, hasRange ? rangeEnd : (w.end || startTs + 0.6));
+                    }
+                    refined.push({ start: Math.max(0, startTs), end: endTs });
+                }
+                // ordenar y fusionar solapes mínimos
+                refined.sort((a, b) => a.start - b.start);
+                const merged: Array<{ start: number; end: number }> = [];
+                for (const r of refined) {
+                    if (!merged.length || r.start > merged[merged.length - 1].end - 0.1) {
+                        merged.push({ ...r });
+                    } else {
+                        merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, r.end);
+                    }
+                }
+                attempts = merged;
+            } catch (e) {
+                console.warn('⚠️ No se pudo segmentar intentos con IA (modo normal). Usando fallback si aplica.', e);
+            }
+
+            // Intentar detectar el frame inicial con IA usando los frames subidos
+            let detectedStartIndex: number | null = null;
+            let detectedStartTimestamp: number | null = null;
+            try {
+                const { detectStartFrame } = await import('@/ai/flows/detect-start-frame');
+                const detection = await detectStartFrame({
+                    frames: framesForDetection.map((f) => ({ ...f, dataUrl: 'data:image/jpeg;base64,' })),
+                    shotType: shotType,
+                });
+                detectedStartIndex = detection.startIndex;
+                detectedStartTimestamp = detection.startTimestamp;
+                console.log('🤖 IA detectó inicio en frame', detectedStartIndex, 'ts', detectedStartTimestamp, 'conf', detection.confidence);
+            } catch (detErr) {
+                console.warn('⚠️ No se pudo ejecutar la detección IA de inicio:', detErr);
+            }
+            
+            console.log("✅ Frames reales procesados exitosamente");
+            
+            // EJECUTAR ANÁLISIS DE IA CON FRAMES REALES
+            console.log("🤖 Iniciando análisis de IA con frames reales...");
+            const { analyzeBasketballShot } = await import('@/ai/flows/analyze-basketball-shot');
+            
+            // Mapear los campos correctamente para la IA
+            const ageCategory = mapAgeGroupToCategory(currentUser.ageGroup || 'Amateur');
+            const playerLevel = mapPlayerLevel(currentUser.playerLevel || 'Principiante');
+            
+            console.log("📹 Analizando video con IA...");
+            console.log("🔍 Parámetros para IA:", {
+                videoUrl: videoPath,
+                shotType: shotType,
+                ageCategory: ageCategory,
+                playerLevel: playerLevel,
+                availableKeyframes: keyframesForAI
+            });
+            
+            const analysisResult = await analyzeBasketballShot({
+                videoUrl: videoPath,
+                shotType: shotType,
+                ageCategory: ageCategory, // already mapped to correct type
+                playerLevel: playerLevel, // already mapped to correct type
+                availableKeyframes: Array.isArray(keyframesForAI) ? keyframesForAI : []
+            });
+            console.log("✅ Análisis de IA completado con selección de frames reales:", analysisResult);
+            
+            // Selección de IA (frontal). Fallback: si no hay selección, usar todos los extraídos por ángulo
+            const selectedFront = (analysisResult.selectedKeyframes || [])
+                .map((index: number) => keyframeUrls.front[index])
+                .filter(Boolean);
+            const selectedKeyframeUrls = {
+                front: selectedFront.length > 0 ? selectedFront : keyframeUrls.front,
+                back: keyframeUrls.back,
+                left: keyframeUrls.left,
+                right: keyframeUrls.right,
+            };
+            
+            console.log("🎯 Frames seleccionados por la IA:", analysisResult.selectedKeyframes);
+            
+            // Calcular score promedio 1..5 a partir del checklist
+            const mapStatusToRating = (s?: string): number | null => {
+                if (!s) return null;
+                if (s === 'Incorrecto') return 1;
+                if (s === 'Incorrecto leve') return 2;
+                if (s === 'Mejorable') return 3;
+                if (s === 'Correcto') return 4;
+                if (s === 'Excelente') return 5;
+                return null;
+            };
+            const allRatings: number[] = (analysisResult.detailedChecklist || [])
+              .flatMap((c: any) => c.items || [])
+              .map((it: any) => (typeof it.rating === 'number' ? it.rating : mapStatusToRating(it.status)))
+              .filter((v: any) => typeof v === 'number');
+            const score: number | null = allRatings.length > 0 ? Number((allRatings.reduce((a:number,b:number)=>a+b,0)/allRatings.length).toFixed(2)) : null;
+            const scoreLabel = (r:number) => r>=4.5?'Excelente':r>=4?'Correcto':r>=3?'Mejorable':r>=2?'Incorrecto leve':'Incorrecto';
+
+            // Actualizar el análisis con los resultados de IA y frames seleccionados
+            if (db) {
+                await db.collection('analyses').doc(analysisRef.id).update({
+                    status: 'analyzed',
+                    analysisResult: analysisResult,
+                    // Copiamos el checklist al nivel superior para facilitar el render
+                    detailedChecklist: analysisResult.detailedChecklist || [],
+                    keyframes: selectedKeyframeUrls,
+                    score: score,
+                    scoreLabel: score != null ? scoreLabel(score) : null,
+                    attempts: attempts,
+                    startFrameDetection: detectedStartIndex != null ? {
+                        index: detectedStartIndex,
+                        timestamp: detectedStartTimestamp,
+                    } : null,
+                    keyframeAnalysis: analysisResult.keyframeAnalysis,
+                    updatedAt: new Date().toISOString()
+                });
+            }
+            
+            console.log("✅ Análisis actualizado con resultados de IA y frames reales seleccionados");
+            
+            const finalResult = { 
+                message: "Video analizado exitosamente con IA usando frames reales. Revisa los resultados.",
+                analysisId: analysisRef.id,
+                videoUrl: videoPath,
+                shotType: shotType,
+                status: 'analyzed',
+                analysisResult: analysisResult,
+                redirectTo: '/dashboard'
+            };
+            
+            console.log("🎯 Resultado final con IA y frames reales:", finalResult);
+            return finalResult;
+            
+        } catch (framesError) {
+            console.error("❌ Error procesando frames reales:", framesError);
+            console.log("⚠️ Continuando sin frames...");
+            
+            // Si fallan los frames, hacer análisis sin ellos
+            const { analyzeBasketballShot } = await import('@/ai/flows/analyze-basketball-shot');
+            const ageCategory = mapAgeGroupToCategory(currentUser.ageGroup || 'Amateur');
+            const playerLevel = mapPlayerLevel(currentUser.playerLevel || 'Principiante');
+            
+            const analysisResult = await analyzeBasketballShot({
+                videoUrl: videoPath,
+                shotType: shotType,
+                ageCategory: ageCategory,
+                playerLevel: playerLevel,
+                availableKeyframes: []
+            });
+            
+            // Actualizar el análisis sin frames
+            if (db) {
+                await db.collection('analyses').doc(analysisRef.id).update({
+                    status: 'analyzed',
+                    analysisResult: analysisResult,
+                    keyframes: { front: [], back: [], left: [], right: [] },
+                    updatedAt: new Date().toISOString()
+                });
+            }
+            
+            return { 
+                message: "Video analizado exitosamente con IA (sin frames). Revisa los resultados.",
+                analysisId: analysisRef.id,
+                videoUrl: videoPath,
+                shotType: shotType,
+                status: 'analyzed',
+                analysisResult: analysisResult,
+                redirectTo: '/dashboard'
+            };
+        }
+
     } catch (error) {
-        console.error('Error de moderación de comentario:', error);
-        return { message: 'No se pudo publicar el comentario.' };
+        console.error("❌ Error de Análisis:", error);
+        const message = error instanceof Error ? error.message : "No se pudo iniciar el análisis. Por favor, inténtalo de nuevo.";
+        return { message, error: true };
     }
 }
 
-
-export async function addCoach(prevState: any, formData: FormData) {
+// Acción temporal para registrar/asegurar el jugador Adrián Bengolea
+export async function registerAdrian(prevState: any, _formData: FormData) {
     try {
-        const validatedFields = coachSchema.safeParse({
-            name: formData.get("name"),
-            experience: formData.get("experience"),
-            ratePerAnalysis: formData.get("ratePerAnalysis"),
-            avatarUrl: formData.get("avatarUrl"),
-        });
-
-        if (!validatedFields.success) {
-            console.log(validatedFields.error.flatten().fieldErrors);
-            return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
+        if (!adminDb) {
+            return { success: false, message: "Firebase Admin no está inicializado" };
         }
 
-        const newCoachData = {
-             ...validatedFields.data,
-            avatarUrl: validatedFields.data.avatarUrl || 'https://placehold.co/128x128.png',
-            'data-ai-hint': 'male coach', // default hint
-            rating: 0,
-            reviews: 0,
-            playerIds: [],
-        };
+        const playerId = 'eGQanqjLcEfez0y7MfjtEqjOaNj2';
+        const playerRef = adminDb.collection('players').doc(playerId);
+        const existing = await playerRef.get();
 
-        const docRef = await addDoc(collection(db, "coaches"), newCoachData);
-        console.log("Nuevo entrenador añadido con ID: ", docRef.id);
-        
-        revalidatePath('/coaches');
-        revalidatePath('/admin');
-        return { success: true, message: `Entrenador ${newCoachData.name} añadido con éxito.` };
-
-    } catch (error) {
-        console.error("Error al añadir entrenador:", error);
-        return { success: false, message: "No se pudo añadir el entrenador. Por favor, inténtalo de nuevo." };
-    }
-}
-
-function getAgeGroup(dob: Date): Player['ageGroup'] {
-    const age = new Date().getFullYear() - dob.getFullYear();
-    if (age < 10) return 'U10';
-    if (age < 13) return 'U13';
-    if (age < 15) return 'U15';
-    if (age < 18) return 'U18';
-    return 'Amateur';
-}
-
-
-export async function registerPlayer(prevState: any, formData: FormData) {
-    const rawData = Object.fromEntries(formData.entries());
-    const validatedFields = registerSchema.safeParse(rawData);
-
-    if (!validatedFields.success) {
-        return {
-            success: false,
-            message: "Datos de formulario inválidos.",
-            errors: validatedFields.error.flatten().fieldErrors,
-            inputValues: rawData,
-        };
-    }
-
-    const { name, email, password, dob, country, phone } = validatedFields.data;
-
-    try {
-        if (!adminAuth || !adminDb) {
-            console.error("FIREBASE ADMIN SDK ERROR: adminAuth or adminDb is not initialized. Check server environment variables (FIREBASE_SERVICE_ACCOUNT).");
-            throw new Error("La configuración del servidor de Firebase no está disponible. El registro no puede continuar. Contacta al administrador.");
-        }
-        
-        console.log('Intentando crear usuario con Admin SDK para:', email);
-        const userRecord = await adminAuth.createUser({
-            email,
-            password,
-            displayName: name,
-        });
-        console.log('Usuario creado con Admin SDK, UID:', userRecord.uid);
-
-        const newPlayer: Omit<Player, 'id'> = {
-            name,
-            email,
-            dob,
-            country,
-            phone,
-            ageGroup: getAgeGroup(dob),
-            playerLevel: 'Principiante',
-            status: 'active',
-            avatarUrl: `https://placehold.co/100x100.png`
-        };
-
-        await setDoc(doc(adminDb, "players", userRecord.uid), newPlayer);
-        console.log("Datos del nuevo jugador guardados en Firestore, UID:", userRecord.uid);
-        
-    } catch (error: any) {
-        console.error("Error específico de Firebase durante el registro:", error.code, error.message);
-        let message = `No se pudo completar el registro. Por favor, inténtelo de nuevo más tarde.`;
-        if (error.code === 'auth/email-already-exists') {
-            message = "Este email ya está en uso. Por favor, utiliza otro."
-        } else if (error.message) {
-            // Devuelve el mensaje de error real para depuración
-            message = `Error de Firebase: ${error.message}`;
-        }
-        return { success: false, message, errors: null, inputValues: rawData };
-    }
-    
-    // Si la creación fue exitosa en el servidor, intentamos iniciar sesión en el cliente
-    // Esto es necesario para establecer la sesión del navegador.
-    try {
-        await signInWithEmailAndPassword(auth, email, password);
-    } catch (clientAuthError: any) {
-         // Esto puede pasar, pero el usuario ya está creado. Es mejor redirigir a login.
-         console.error("Usuario creado en backend, pero error al iniciar sesión en cliente:", clientAuthError);
-         redirect('/login?status=registered');
-    }
-    
-    redirect('/dashboard');
-}
-
-export async function registerAdrian(prevState: any, formData: FormData) {
-    try {
-        const email = 'adrian.bengolea@example.com';
-        const password = 'adrian1234';
-
-         if (!adminAuth) {
-          throw new Error("La configuración de autenticación de administrador no está disponible.");
-        }
-        
-        const userRecord = await adminAuth.createUser({
-            email,
-            password,
-            displayName: 'Adrian Bengolea',
-        });
-        
-        const dob = new Date("1985-01-01");
-        const newPlayer: Omit<Player, 'id'> = {
+        const baseData = {
             name: 'Adrian Bengolea',
-            email,
-            dob,
-            country: 'AR',
-            phone: '+54-911-555-1234',
-            ageGroup: getAgeGroup(dob),
+            ageGroup: 'Amateur',
             playerLevel: 'Intermedio',
-            status: 'active',
-            avatarUrl: `https://placehold.co/100x100.png`,
-            "data-ai-hint": "male portrait",
-        };
+            updatedAt: new Date().toISOString(),
+        } as const;
 
-        await setDoc(doc(db, "players", userRecord.uid), newPlayer);
-        console.log("Usuario Adrián Bengolea creado con éxito con UID:", userRecord.uid);
-        
+        if (existing.exists) {
+            await playerRef.update(baseData);
+            revalidatePath('/register');
+            return { success: true, message: 'Jugador actualizado correctamente.' };
+        }
+
+        await playerRef.set({
+            ...baseData,
+            createdAt: new Date().toISOString(),
+        });
+
         revalidatePath('/register');
-        return { success: true, message: `Usuario creado: ${email} / ${password}` };
-    } catch (error: any) {
-        console.error("Error creando a Adrian:", error);
-        let message = "No se pudo crear el usuario.";
-        if (error.code === 'auth/email-already-exists') {
-            message = "El email para Adrián ya existe."
-        }
-        return { success: false, message };
-    }
-}
-
-
-export async function updateAnalysisScore(prevState: any, formData: FormData) {
-    const analysisId = formData.get('analysisId') as string;
-    const scoreRaw = formData.get('score');
-
-    const score = Number(scoreRaw);
-
-    if (isNaN(score) || score < 0 || score > 100) {
-        return { success: false, message: "La puntuación debe ser un número entre 0 y 100." };
-    }
-    
-    const analysisRef = doc(db, 'analyses', analysisId);
-
-    try {
-        await updateDoc(analysisRef, { score: score });
-        console.log(`Puntuación actualizada para el análisis ${analysisId}: ${score}`);
-        
-        const analysisDoc = await getDoc(analysisRef);
-        const playerId = analysisDoc.data()?.playerId;
-        
-        revalidatePath(`/players/${playerId}`);
-        revalidatePath(`/analysis/${analysisId}`);
-        return { success: true, message: `Puntuación guardada: ${score}` };
+        return { success: true, message: 'Jugador registrado correctamente.' };
     } catch (error) {
-        console.error("Error al actualizar la puntuación:", error);
-        return { success: false, message: "Análisis no encontrado o no se pudo actualizar." };
+        console.error('❌ Error registrando jugador temporal:', error);
+        const message = error instanceof Error ? error.message : 'Error desconocido';
+        return { success: false, message: `No se pudo registrar: ${message}` };
     }
 }
-
-export async function login(prevState: any, formData: FormData) {
-    const validatedFields = loginSchema.safeParse(Object.fromEntries(formData.entries()));
-
-    if (!validatedFields.success) {
-        return { success: false, message: "Datos de formulario inválidos.", errors: validatedFields.error.flatten().fieldErrors };
-    }
-
-    const { email, password, role } = validatedFields.data;
-
-    try {
-        // As with registration, this is a simplified auth flow for this environment.
-        await signInWithEmailAndPassword(auth, email, password);
-        console.log(`Iniciando sesión como ${role} con email: ${email}`);
-
-        // In a real app, you would also check if the user's role matches.
-        // For example, check a 'role' field in their Firestore document.
-
-        if (role === 'coach') {
-            redirect('/coach/dashboard');
-        } else {
-            redirect('/dashboard');
-        }
-
-    } catch (error: any) {
-        console.error("Error de Inicio de Sesión:", error);
-         if (error instanceof Error && error.message.includes('NEXT_REDIRECT')) {
-            throw error;
-        }
-        let message = "No se pudo iniciar sesión. Por favor, revisa tus credenciales.";
-        if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-            message = "Email o contraseña incorrectos."
-        }
-        return { success: false, message };
-    }
-}
-
-

@@ -22,6 +22,12 @@ export default function LoginPage() {
               Regístrate
           </Link>
         </p>
+        <p className="mt-2 text-center text-xs text-muted-foreground">
+          Acceso admin:{' '}
+          <Link href="/admin" className="underline hover:text-primary">
+            Entrar
+          </Link>
+        </p>
       </div>
     </div>
   );

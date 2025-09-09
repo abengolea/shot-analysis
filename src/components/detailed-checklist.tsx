@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { CheckCircle, AlertCircle, XCircle, ListChecks, Loader2, Save } from "lucide-react";
-import { updateAnalysisScore } from "@/app/actions";
+// import { updateAnalysisScore } from "@/app/actions";
 import { useFormStatus } from "react-dom";
 import { Input } from "./ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -23,26 +23,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 
 function ScoreForm({ analysisId, currentScore }: { analysisId: string, currentScore?: number }) {
-    const [state, formAction] = useActionState(updateAnalysisScore, { success: false, message: "" });
-    const formRef = useRef<HTMLFormElement>(null);
-    const { toast } = useToast();
-
-    useEffect(() => {
-        if (state.message) {
-            toast({
-                title: state.success ? "Éxito" : "Error",
-                description: state.message,
-                variant: state.success ? "default" : "destructive",
-            });
-        }
-    }, [state, toast]);
-
-
-    const { pending } = useFormStatus();
-
     return (
-         <form ref={formRef} action={formAction} className="flex items-end gap-2">
-            <input type="hidden" name="analysisId" value={analysisId} />
+         <div className="flex items-end gap-2 p-4 border rounded-lg bg-muted/50">
             <div className="grid flex-1 gap-1.5">
                 <Label htmlFor="score">Puntuación General (0-100)</Label>
                 <Input 
@@ -50,16 +32,18 @@ function ScoreForm({ analysisId, currentScore }: { analysisId: string, currentSc
                     name="score" 
                     type="number" 
                     placeholder="Ej: 85" 
-                    defaultValue={currentScore}
-                    min="0"
-                    max="100"
+                    value={typeof currentScore === 'number' ? Number(currentScore.toFixed(0)) : ''}
+                    readOnly
                 />
             </div>
-            <Button type="submit" disabled={pending} size="icon">
-                {pending ? <Loader2 className="animate-spin" /> : <Save />}
+            <Button variant="outline" size="icon" disabled>
+                <Save />
                 <span className="sr-only">Guardar Puntuación</span>
             </Button>
-        </form>
+            <p className="text-xs text-muted-foreground mt-2">
+                Se recalcula automáticamente según los pesos
+            </p>
+         </div>
     );
 }
 
@@ -68,22 +52,36 @@ function ChecklistItem({
     item, 
     categoryName,
     onItemChange,
+    editable = true,
 }: { 
     item: DetailedChecklistItem;
     categoryName: string;
-    onItemChange: (categoryName: string, itemId: string, newStatus: DetailedChecklistItem['status'], newComment: string) => void;
+    onItemChange: (categoryName: string, itemId: string, newRating: DetailedChecklistItem['rating'], newComment: string, newRating10?: number) => void;
+    editable?: boolean;
 }) {
-  const [status, setStatus] = useState(item.status);
+  const [rating, setRating] = useState<number>(item.rating || 3);
+  const [rating10, setRating10] = useState<number | undefined>(item.rating10);
   const [comment, setComment] = useState(item.comment);
 
   useEffect(() => {
-    onItemChange(categoryName, item.id, status, comment);
-  }, [status, comment]);
+    onItemChange(categoryName, item.id, rating as DetailedChecklistItem['rating'], comment, rating10);
+  }, [rating, rating10, comment]);
 
-  const ICONS = {
-    Correcto: <CheckCircle className="text-green-500" />,
-    Mejorable: <AlertCircle className="text-yellow-500" />,
-    Incorrecto: <XCircle className="text-red-500" />,
+  const ratingLabel = (r: number) => {
+    switch (r) {
+      case 5: return 'Excelente';
+      case 4: return 'Correcto';
+      case 3: return 'Mejorable';
+      case 2: return 'Incorrecto leve';
+      case 1: return 'Incorrecto';
+      default: return 'Mejorable';
+    }
+  };
+
+  const ratingIcon = (r: number) => {
+    if (r >= 4) return <CheckCircle className="text-green-500" />;
+    if (r === 3) return <AlertCircle className="text-yellow-500" />;
+    return <XCircle className="text-red-500" />;
   };
 
   return (
@@ -91,28 +89,59 @@ function ChecklistItem({
       <div className="flex items-center justify-between">
         <h4 className="font-semibold">{item.name}</h4>
         <div className="flex items-center gap-2">
-          {ICONS[status]}
-          <span className="font-medium">{status}</span>
+          {ratingIcon(rating)}
+          <span className="font-medium">{ratingLabel(rating)}</span>
         </div>
       </div>
       <p className="text-sm text-muted-foreground">{item.description}</p>
+
+      {item.name === 'Fluidez / Armonía (transferencia energética)' && (
+        <div className="rounded-md border p-3 bg-primary/5">
+          <div className="mb-2 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-amber-800 text-xs">
+            <AlertCircle className="h-4 w-4" />
+            <span>Ítem clave: aporta el 65% del puntaje final del análisis.</span>
+          </div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium">Puntuación específica (1–10)</span>
+            <span className="text-base font-semibold">{rating10 ?? 5} / 10</span>
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={10}
+            step={1}
+            value={rating10 ?? 5}
+            onChange={(e) => setRating10(Number(e.target.value))}
+            className="w-full accent-primary"
+            disabled={!editable}
+          />
+        </div>
+      )}
       
       <RadioGroup
-        value={status}
-        onValueChange={(value) => setStatus(value as typeof status)}
+        value={String(rating)}
+        onValueChange={(value) => setRating(Number(value))}
         className="flex gap-4"
       >
         <div className="flex items-center space-x-2">
-          <RadioGroupItem value="Correcto" id={`${item.id}-correct`} />
-          <Label htmlFor={`${item.id}-correct`}>Correcto</Label>
+          <RadioGroupItem value="1" id={`${item.id}-r1`} disabled={!editable} />
+          <Label htmlFor={`${item.id}-r1`}>1 - Incorrecto</Label>
         </div>
         <div className="flex items-center space-x-2">
-          <RadioGroupItem value="Mejorable" id={`${item.id}-improvable`} />
-          <Label htmlFor={`${item.id}-improvable`}>Mejorable</Label>
+          <RadioGroupItem value="2" id={`${item.id}-r2`} disabled={!editable} />
+          <Label htmlFor={`${item.id}-r2`}>2 - Incorrecto leve</Label>
         </div>
         <div className="flex items-center space-x-2">
-          <RadioGroupItem value="Incorrecto" id={`${item.id}-incorrect`} />
-          <Label htmlFor={`${item.id}-incorrect`}>Incorrecto</Label>
+          <RadioGroupItem value="3" id={`${item.id}-r3`} disabled={!editable} />
+          <Label htmlFor={`${item.id}-r3`}>3 - Mejorable</Label>
+        </div>
+        <div className="flex items-center space-x-2">
+          <RadioGroupItem value="4" id={`${item.id}-r4`} disabled={!editable} />
+          <Label htmlFor={`${item.id}-r4`}>4 - Correcto</Label>
+        </div>
+        <div className="flex items-center space-x-2">
+          <RadioGroupItem value="5" id={`${item.id}-r5`} disabled={!editable} />
+          <Label htmlFor={`${item.id}-r5`}>5 - Excelente</Label>
         </div>
       </RadioGroup>
 
@@ -123,6 +152,7 @@ function ChecklistItem({
           value={comment}
           onChange={(e) => setComment(e.target.value)}
           className="mt-1"
+          disabled={!editable}
         />
       </div>
     </div>
@@ -131,12 +161,13 @@ function ChecklistItem({
 
 interface DetailedChecklistProps {
     categories: ChecklistCategory[];
-    onChecklistChange: (categoryName: string, itemId: string, newStatus: DetailedChecklistItem['status'], newComment: string) => void;
+    onChecklistChange: (categoryName: string, itemId: string, newRating: DetailedChecklistItem['rating'], newComment: string, newRating10?: number) => void;
     analysisId: string;
     currentScore?: number;
+    editable?: boolean;
 }
 
-export function DetailedChecklist({ categories, onChecklistChange, analysisId, currentScore }: DetailedChecklistProps) {
+export function DetailedChecklist({ categories, onChecklistChange, analysisId, currentScore, editable = true }: DetailedChecklistProps) {
 
   return (
     <Card>
@@ -151,9 +182,15 @@ export function DetailedChecklist({ categories, onChecklistChange, analysisId, c
       </CardHeader>
       <CardContent>
          <Tabs defaultValue={categories[0]?.category || ''} className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="w-full flex flex-wrap justify-start gap-2">
                  {categories.map((category) => (
-                    <TabsTrigger value={category.category} key={category.category}>{category.category}</TabsTrigger>
+                    <TabsTrigger
+                        value={category.category}
+                        key={category.category}
+                        className="min-w-[160px] whitespace-normal text-center"
+                    >
+                        {category.category}
+                    </TabsTrigger>
                 ))}
             </TabsList>
             {categories.map((category) => (
@@ -165,6 +202,7 @@ export function DetailedChecklist({ categories, onChecklistChange, analysisId, c
                                 item={item} 
                                 categoryName={category.category}
                                 onItemChange={onChecklistChange} 
+                                editable={editable}
                             />
                         ))}
                     </div>

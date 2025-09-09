@@ -10,7 +10,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { BasketballIcon } from "@/components/icons";
 
 
 const features = [
@@ -41,7 +40,7 @@ const testimonials = [
     avatar: "https://placehold.co/100x100.png",
     "data-ai-hint": "male portrait",
     quote:
-      "ShotVision AI cambió mi forma de entrenar. El feedback instantáneo sobre mi técnica de lanzamiento me ayudó a corregir errores que no sabía que tenía.",
+      "La plataforma cambió mi forma de entrenar. El feedback instantáneo sobre mi técnica de lanzamiento me ayudó a corregir errores que no sabía que tenía.",
   },
   {
     name: "Entrenador G.",
@@ -58,9 +57,9 @@ export default function LandingPage() {
   return (
     <div className="flex flex-1 flex-col">
        <header className="container mx-auto flex h-20 items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 font-headline text-xl font-bold">
-            <BasketballIcon className="h-8 w-8 text-primary" />
-            <span>ShotVision AI</span>
+        <Link href="/" className="flex items-center gap-2 font-headline text-xl font-bold uppercase">
+            <Image src="/chas-logo.svg" alt="chas.com logo" width={32} height={32} />
+            <span>chas.com</span>
         </Link>
         <div className="flex items-center gap-4">
             <Button asChild variant="outline">
@@ -75,23 +74,18 @@ export default function LandingPage() {
       <div className="flex flex-1 flex-col gap-16 md:gap-24">
         {/* Hero Section */}
         <section className="relative flex flex-col items-center justify-center pt-8 text-center md:pt-16">
-          <BasketballIcon className="mb-6 h-16 w-16 text-primary" />
-          <h1 className="font-headline text-4xl font-bold tracking-tight md:text-6xl">
-            La Revolución del Entrenamiento de Baloncesto está Aquí
+          <Image src="/chas-logo.svg" alt="chas.com logo" width={64} height={64} className="mb-4" />
+          <h1 className="font-headline text-5xl font-bold tracking-tight md:text-6xl uppercase">
+            chas.com
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
-            Usa el poder de la inteligencia artificial para analizar tu lanzamiento,
-            recibir feedback de entrenadores de élite y llevar tu juego al
-            siguiente nivel.
-          </p>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
             <Button size="lg" asChild>
               <Link href="/register">
-                Soy Jugador, ¡Comenzar! <ArrowRight className="ml-2" />
+                Crear cuenta <ArrowRight className="ml-2" />
               </Link>
             </Button>
             <Button size="lg" variant="outline" asChild>
-              <Link href="/coaches">Soy Entrenador</Link>
+              <Link href="/coach-register">Entrenadores</Link>
             </Button>
           </div>
           <div className="relative mt-16 w-full max-w-5xl">
@@ -100,7 +94,7 @@ export default function LandingPage() {
                   src="https://placehold.co/1200x675.png"
                   width={1200}
                   height={675}
-                  alt="Panel de ShotVision AI"
+                  alt="Panel de chas.com"
                   className="rounded-xl border shadow-2xl"
                   data-ai-hint="basketball analysis dashboard"
               />
@@ -109,13 +103,9 @@ export default function LandingPage() {
 
         {/* Features Section */}
         <section className="container mx-auto max-w-5xl text-center">
-          <h2 className="font-headline text-3xl font-bold">
-            Todo lo que Necesitas para un Lanzamiento Perfecto
+          <h2 className="font-headline text-3xl font-bold uppercase">
+            Funciones principales
           </h2>
-          <p className="mt-2 text-muted-foreground">
-            Nuestra plataforma está diseñada para cubrir cada aspecto de tu
-            desarrollo.
-          </p>
           <div className="mt-12 grid gap-8 md:grid-cols-3">
             {features.map((feature, i) => (
               <Card key={i}>
@@ -135,12 +125,9 @@ export default function LandingPage() {
 
         {/* Testimonials Section */}
         <section className="container mx-auto max-w-5xl text-center">
-          <h2 className="font-headline text-3xl font-bold">
-            Lo que Dicen Nuestros Usuarios
+          <h2 className="font-headline text-3xl font-bold uppercase">
+            Testimonios
           </h2>
-          <p className="mt-2 text-muted-foreground">
-            La confianza de jugadores y entrenadores es nuestro mayor logro.
-          </p>
           <div className="mt-12 grid gap-8 md:grid-cols-2">
             {testimonials.map((testimonial, i) => (
               <Card key={i} className="text-left">
@@ -168,19 +155,12 @@ export default function LandingPage() {
 
         {/* Final CTA */}
         <section className="container mx-auto max-w-3xl text-center">
-          <h2 className="font-headline text-3xl font-bold">
-            ¿Listo para Empezar?
+          <h2 className="font-headline text-3xl font-bold uppercase">
+            Comenzar
           </h2>
-          <p className="mt-4 text-lg text-muted-foreground">
-            Únete a la comunidad de ShotVision AI hoy mismo y descubre tu
-            verdadero potencial. El registro es rápido, fácil y el primer paso
-            hacia un mejor lanzamiento.
-          </p>
           <div className="mt-8">
             <Button size="lg" asChild>
-              <Link href="/register">
-                Crear mi Cuenta Gratis <ArrowRight className="ml-2" />
-              </Link>
+              <Link href="/register">Crear mi cuenta <ArrowRight className="ml-2" /></Link>
             </Button>
           </div>
         </section>

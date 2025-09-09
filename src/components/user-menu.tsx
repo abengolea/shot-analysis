@@ -46,7 +46,7 @@ export function UserMenu() {
       .slice(0, 2);
   };
 
-  const isCoach = userProfile && !('dob' in userProfile);
+  const isCoach = userProfile?.role === 'coach';
 
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>

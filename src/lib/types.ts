@@ -24,6 +24,7 @@ export type Player = BaseUser & {
   // Campos específicos del jugador (opcionales)
   position?: 'Base' | 'Escolta' | 'Alero' | 'Ala-Pívot' | 'Pívot';
   height?: number; // en centímetros
+  wingspan?: number; // en centímetros
   weight?: number; // en kilogramos
   dominantHand?: 'Derecha' | 'Izquierda' | 'Ambidiestro';
 };
@@ -32,7 +33,12 @@ export type DetailedChecklistItem = {
   id: string;
   name: string;
   description: string;
-  status: 'Correcto' | 'Mejorable' | 'Incorrecto';
+  // Nuevo sistema de 5 niveles (1..5)
+  rating: 1 | 2 | 3 | 4 | 5;
+  // Para el ítem especial "Fluidez / Armonía (transferencia energética)" (1..10)
+  rating10?: number;
+  // Campo legacy (opcional) para compatibilidad con datos antiguos
+  status?: 'Incorrecto' | 'Incorrecto leve' | 'Mejorable' | 'Correcto' | 'Excelente';
   comment: string;
 };
 
@@ -61,6 +67,8 @@ export type ShotAnalysis = {
   keyframes: KeyframeImages; // URLs or base64 strings of keyframe images, organized by angle
   detailedChecklist?: ChecklistCategory[];
   score?: number;
+  // Puntuación 1..10 de la categoría principal "Fluidez / Armonía (transferencia energética)"
+  fluidezScore10?: number;
 };
 
 export type Drill = {
@@ -111,4 +119,87 @@ export type Coach = BaseUser & {
     saturday: boolean;
     sunday: boolean;
   };
+};
+
+export type ConnectionRequest = {
+  id: string;
+  playerId: string;
+  playerName: string;
+  playerEmail: string;
+  playerAvatarUrl?: string;
+  coachId: string;
+  message: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: Date;
+  updatedAt: Date;
+  playerLevel?: string;
+  position?: string;
+  ageGroup?: string;
+  country?: string;
+};
+
+export type PlayerEvaluation = {
+  id: string;
+  playerId: string;
+  coachId: string;
+  coachName: string;
+  coachAvatarUrl?: string;
+  evaluationDate: Date;
+  overallScore: number; // 1-10
+  technicalScore: number; // 1-10
+  physicalScore: number; // 1-10
+  mentalScore: number; // 1-10
+  strengths: string[];
+  weaknesses: string[];
+  recommendations: string[];
+  notes: string;
+  nextSteps: string[];
+};
+
+export type PlayerComment = {
+  id: string;
+  playerId: string;
+  coachId: string;
+  coachName: string;
+  coachAvatarUrl?: string;
+  comment: string;
+  createdAt: Date;
+  isPublic: boolean;
+};
+
+// Pagos y billetera (jugadores)
+export type Wallet = {
+  userId: string;
+  credits: number; // créditos disponibles para análisis pagos
+  freeAnalysesUsed: number; // cuántos gratis usados en el añoEnCurso
+  yearInUse: number; // año calendario de referencia para freeAnalysesUsed
+  historyPlusActive?: boolean;
+  historyPlusValidUntil?: string; // ISO string
+  currency: 'ARS';
+  updatedAt: string; // ISO
+  createdAt: string; // ISO
+};
+
+export type ProductId = 'analysis_1' | 'pack_3' | 'pack_10' | 'history_plus_annual';
+
+export type PaymentRecord = {
+  id: string; // doc id
+  userId: string;
+  provider: 'mercadopago' | 'stripe';
+  providerPaymentId: string;
+  productId: ProductId;
+  status: 'created' | 'approved' | 'rejected' | 'refunded' | 'pending';
+  currency: 'ARS' | 'USD';
+  amount: number; // monto total cobrado en la moneda
+  raw?: any; // payload/response del proveedor
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BillingType = 'free' | 'credit' | 'subscription';
+
+export type AnalysisBillingInfo = {
+  type: BillingType;
+  year: number;
+  creditTransactionId?: string;
 };
