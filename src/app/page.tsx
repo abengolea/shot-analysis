@@ -58,7 +58,7 @@ export default function LandingPage() {
     <div className="flex flex-1 flex-col">
        <header className="container mx-auto flex h-20 items-center justify-between">
         <Link href="/" className="flex items-center gap-2 font-headline text-xl font-bold uppercase">
-            <Image src="/chas-logo.svg" alt="chas.com logo" width={32} height={32} />
+            <img src="/chas-logo.svg" alt="chas.com logo" className="h-8 w-auto" />
             <span>chas.com</span>
         </Link>
         <div className="flex items-center gap-4">
@@ -74,7 +74,7 @@ export default function LandingPage() {
       <div className="flex flex-1 flex-col gap-16 md:gap-24">
         {/* Hero Section */}
         <section className="relative flex flex-col items-center justify-center pt-8 text-center md:pt-16">
-          <Image src="/chas-logo.svg" alt="chas.com logo" width={64} height={64} className="mb-4" />
+          <img src="/chas-logo.svg" alt="chas.com logo" className="mb-4 h-16 w-auto" />
           <h1 className="font-headline text-5xl font-bold tracking-tight md:text-6xl uppercase">
             chas.com
           </h1>

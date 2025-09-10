@@ -60,6 +60,7 @@ const ChecklistItemSchema = z.object({
   rating: z.number().int().min(1).max(5).optional().describe('Optional 1..5 rating if available'),
   // ítem especial: Fluidez / Armonía (1..10)
   rating10: z.number().int().min(1).max(10).optional().describe('Optional 1..10 rating for Fluidez/Armonía'),
+  na: z.boolean().optional().describe('Mark as not applicable when there is not enough evidence to evaluate'),
   comment: z.string().describe('Brief coach-like comment. If not enough evidence due to missing angles, explicitly say: "No evaluable por falta de ángulo X"'),
 });
 
@@ -113,21 +114,23 @@ IMPORTANTE: NO intentes generar imágenes. Solo analiza el contenido del video y
 - Debilidades a mejorar (al menos 3 si hay evidencia)
 - Recomendaciones específicas (3-5, accionables)
 - Un checklist detallado y estructurado (4–6 categorías, 3–5 ítems por categoría) usando los estados: Correcto | Mejorable | Incorrecto. 
-  Si falta evidencia por no contar con ciertos ángulos, marca el ítem con el estado más prudente (por ejemplo "Mejorable") e indica en el comentario: "No evaluable por falta de ángulo <front/back/left/right>".
-  IMPORTANTE: Debe existir SIEMPRE una categoría llamada exactamente "Fluidez / Armonía (transferencia energética)" que contenga un ítem con el mismo nombre y el campo rating10 (1..10) además del comentario que explique por qué recibió esa puntuación. Esta métrica es la más importante (65% del score final).
+  Si falta evidencia por no contar con ciertos ángulos, NO penalices: marca el ítem con na: true e indica en el comentario: "No evaluable por falta de ángulo <front/back/left/right>".
+  IMPORTANTE: Debe existir SIEMPRE una categoría llamada exactamente "Fluidez / Armonía (transferencia energética)" que contenga un ítem con el mismo nombre y el campo rating10 (1..10) además del comentario que explique por qué recibió esa puntuación. Esta métrica es la más importante.
 
-  Debes INCLUIR obligatoriamente estos 3 ítems en el checklist, en las categorías indicadas:
+  Debes INCLUIR obligatoriamente estos ítems en el checklist de Tiro de Tres (default) y en las categorías indicadas:
   - id: "muneca_cargada", name: "Muñeca cargada antes del ascenso" — categoría: "Preparación".
-  - id: "tiempo_lanzamiento", name: "Tiempo de lanzamiento (captura → liberación)" — categoría: "Ascenso y Liberación". En el comentario escribe el tiempo estimado, por ejemplo: "Tiempo: 0.62s". Si no es medible, indícalo.
-  - id: "giro_pelota", name: "Giro de la pelota (backspin)" — categoría: "Ascenso y Liberación". Comenta la calidad del backspin (limpio/bajo/irregular). Si no hay evidencia, indícalo.
+  - id: "tiempo_lanzamiento", name: "Tiempo de lanzamiento (captura → liberación)" — categoría: "Ascenso" (4%). En el comentario escribe el tiempo estimado (p. ej., "Tiempo: 0.62s"). Si no es medible, indícalo y marca na: true.
+  - id: "trayectoria_hasta_set_point", name: "Trayectoria del balón hasta el set point" — categoría: "Ascenso" (3%).
+  - id: "subida_recta_balon", name: "Subida recta del balón" — categoría: "Ascenso" (3%).
+  - id: "giro_pelota", name: "Giro de la pelota (backspin)" — categoría: "Liberación" (2%). Evalúa: gira hacia atrás (adecuado), gira poco (insuficiente), no gira (malo), gira hacia delante (inadecuado). Si no hay evidencia, indícalo y marca na: true.
 
-  Añade TAMBIÉN el ítem obligatorio de Set Point en "Ascenso y Liberación":
+  Añade TAMBIÉN el ítem obligatorio de Set Point en "Ascenso":
   - id: "set_point", name: "Set point (inicio del empuje de la pelota)", description: "Altura y continuidad del punto donde comienza el empuje del balón". Reglas:
     * En categorías menores hasta Sub-12/Sub-13: empuje desde el pecho hasta debajo de la pera.
     * Con el correr de los años: el set point debe subir gradualmente desde la pera hacia arriba, sin superar la altura de la frente.
     * Un set point por encima de la frente NO es recomendable porque afecta la fluidez/armonía.
     * Se trabaja tiros de un solo tiempo (1-time): la pelota sube y NO se detiene (un único movimiento continuo) para asegurar transferencia energética. Evalúa y comenta explícitamente si hay pausa/corte en el ascenso.
-  En el comentario del set point, explica si la altura es adecuada para la edad y si el movimiento es de un solo tiempo, indicando recomendaciones específicas.
+  En el comentario del set point, explica si la altura es adecuada para la edad y si el movimiento es de un solo tiempo, indicando recomendaciones específicas. Si no hay evidencia, marca na: true.
 
 Si existe configuración de prompts de admin, considérela como guía adicional para redactar el análisis:
 - Intro adicional: {{promptConfig.intro}}

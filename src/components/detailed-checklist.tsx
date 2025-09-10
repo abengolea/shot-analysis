@@ -20,6 +20,7 @@ import { useFormStatus } from "react-dom";
 import { Input } from "./ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { computeCategorySubtotal, getCategoryNominalWeight, getItemWeight } from "@/lib/scoring";
 
 
 function ScoreForm({ analysisId, currentScore }: { analysisId: string, currentScore?: number }) {
@@ -32,7 +33,7 @@ function ScoreForm({ analysisId, currentScore }: { analysisId: string, currentSc
                     name="score" 
                     type="number" 
                     placeholder="Ej: 85" 
-                    value={typeof currentScore === 'number' ? Number(currentScore.toFixed(0)) : ''}
+                    value={typeof currentScore === 'number' ? Number(currentScore.toFixed(2)) : ''}
                     readOnly
                 />
             </div>
@@ -53,19 +54,23 @@ function ChecklistItem({
     categoryName,
     onItemChange,
     editable = true,
+    showCoachBox = false,
 }: { 
     item: DetailedChecklistItem;
     categoryName: string;
-    onItemChange: (categoryName: string, itemId: string, newRating: DetailedChecklistItem['rating'], newComment: string, newRating10?: number) => void;
+    onItemChange: (categoryName: string, itemId: string, newRating: DetailedChecklistItem['rating'], newComment: string, newRating10?: number, newNA?: boolean) => void;
     editable?: boolean;
+    showCoachBox?: boolean;
 }) {
   const [rating, setRating] = useState<number>(item.rating || 3);
+  const [isNA, setIsNA] = useState<boolean>(Boolean((item as any).na));
   const [rating10, setRating10] = useState<number | undefined>(item.rating10);
-  const [comment, setComment] = useState(item.comment);
+  const [coachComment, setCoachComment] = useState(item.coachComment || "");
 
   useEffect(() => {
-    onItemChange(categoryName, item.id, rating as DetailedChecklistItem['rating'], comment, rating10);
-  }, [rating, rating10, comment]);
+    // Si está marcado como N/A, forzar rating neutro pero UI y backend deberán ignorarlo en el cálculo
+    onItemChange(categoryName, item.id, rating as DetailedChecklistItem['rating'], coachComment, rating10, isNA);
+  }, [rating, rating10, coachComment, isNA]);
 
   const ratingLabel = (r: number) => {
     switch (r) {
@@ -97,13 +102,30 @@ function ChecklistItem({
   return (
     <div className="space-y-4 rounded-lg border p-4">
       <div className="flex items-center justify-between">
-        <h4 className="font-semibold">{item.name}</h4>
+        <h4 className="font-semibold">
+          {item.name}
+          {getItemWeight(item.id) > 0 && (
+            <span className="ml-2 text-xs text-muted-foreground">({getItemWeight(item.id)}%)</span>
+          )}
+        </h4>
         <div className="flex items-center gap-2">
           {ratingIcon(rating)}
           <span className="font-medium">{ratingLabel(rating)}</span>
         </div>
       </div>
       <p className="text-sm text-muted-foreground">{item.description}</p>
+
+      <div className="flex items-center gap-2 text-xs">
+        <input
+          id={`${item.id}-na`}
+          type="checkbox"
+          className="accent-primary"
+          checked={isNA}
+          onChange={(e) => setIsNA(e.target.checked)}
+          disabled={!editable}
+        />
+        <Label htmlFor={`${item.id}-na`}>No calificable por falta de datos (N/A)</Label>
+      </div>
 
       {/* Nota UX: ítems de mano no dominante */}
       {(item.id === 'mano_no_dominante_ascenso' || item.id === 'mano_no_dominante_liberacion') && (
@@ -148,50 +170,62 @@ function ChecklistItem({
         className="flex gap-4"
       >
         <div className="flex items-center space-x-2">
-          <RadioGroupItem value="1" id={`${item.id}-r1`} disabled={!editable} />
+          <RadioGroupItem value="1" id={`${item.id}-r1`} disabled={!editable || isNA} />
           <Label htmlFor={`${item.id}-r1`}>1 - Incorrecto</Label>
         </div>
         <div className="flex items-center space-x-2">
-          <RadioGroupItem value="2" id={`${item.id}-r2`} disabled={!editable} />
+          <RadioGroupItem value="2" id={`${item.id}-r2`} disabled={!editable || isNA} />
           <Label htmlFor={`${item.id}-r2`}>2 - Incorrecto leve</Label>
         </div>
         <div className="flex items-center space-x-2">
-          <RadioGroupItem value="3" id={`${item.id}-r3`} disabled={!editable} />
+          <RadioGroupItem value="3" id={`${item.id}-r3`} disabled={!editable || isNA} />
           <Label htmlFor={`${item.id}-r3`}>3 - Mejorable</Label>
         </div>
         <div className="flex items-center space-x-2">
-          <RadioGroupItem value="4" id={`${item.id}-r4`} disabled={!editable} />
+          <RadioGroupItem value="4" id={`${item.id}-r4`} disabled={!editable || isNA} />
           <Label htmlFor={`${item.id}-r4`}>4 - Correcto</Label>
         </div>
         <div className="flex items-center space-x-2">
-          <RadioGroupItem value="5" id={`${item.id}-r5`} disabled={!editable} />
+          <RadioGroupItem value="5" id={`${item.id}-r5`} disabled={!editable || isNA} />
           <Label htmlFor={`${item.id}-r5`}>5 - Excelente</Label>
         </div>
       </RadioGroup>
 
       <div>
-        <Label className="text-xs text-muted-foreground">Comentarios del Entrenador</Label>
+        <Label className="text-xs text-muted-foreground">Comentarios de la IA</Label>
         <Textarea
-          placeholder="Añade tus comentarios específicos aquí..."
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          className="mt-1"
-          disabled={!editable}
+          placeholder="Generados automáticamente por la IA"
+          value={item.comment || ''}
+          readOnly
+          className="mt-1 bg-muted/30"
         />
       </div>
+      {showCoachBox && (
+        <div>
+          <Label className="text-xs text-muted-foreground">Comentarios del Entrenador</Label>
+          <Textarea
+            placeholder="Añade tus comentarios específicos aquí..."
+            value={coachComment}
+            onChange={(e) => setCoachComment(e.target.value)}
+            className="mt-1"
+            disabled={!editable}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
 interface DetailedChecklistProps {
     categories: ChecklistCategory[];
-    onChecklistChange: (categoryName: string, itemId: string, newRating: DetailedChecklistItem['rating'], newComment: string, newRating10?: number) => void;
+    onChecklistChange: (categoryName: string, itemId: string, newRating: DetailedChecklistItem['rating'], newComment: string, newRating10?: number, newNA?: boolean) => void;
     analysisId: string;
     currentScore?: number;
     editable?: boolean;
+    showCoachBox?: boolean;
 }
 
-export function DetailedChecklist({ categories, onChecklistChange, analysisId, currentScore, editable = true }: DetailedChecklistProps) {
+export function DetailedChecklist({ categories, onChecklistChange, analysisId, currentScore, editable = true, showCoachBox = false }: DetailedChecklistProps) {
 
   return (
     <Card>
@@ -219,6 +253,14 @@ export function DetailedChecklist({ categories, onChecklistChange, analysisId, c
             </TabsList>
             {categories.map((category) => (
                 <TabsContent value={category.category} key={`tabc-${category.category}`} className="mt-4">
+                    <div className="flex items-center justify-between mb-3 text-sm text-muted-foreground">
+                      {(() => { const s = computeCategorySubtotal(category); return (
+                        <>
+                          <span>Subtotal:</span>
+                          <span>{s.achieved.toFixed(2)} / {s.max.toFixed(2)}</span>
+                        </>
+                      ); })()}
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {category.items.map((item, idx) => (
                            <ChecklistItem 
@@ -227,6 +269,7 @@ export function DetailedChecklist({ categories, onChecklistChange, analysisId, c
                                 categoryName={category.category}
                                 onItemChange={onChecklistChange} 
                                 editable={editable}
+                                showCoachBox={showCoachBox}
                             />
                         ))}
                     </div>

@@ -134,21 +134,26 @@ export default function AnalysisPage() {
           <AvatarFallback>{player.name.charAt(0)}</AvatarFallback>
         </Avatar>
         
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-3">
-            Análisis de {analysis.shotType}
-            {Array.isArray((analysis as any).attempts) && (analysis as any).attempts.length > 0 && (
-              <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 text-sm text-muted-foreground">
-                Intentos: {(analysis as any).attempts.length}
-              </span>
-            )}
-          </h1>
-          <p className="text-muted-foreground">
-            Jugador: {player.name} • {new Date(analysis.createdAt).toLocaleDateString('es-ES')}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Nivel: {player.playerLevel || 'Por definir'} • Grupo: {player.ageGroup || 'Por definir'}
-          </p>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start gap-4 justify-between">
+            <div className="min-w-0">
+              <h1 className="text-3xl font-bold flex items-center gap-3">
+                Análisis de {analysis.shotType}
+                {Array.isArray((analysis as any).attempts) && ( (analysis as any).attempts.length > 0) && (
+                  <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 text-sm text-muted-foreground">
+                    Intentos: {(analysis as any).attempts.length}
+                  </span>
+                )}
+              </h1>
+              <p className="text-muted-foreground">
+                Jugador: {player.name} • {new Date(analysis.createdAt).toLocaleDateString('es-ES')}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Nivel: {player.playerLevel || 'Por definir'} • Grupo: {player.ageGroup || 'Por definir'}
+              </p>
+            </div>
+            {/* Botones de compartir movidos debajo del resumen */}
+          </div>
         </div>
       </div>
 

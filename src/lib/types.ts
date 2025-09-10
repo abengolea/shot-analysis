@@ -48,11 +48,15 @@ export type DetailedChecklistItem = {
   description: string;
   // Nuevo sistema de 5 niveles (1..5)
   rating: 1 | 2 | 3 | 4 | 5;
+  // Marcar cuando no se puede evaluar por falta de datos (no contar en el cálculo)
+  na?: boolean;
   // Para el ítem especial "Fluidez / Armonía (transferencia energética)" (1..10)
   rating10?: number;
   // Campo legacy (opcional) para compatibilidad con datos antiguos
   status?: 'Incorrecto' | 'Incorrecto leve' | 'Mejorable' | 'Correcto' | 'Excelente';
   comment: string;
+  // Comentario opcional del entrenador (visible para jugador y entrenador; editable solo por entrenador)
+  coachComment?: string;
 };
 
 export type ChecklistCategory = {
@@ -215,4 +219,58 @@ export type AnalysisBillingInfo = {
   type: BillingType;
   year: number;
   creditTransactionId?: string;
+};
+
+// --- Admin Feedback (Revisión IA) ---
+
+// Versión inicial (v1) de taxonomía de errores técnicos en español
+export type AdminFeedbackIssueId =
+  | 'set_point'
+  | 'alineacion_codo'
+  | 'base_pies'
+  | 'timing'
+  | 'tronco_postura'
+  | 'mirada_enfoque'
+  | 'trayectoria_brazo'
+  | 'equilibrio_salto'
+  | 'mano_no_dominante_ascenso'
+  | 'mano_no_dominante_liberacion'
+  | 'liberacion_muneca'
+  | 'alineacion_pies_hombros'
+  | 'finalizacion'
+  | 'otros';
+
+export type AdminFeedbackSeverity = 'bajo' | 'medio' | 'alto';
+
+export type AdminFeedbackIssue = {
+  id: AdminFeedbackIssueId;
+  name?: string; // opcional, para mostrar etiqueta amigable si hace falta
+  description?: string; // detalle opcional
+  severity?: AdminFeedbackSeverity; // prioridad percibida por el admin
+  rating?: 1 | 2 | 3 | 4 | 5; // valoración del ítem si aplica (compatible con checklist)
+  commentForAI?: string; // explicación dirigida a la IA (no visible al jugador)
+};
+
+export type AdminFeedbackCorrections = {
+  startFrame?: number;
+  endFrame?: number;
+  angles?: Record<string, number>; // ángulos corregidos por clave (p. ej. codo, muñeca)
+  keypoints?: Record<string, { x: number; y: number }>; // puntos clave opcionales
+};
+
+export type AdminFeedbackStatus = 'borrador' | 'listo'; // "Listo" cuando el admin marca OK
+
+export type AdminFeedback = {
+  id?: string; // id del feedback (doc id si se usa subcolección)
+  analysisId: string;
+  playerId: string;
+  createdAt: string; // ISO
+  createdBy: string; // uid admin
+  updatedAt?: string; // ISO
+  taxonomyVersion: 'v1';
+  visibility: 'admin_only';
+  issues: AdminFeedbackIssue[];
+  corrections?: AdminFeedbackCorrections;
+  commentForAI?: string; // comentario general para IA
+  status: AdminFeedbackStatus; // borrador | listo
 };

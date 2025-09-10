@@ -121,6 +121,18 @@ export function SidebarMenuContents() {
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          asChild
+          isActive={pathname.startsWith("/admin/revision-ia")}
+          tooltip="Revisión IA"
+        >
+          <Link href="/admin/revision-ia">
+            <Shield />
+            Revisión IA
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
        <SidebarMenuItem>
         <SidebarMenuButton
           asChild

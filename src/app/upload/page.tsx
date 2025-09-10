@@ -142,6 +142,13 @@ export default function UploadPage() {
     if (leftVideo) formData.append('video-left', leftVideo);
     if (rightVideo) formData.append('video-right', rightVideo);
 
+    // Adjuntar frames extraídos del cliente como fallback para el backend
+    if (Array.isArray(extractedFrames) && extractedFrames.length > 0) {
+      try {
+        formData.append('frames', JSON.stringify(extractedFrames));
+      } catch {}
+    }
+
     // Mostrar modal de análisis en curso
     setAnalyzingOpen(true);
     if (analyzingTimerRef.current) {

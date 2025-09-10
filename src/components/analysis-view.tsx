@@ -47,11 +47,13 @@ import {
 } from "lucide-react";
 import { DrillCard } from "./drill-card";
 import { DetailedChecklist } from "./detailed-checklist";
+import { computeCategorySubtotal, getCategoryNominalWeight, getItemWeight } from "@/lib/scoring";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { getAuth, getIdToken } from "firebase/auth";
+import ShareButtons from "@/components/share-buttons";
 
 interface AnalysisViewProps {
   analysis: ShotAnalysis;
@@ -73,14 +75,40 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   const [localKeyframes, setLocalKeyframes] = useState<typeof safeKeyframes>(safeKeyframes);
 
+  // Sincronizar estado local si llegan keyframes desde el análisis después del primer render
+  useEffect(() => {
+    const kf = analysis.keyframes;
+    if (!kf || typeof kf !== 'object') return;
+    const expectedKeys: Array<'front'|'back'|'left'|'right'> = ['front','back','left','right'];
+    const anyIncoming = expectedKeys.some((k) => Array.isArray((kf as any)[k]) && (kf as any)[k].length > 0);
+    const anyLocal = expectedKeys.some((k) => Array.isArray((localKeyframes as any)[k]) && (localKeyframes as any)[k].length > 0);
+    if (anyIncoming && !anyLocal) {
+      setLocalKeyframes({
+        front: Array.isArray((kf as any).front) ? (kf as any).front : [],
+        back: Array.isArray((kf as any).back) ? (kf as any).back : [],
+        left: Array.isArray((kf as any).left) ? (kf as any).left : [],
+        right: Array.isArray((kf as any).right) ? (kf as any).right : [],
+      });
+    }
+  }, [analysis.keyframes]);
+
   // Solo mostrar ángulos que tengan keyframes disponibles (preferir estado local)
-  const availableAngles = Object.entries(localKeyframes)
-    .filter(([angle, urls]) => {
-      const hasUrls = urls && Array.isArray(urls) && urls.length > 0;
-      console.log(`🔍 Ángulo ${angle}:`, urls, '¿Tiene URLs?', hasUrls);
-      return hasUrls;
-    })
-    .map(([angle, _]) => angle);
+  const knownAngles: Array<'front'|'back'|'left'|'right'> = ['front','back','left','right'];
+  const hasAngleAvailable = (angle: 'front'|'back'|'left'|'right'): boolean => {
+    const kfs = (localKeyframes as any)[angle];
+    const hasKfs = Array.isArray(kfs) && kfs.length > 0;
+    const anyObj = analysis as any;
+    const hasVideo = angle === 'front'
+      ? Boolean(anyObj?.videoUrl)
+      : angle === 'back'
+        ? Boolean(anyObj?.videoBackUrl)
+        : angle === 'left'
+          ? Boolean(anyObj?.videoLeftUrl)
+          : Boolean(anyObj?.videoRightUrl);
+    console.log(`🔍 Ángulo ${angle}: kfs=${hasKfs} video=${hasVideo}`);
+    return hasKfs || hasVideo;
+  };
+  const availableAngles = knownAngles.filter((a) => hasAngleAvailable(a));
 
   console.log('📹 Ángulos disponibles:', availableAngles);
   console.log('🔍 localKeyframes completo:', localKeyframes);
@@ -91,9 +119,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   // Verificar si el análisis es parcial (menos de 4 ángulos)
   const isPartialAnalysis = availableAngles.length < 4;
-  const missingAngles = ['front', 'back', 'left', 'right'].filter(angle => 
-    !availableAngles.includes(angle)
-  );
+  const missingAngles = knownAngles.filter((angle) => !availableAngles.includes(angle));
 
   console.log('⚠️ ¿Es análisis parcial?', isPartialAnalysis);
   console.log('❌ Ángulos faltantes:', missingAngles);
@@ -110,7 +136,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     };
     // Helper to decide destination
     const toPrep = (name: string) => /pies|base|posición de los pies|ancho/i.test(name);
-    const toAscenso = (name: string) => /ascenso|elevaci[oó]n|tiempo\s*de\s*lanzamiento|captura\s*[→\->]\s*liberaci[oó]n|codo|alineaci[oó]n\s*del\s*codo|set\s*point/i.test(name);
+    const toAscenso = (name: string) => /ascenso|elevaci[oó]n|tiempo\s*de\s*lanzamiento|captura\s*[→\->]\s*liberaci[oó]n|codo|alineaci[oó]n\s*del\s*codo|set\s*point|subida\s*recta|trayectoria\s*hasta\s*el\s*set\s*point/i.test(name);
     const toLiberacion = (name: string) => /liberaci[oó]n|extensi[oó]n\s*del\s*brazo|follow\s*-?through|giro\s*de\s*la\s*pelota|giro\s*de\s*bal[oó]n|back\s*spin|backspin/i.test(name);
     const isTimingCat = (catName: string) => /timing\s*y?\s*giro/i.test(catName);
     const isBackspinItem = (name: string) => /giro\s*de\s*la\s*pelota|giro\s*de\s*bal[oó]n|back\s*spin|backspin/i.test(name);
@@ -143,25 +169,25 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       : 3; // fallback prudente
         const normalizedItem = { ...item, rating: normalizedRating } as DetailedChecklistItem;
         if (isMunecaCargada(item)) {
-          getBucket('Preparación').items.push(normalizedItem);
+          getBucket('Preparación (17%)').items.push(normalizedItem);
         } else if (isTiming) {
           // Conservar Backspin y Tiempo/Velocidad dentro de "Ascenso y Liberación"
           if (isBackspinItem(itemName) || isTiempoLanzamiento(item)) {
             getBucket('Ascenso y Liberación').items.push(normalizedItem);
           }
         } else if (toPrep(itemName) || isFeetCat) {
-          getBucket('Preparación').items.push(normalizedItem);
+          getBucket('Preparación (17%)').items.push(normalizedItem);
         } else if (toAscenso(itemName)) {
-          getBucket('Ascenso').items.push(normalizedItem);
+          getBucket('Ascenso (17%)').items.push(normalizedItem);
         } else if (toLiberacion(itemName)) {
-          getBucket('Liberación').items.push(normalizedItem);
+          getBucket('Liberación (10%)').items.push(normalizedItem);
         } else {
           getBucket(cat.category).items.push(normalizedItem);
         }
       });
     });
     // Asegurar existencia de la categoría de Fluidez/Armonía (aunque venga vacía desde IA)
-    const fluidezCategoryName = 'Fluidez / Armonía (transferencia energética)';
+    const fluidezCategoryName = 'Fluidez (50%)';
     if (!buckets[fluidezCategoryName]) buckets[fluidezCategoryName] = { category: fluidezCategoryName, items: [] } as ChecklistCategory;
     // Inyectar ítem por defecto si falta
     const hasFluidezItem = (buckets[fluidezCategoryName].items || []).some(
@@ -181,8 +207,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
 
     // Asegurar existencia de las categorías "Ascenso" y "Liberación"
-    const ascensoCatName = 'Ascenso';
-    const liberacionCatName = 'Liberación';
+    const ascensoCatName = 'Ascenso (17%)';
+    const liberacionCatName = 'Liberación (10%)';
     if (!buckets[ascensoCatName]) buckets[ascensoCatName] = { category: ascensoCatName, items: [] } as ChecklistCategory;
     if (!buckets[liberacionCatName]) buckets[liberacionCatName] = { category: liberacionCatName, items: [] } as ChecklistCategory;
     // Inyectar ítem por defecto de Set Point si falta
@@ -199,6 +225,38 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         comment: '',
       } as DetailedChecklistItem;
       buckets[ascensoCatName].items.push(defaultSetPoint);
+    }
+
+    // Inyectar ítem por defecto: Subida recta del balón (3%)
+    const subidaRectaId = 'subida_recta_balon';
+    const hasSubidaRecta = (buckets[ascensoCatName].items || []).some(
+      (it) => (it.id || '').trim() === subidaRectaId || /subida\s*recta\s*del\s*bal[oó]n/i.test(it.name || '')
+    );
+    if (!hasSubidaRecta) {
+      const defaultSubidaRecta: DetailedChecklistItem = {
+        id: subidaRectaId,
+        name: 'Subida recta del balón',
+        description: 'El balón debe ascender de forma vertical y cercana al eje corporal; evitar trayectorias inclinadas o desde el costado que rompan la alineación y la eficiencia del tiro.',
+        rating: 3,
+        comment: '',
+      } as DetailedChecklistItem;
+      buckets[ascensoCatName].items.push(defaultSubidaRecta);
+    }
+
+    // Inyectar ítem por defecto: Trayectoria del balón hasta el set point (3%)
+    const trayectoriaId = 'trayectoria_hasta_set_point';
+    const hasTrayectoria = (buckets[ascensoCatName].items || []).some(
+      (it) => (it.id || '').trim() === trayectoriaId || /trayectoria\s*del\s*bal[oó]n\s*hasta\s*el\s*set\s*point/i.test(it.name || '')
+    );
+    if (!hasTrayectoria) {
+      const defaultTrayectoria: DetailedChecklistItem = {
+        id: trayectoriaId,
+        name: 'Trayectoria del balón hasta el set point',
+        description: 'El balón debe subir recto y cercano al eje corporal hacia el set point, evitando trayectorias circulares o abiertas que resten eficiencia.',
+        rating: 3,
+        comment: '',
+      } as DetailedChecklistItem;
+      buckets[ascensoCatName].items.push(defaultTrayectoria);
     }
 
     // Inyectar ítem por defecto: Mano no dominante durante el ascenso (binario, 2%)
@@ -222,8 +280,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     if (legacyAL && Array.isArray(legacyAL.items) && legacyAL.items.length) {
       for (const it of legacyAL.items) {
         const nm = (it.name || '');
-        if (toLiberacion(nm)) buckets['Liberación'].items.push(it as DetailedChecklistItem);
-        else buckets['Ascenso'].items.push(it as DetailedChecklistItem);
+        if (toLiberacion(nm)) buckets[liberacionCatName].items.push(it as DetailedChecklistItem);
+        else buckets[ascensoCatName].items.push(it as DetailedChecklistItem);
       }
       delete buckets['Ascenso y Liberación'];
     }
@@ -303,7 +361,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     });
 
     // Orden estable esperado en UI
-    const order = ['Preparación', 'Ascenso', 'Liberación', fluidezCategoryName, 'Finalización y Seguimiento'];
+    const order = ['Preparación (17%)', 'Ascenso (17%)', 'Liberación (10%)', fluidezCategoryName, 'Seguimiento / Post-liberación (9%)'];
     const ordered: ChecklistCategory[] = [];
     order.forEach((n) => {
       if (!buckets[n]) return;
@@ -427,6 +485,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   const canEdit = userProfile?.role === 'coach' && userProfile.id === (player.coachId || '');
   const [rebuilding, setRebuilding] = useState(false);
+  const [uploadingFromClient, setUploadingFromClient] = useState(false);
 
   type KeyframeComment = { id?: string; comment: string; coachName?: string; createdAt: string };
   const [keyframeComments, setKeyframeComments] = useState<KeyframeComment[]>([]);
@@ -676,7 +735,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     itemId: string,
     newRating: DetailedChecklistItem["rating"],
     newComment: string,
-    newRating10?: number
+    newRating10?: number,
+    newNA?: boolean
   ) => {
     setChecklistState((prevState) => {
       const updated = prevState.map((category) =>
@@ -685,7 +745,14 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               ...category,
               items: category.items.map((item) =>
                 item.id === itemId
-                  ? { ...item, rating: newRating, comment: newComment, ...(typeof newRating10 === 'number' ? { rating10: newRating10 } : {}) }
+                  ? {
+                      ...item,
+                      rating: newRating,
+                      // mantener comment (IA) intacto; guardar en coachComment
+                      coachComment: newComment,
+                      ...(typeof newRating10 === 'number' ? { rating10: newRating10 } : {}),
+                      ...(typeof newNA === 'boolean' ? { na: newNA } : {})
+                    }
                   : item
               ),
             }
@@ -797,32 +864,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         </TabsList>
         <TabsContent value="ai-analysis" className="mt-6">
           <div className="flex flex-col gap-8">
-            {/* Panel de análisis desde JSON */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="font-headline">Análisis rápido desde JSON</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex flex-col gap-2">
-                  <Input type="file" accept="application/json" onChange={onJsonFile} />
-                  {jsonFrames && (
-                    <div className="text-sm text-muted-foreground">
-                      {jsonFileName} — {jsonFrames.length} frames
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <Button onClick={analyzeJsonFrames} disabled={!jsonFrames || analyzing}>
-                    {analyzing ? "Analizando..." : "Analizar"}
-                  </Button>
-                </div>
-                {analyzeResult && (
-                  <div className="rounded border p-3 bg-white">
-                    <pre className="whitespace-pre-wrap text-sm">{JSON.stringify(analyzeResult, null, 2)}</pre>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            {/* Se eliminó el panel de análisis rápido desde JSON para producción */}
 
             {attemptsState.length > 0 && showAttempts && (
               <Card>
@@ -988,6 +1030,12 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     <span className="text-sm text-muted-foreground">Evaluación final: {scoreLabel(avgRating)}</span>
                   </div>
                 )}
+                <div className="mt-6 rounded-md border bg-muted/30 p-4">
+                  <p className="text-sm font-medium">¿Te sirvió este análisis? Compartilo en tus redes:</p>
+                  <div className="mt-3">
+                    <ShareButtons text="Mirá mi análisis de tiro en IaShot" />
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
@@ -997,82 +1045,103 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   <Camera /> Video y Fotogramas
                 </CardTitle>
                 <CardDescription>
-                  {availableAngles.length > 0 
-                    ? "Haz clic en un fotograma para ampliarlo y comentarlo."
-                    : "Video subido para análisis. Los fotogramas clave se generarán automáticamente."}
+                  Haz clic en un fotograma para ampliarlo, dibujar y comentar.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {derivedKeyframeAnalysis && (
-                  <div className="mb-4 p-3 rounded border bg-muted/30 text-sm text-muted-foreground">
-                    <strong>Selección de keyframes (IA):</strong> {derivedKeyframeAnalysis}
+                {/* Oculto temporalmente el aviso de selección de keyframes por IA */}
+
+                {/* Video arriba */}
+                {safeAnalysis.videoUrl && (
+                  <div className="max-w-xl mx-auto mb-6">
+                    <video 
+                      controls 
+                      className="w-full rounded-lg shadow-lg max-h-[420px]"
+                      src={safeAnalysis.videoUrl}
+                    >
+                      Tu navegador no soporta el elemento video.
+                    </video>
+                    <p className="text-sm text-muted-foreground text-center mt-2">
+                      Video: {safeAnalysis.shotType}
+                    </p>
                   </div>
                 )}
-                {availableAngles.length > 0 ? (
-                  <div className="space-y-4">
-                    <Tabs defaultValue={availableAngles[0]} className="w-full">
-                      <TabsList className="grid w-full" style={{ gridTemplateColumns: `repeat(${availableAngles.length}, 1fr)` }}>
-                        {availableAngles.map(angle => (
-                          <TabsTrigger key={angle} value={angle}>
-                            {angle === 'front' ? 'Frente' : 
-                             angle === 'back' ? 'Espalda' : 
-                             angle === 'left' ? 'Izquierda' : 'Derecha'}
-                          </TabsTrigger>
-                        ))}
-                      </TabsList>
-                      {availableAngles.map(angle => (
-                        <TabsContent key={angle} value={angle} className="mt-4">
-                          {renderKeyframes((localKeyframes as any)[angle] || [], 
-                            angle === 'front' ? 'frontal' : 
-                            angle === 'back' ? 'espalda' : 
-                            angle === 'left' ? 'izquierdo' : 'derecho', angle as 'front'|'back'|'left'|'right')}
-                        </TabsContent>
-                      ))}
-                    </Tabs>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="text-center py-4">
-                      <Camera className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                      <p className="text-muted-foreground mb-4">Video subido para análisis</p>
-                      {/* Botón de utilidad para generar fotogramas en dev */}
-                      <div className="flex items-center justify-center">
-                        <Button
-                          variant="secondary"
-                          disabled={rebuilding}
-                          onClick={async () => {
-                            try {
-                              setRebuilding(true);
-                              const res = await fetch(`/api/analyses/${safeAnalysis.id}/rebuild-keyframes/dev`, { method: 'POST' });
-                              const data = await res.json();
-                              if (res.ok && data?.keyframes) {
-                                setLocalKeyframes(data.keyframes);
-                              }
-                            } finally {
-                              setRebuilding(false);
+
+                {/* Botón dev para generar si no hay nada */}
+                {availableAngles.length === 0 && (
+                  <div className="flex items-center justify-center mb-6">
+                    <div className="flex gap-2">
+                      <Button
+                        variant="secondary"
+                        disabled={rebuilding}
+                        onClick={async () => {
+                          try {
+                            setRebuilding(true);
+                            const res = await fetch(`/api/analyses/${safeAnalysis.id}/rebuild-keyframes/dev`, { method: 'POST' });
+                            const data = await res.json();
+                            if (res.ok && data?.keyframes) {
+                              setLocalKeyframes(data.keyframes);
                             }
-                          }}
-                        >
-                          {rebuilding ? 'Generando fotogramas…' : 'Generar fotogramas (dev)'}
-                        </Button>
-                      </div>
+                          } finally {
+                            setRebuilding(false);
+                          }
+                        }}
+                      >
+                        {rebuilding ? 'Generando (server)…' : 'Generar (server, dev)'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        disabled={uploadingFromClient}
+                        onClick={async () => {
+                          try {
+                            setUploadingFromClient(true);
+                            // Intentar extraer 12 frames desde el video visible del DOM
+                            const v = document.querySelector('video');
+                            if (!v) return;
+                            const videoEl = v as HTMLVideoElement;
+                            const canvas = document.createElement('canvas');
+                            const ctx = canvas.getContext('2d');
+                            if (!ctx) return;
+                            await new Promise<void>((r)=>{ if (videoEl.readyState>=2) r(); else videoEl.addEventListener('loadedmetadata', ()=>r(), { once: true }); });
+                            const count = 12; const urls: Array<{ dataUrl: string; timestamp: number }> = [];
+                            canvas.width = Math.max(160, videoEl.videoWidth/4|0); canvas.height = Math.max(160, (videoEl.videoHeight/videoEl.videoWidth*canvas.width)|0);
+                            const interval = Math.max(0.1, Math.min( (videoEl.duration||6)/(count+1), 2 ));
+                            for (let i=1;i<=count;i++){
+                              const t = Math.min(videoEl.duration-0.001, i*interval);
+                              videoEl.pause(); videoEl.currentTime = t;
+                              await new Promise<void>((r)=>{ const onS=()=>{videoEl.removeEventListener('seeked', onS); r();}; videoEl.addEventListener('seeked', onS); });
+                              ctx.drawImage(videoEl, 0,0, canvas.width, canvas.height);
+                              const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                              urls.push({ dataUrl, timestamp: t });
+                            }
+                            const res = await fetch(`/api/analyses/${safeAnalysis.id}/keyframes/upload`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ angle:'front', frames: urls }) });
+                            const data = await res.json();
+                            if (res.ok && data?.keyframes) setLocalKeyframes(data.keyframes);
+                          } finally { setUploadingFromClient(false); }
+                        }}
+                      >
+                        {uploadingFromClient ? 'Generando (cliente)…' : 'Generar (desde este video)'}
+                      </Button>
                     </div>
-                    {safeAnalysis.videoUrl && (
-                      <div className="max-w-xl mx-auto">
-                        <video 
-                          controls 
-                          className="w-full rounded-lg shadow-lg max-h-[420px]"
-                          src={safeAnalysis.videoUrl}
-                        >
-                          Tu navegador no soporta el elemento video.
-                        </video>
-                        <p className="text-sm text-muted-foreground text-center mt-2">
-                          Video: {safeAnalysis.shotType}
-                        </p>
-                      </div>
-                    )}
                   </div>
                 )}
+
+                {/* Cuatro secciones por ángulo debajo del video */}
+                <div className="space-y-8">
+                  {([
+                    { key: 'front' as const, label: 'Frente', labelAdj: 'frontal' },
+                    { key: 'back' as const, label: 'Espalda', labelAdj: 'espalda' },
+                    { key: 'left' as const, label: 'Izquierda', labelAdj: 'izquierdo' },
+                    { key: 'right' as const, label: 'Derecha', labelAdj: 'derecho' },
+                  ]).map(({ key, label, labelAdj }) => (
+                    <div key={key}>
+                      <h4 className="font-medium mb-2">{label}</h4>
+                      {(localKeyframes[key] && localKeyframes[key].length > 0)
+                        ? renderKeyframes(localKeyframes[key], labelAdj, key)
+                        : <div className="text-sm text-muted-foreground">No hay fotogramas disponibles</div>}
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -1153,6 +1222,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               analysisId={safeAnalysis.id}
               currentScore={safeAnalysis.score}
               editable={userProfile?.role === 'coach' && userProfile.id === (player.coachId || '')}
+              showCoachBox={Boolean(player.coachId)}
             />
           )}
         </TabsContent>

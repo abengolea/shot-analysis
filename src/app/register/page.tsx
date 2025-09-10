@@ -9,7 +9,7 @@ export default function RegisterPage() {
     <div className="mx-auto flex w-full max-w-md flex-col items-center justify-center py-12">
        <div className="mb-8 flex flex-col items-center text-center">
         <Link href="/" className="flex flex-col items-center gap-2">
-            <Image src="/chas-logo.svg" alt="chas.com logo" width={48} height={48} className="mb-4" />
+            <img src="/chas-logo.svg" alt="chas.com logo" className="mb-4 h-12 w-auto" />
         </Link>
         <h1 className="font-headline text-3xl font-bold tracking-tight">
           Crea tu Cuenta

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { ITEM_WEIGHTS_TRES } from '@/lib/scoring';
 
 type RatingItem = {
   id: string;
@@ -8,6 +9,7 @@ type RatingItem = {
   rating: 1 | 2 | 3 | 4 | 5;
   comment: string;
   rating10?: number;
+  na?: boolean;
 };
 
 type RatingCategory = {
@@ -15,113 +17,93 @@ type RatingCategory = {
   items: RatingItem[];
 };
 
-const FLUIDEZ_NAME = 'Fluidez / Armonía (transferencia energética)';
+const FLUIDEZ_NAME = 'Fluidez';
 const SETPOINT_NAME = 'Set point (inicio del empuje de la pelota)';
-const ELBOW_NAME = 'Alineación del codo';
 const ASCENSO_HAND_ID = 'mano_no_dominante_ascenso';
 const LIBERACION_HAND_ID = 'mano_no_dominante_liberacion';
 
-function computeFinalScoreWithFluidez(
+// Pesos exactos por ítem del checklist de Tiro de Tres (default). Suman 103.
+const DEFAULT_ITEM_WEIGHTS_TRES: Record<string, number> = {
+  // Fluidez (50%)
+  tiro_un_solo_tiempo: 25,
+  sincronia_piernas: 25,
+  // Preparación (17%)
+  alineacion_pies: 2,
+  alineacion_cuerpo: 2,
+  muneca_cargada: 4,
+  flexion_rodillas: 4,
+  hombros_relajados: 3,
+  enfoque_visual: 2,
+  // Ascenso (17%)
+  mano_no_dominante_ascenso: 3,
+  codos_cerca_cuerpo: 2,
+  trayectoria_hasta_set_point: 3,
+  subida_recta_balon: 3,
+  set_point: 2,
+  tiempo_lanzamiento: 4,
+  // Liberación (10%)
+  mano_no_dominante_liberacion: 2,
+  extension_completa_brazo: 4,
+  giro_pelota: 2,
+  angulo_salida: 2,
+  // Seguimiento (9%)
+  mantenimiento_equilibrio: 2,
+  equilibrio_aterrizaje: 1,
+  duracion_follow_through: 1,
+  consistencia_repetitiva: 5,
+};
+
+function computeFinalScoreExactWeights(
   categories: RatingCategory[],
-  weights: Record<string, number>,
-  fluidezScore10?: number
+  firestoreWeights?: Record<string, number>
 ): number {
-  // Derivar fluidez 1..10 desde categorías si no viene explícito
-  if (typeof fluidezScore10 !== 'number') {
-    for (const cat of categories) {
-      if (cat.category.trim() === FLUIDEZ_NAME) {
-        const special = cat.items?.find((it) => it.name?.trim() === FLUIDEZ_NAME && typeof it.rating10 === 'number');
-        if (special && typeof special.rating10 === 'number') {
-          fluidezScore10 = special.rating10;
-          break;
-        }
-      }
-    }
+  // Preferir pesos de Firestore si tienen claves de ítems; si no, usar default de Tiro de Tres
+  // Aplanar ítems
+  const allItems: RatingItem[] = categories.flatMap((cat) => Array.isArray(cat.items) ? cat.items : []);
+  const presentItemIds = new Set(allItems.map((it) => (it.id || '').trim().toLowerCase()).filter(Boolean));
+
+  const candidateWeights = firestoreWeights && Object.keys(firestoreWeights).length > 0 ? firestoreWeights : ITEM_WEIGHTS_TRES;
+  const candidateKeys = Object.keys(candidateWeights).map((k) => k.trim().toLowerCase());
+  const hasAnyMatch = candidateKeys.some((k) => presentItemIds.has(k));
+  const finalWeightsSource = hasAnyMatch ? candidateWeights : ITEM_WEIGHTS_TRES;
+
+  const itemWeights: Record<string, number> = {};
+  Object.keys(finalWeightsSource).forEach((k) => { itemWeights[k.trim().toLowerCase()] = Number(finalWeightsSource[k]); });
+
+  // Recorrer el universo de ítems esperados (por claves de pesos)
+  let numerator = 0;
+  let denom = 0;
+
+  const mapStatusToRating = (status?: string): number | null => {
+    if (!status) return null;
+    if (status === 'Incorrecto') return 1;
+    if (status === 'Incorrecto leve') return 2;
+    if (status === 'Mejorable') return 3;
+    if (status === 'Correcto') return 4;
+    if (status === 'Excelente') return 5;
+    return null;
+  };
+
+  const findItemById = (key: string): RatingItem | undefined => {
+    const lower = key.toLowerCase();
+    return allItems.find((it) => (it.id || '').trim().toLowerCase() === lower);
+  };
+
+  for (const key of Object.keys(itemWeights)) {
+    const w = itemWeights[key];
+    const it = findItemById(key);
+    if (!it) continue; // faltante => excluido (no penaliza)
+    if ((it as any).na === true) continue; // N/A => excluido
+    const ratingRaw = typeof it.rating === 'number' ? it.rating : mapStatusToRating((it as any).status as any);
+    if (ratingRaw == null) continue;
+    const rating = Math.max(1, Math.min(5, Number(ratingRaw)));
+    const percent = (rating / 5) * 100;
+    numerator += w * percent;
+    denom += w;
   }
 
-  // Detectar Set Point y Alineación del codo y calcular sus % (1..5 → 0..100)
-  let setPointPercent = 0;
-  let foundSetPoint = false;
-  let elbowPercent = 0;
-  let foundElbow = false;
-  // Detectar mano no dominante (ascenso y liberación)
-  let ascensoHandRating: number | null = null; // 1..5
-  let liberacionHandRating: number | null = null; // 1..5
-  const categoriesWithoutSetPoint: RatingCategory[] = categories.map((cat) => {
-    const items = Array.isArray(cat.items) ? cat.items : [];
-    const filtered = items.filter((it) => {
-      const isSP = /set\s*point/i.test(it.id || '') || (it.name || '').trim().toLowerCase() === SETPOINT_NAME.toLowerCase();
-      if (isSP && !foundSetPoint) {
-        const sp = Math.max(1, Math.min(5, Number(it.rating) || 0));
-        setPointPercent = (sp / 5) * 100;
-        foundSetPoint = true;
-        return false; // excluir del resto
-      }
-      const isElbow = /alineaci[oó]n.*codo|codo.*alineaci[oó]n/i.test(it.name || '') || /alineacion_?codo/i.test(it.id || '');
-      if (isElbow && !foundElbow) {
-        const el = Math.max(1, Math.min(5, Number(it.rating) || 0));
-        elbowPercent = (el / 5) * 100;
-        foundElbow = true;
-        return false;
-      }
-      // Mano no dominante (ascenso/liberación): no excluir del resto, solo capturar rating
-      if ((it.id || '').trim() === ASCENSO_HAND_ID || /mano\s*no\s*dominante.*ascenso/i.test(it.name || '')) {
-        ascensoHandRating = Math.max(1, Math.min(5, Number(it.rating) || 0));
-      }
-      if ((it.id || '').trim() === LIBERACION_HAND_ID || /mano\s*no\s*dominante.*liberaci[oó]n/i.test(it.name || '')) {
-        liberacionHandRating = Math.max(1, Math.min(5, Number(it.rating) || 0));
-      }
-      return true;
-    });
-    return { ...cat, items: filtered };
-  });
-
-  // Calcular promedio ponderado del resto de categorías (1..5 → %), excluyendo Set Point y Fluidez
-  let totalWeightRest = 0;
-  let weightedSumRest = 0;
-  for (const cat of categoriesWithoutSetPoint) {
-    if (cat.category.trim() === FLUIDEZ_NAME) continue; // se maneja aparte
-    const w = typeof weights[cat.category] === 'number' ? Number(weights[cat.category]) : 1;
-    if (!cat.items || cat.items.length === 0) continue;
-    const avg = cat.items.reduce((s, it) => s + (Number(it.rating) || 0), 0) / cat.items.length; // 1..5
-    weightedSumRest += avg * w;
-    totalWeightRest += w;
-  }
-  let restPercent = 0;
-  if (totalWeightRest > 0) {
-    const avgRatingRest = weightedSumRest / totalWeightRest; // 1..5
-    restPercent = Math.max(0, Math.min(100, (avgRatingRest / 5) * 100));
-  }
-
-  // Fluidez 1..10 → %
-  const fluidezPercent = typeof fluidezScore10 === 'number' ? Math.max(0, Math.min(100, (fluidezScore10 / 10) * 100)) : 0;
-  
-  // Contribuciones especiales mano no dominante
-  // Ascenso (2%) binario: rating >= 4 => 2%, si no => 0%
-  const ascensoHandPercent = ascensoHandRating !== null && ascensoHandRating >= 4 ? 2 : 0;
-  // Liberación (3%) y penalización global
-  // Estados: >=4 sin empuje (3% y sin penalización), 2 empuje leve (0% + -20%), 1 empuje fuerte (0% + -30%), 3 mejorable (0%, sin penalización)
-  let liberacionHandPercent = 0;
-  let penaltyFactor = 1.0; // multiplicador final
-  if (liberacionHandRating !== null) {
-    if (liberacionHandRating >= 4) {
-      liberacionHandPercent = 3;
-    } else if (liberacionHandRating === 2) {
-      liberacionHandPercent = 0;
-      penaltyFactor = 0.8; // -20%
-    } else if (liberacionHandRating === 1) {
-      liberacionHandPercent = 0;
-      penaltyFactor = 0.7; // -30%
-    } else {
-      // rating === 3: mejorable, sin penalización y sin otorgar el 3%
-      liberacionHandPercent = 0;
-    }
-  }
-
-  // Nueva combinación (rebalanceo global 0.95 para rubros existentes) + 2% ascenso + 3% liberación
-  // 57% Fluidez + 7.6% Set Point + 6.65% Codo + 23.75% resto + 2% + 3%
-  let finalScore = 0.57 * fluidezPercent + 0.076 * setPointPercent + 0.0665 * elbowPercent + 0.2375 * restPercent + ascensoHandPercent + liberacionHandPercent;
-  finalScore = finalScore * penaltyFactor;
+  if (denom <= 0) return 0;
+  const finalScore = numerator / denom;
   return Number(Math.max(0, Math.min(100, finalScore)).toFixed(2));
 }
 
@@ -190,7 +172,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const analysisSnap = await analysisRef.get();
     const shotType = analysisSnap.exists ? (analysisSnap.data() as any)?.shotType : undefined;
     const weights = await getScoringWeights(shotType);
-    const score = computeFinalScoreWithFluidez(categories, weights, fluidezScore10);
+    const score = computeFinalScoreExactWeights(categories, weights);
 
     const ref = adminDb.collection('analyses').doc(analysisId);
     const updateData: any = { detailedChecklist: categories, score, updatedAt: new Date().toISOString() };

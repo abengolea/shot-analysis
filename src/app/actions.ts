@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { adminAuth, adminDb, adminStorage } from '@/lib/firebase-admin';
+import { sendCustomEmail } from '@/lib/email-service';
 // Acción: añadir entrenador desde el formulario de registro de coaches
 const AddCoachSchema = z.object({
     name: z.string().min(2, "Nombre demasiado corto"),
@@ -558,6 +559,22 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         const analysisRef = await db.collection('analyses').add(analysisData);
         console.log(`✅ Análisis guardado en Firestore, ID: ${analysisRef.id}`);
 
+        // Notificar por email: nuevo video subido
+        try {
+            const prodBase = 'https://shot-analysis--shotanalisys.us-central1.hosted.app';
+            const link = `${prodBase}/admin/revision-ia/${analysisRef.id}`;
+            await sendCustomEmail({
+                to: 'abengolea1@gmail.com',
+                subject: 'Nuevo video subido para análisis',
+                html: `<p>Se subió un nuevo video para análisis.</p>
+                      <p><b>Jugador:</b> ${currentUser?.name || currentUser?.id || 'desconocido'}</p>
+                      <p><b>Tipo de tiro:</b> ${shotType}</p>
+                      <p><a href="${link}">Revisar en Revisión IA</a></p>`,
+            });
+        } catch (e) {
+            console.warn('No se pudo enviar email de nuevo video:', e);
+        }
+
         // Rango confirmado desde el cliente (opcional)
         const rangeStart = Number(formData.get('rangeStart') || '0') || 0;
         const rangeEnd = Number(formData.get('rangeEnd') || '0');
@@ -661,6 +678,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         // Intentar detectar el frame inicial con IA usando los frames del principal
         let detectedStartIndex: number | null = null;
         let detectedStartTimestamp: number | null = null;
+        let detectedStartConfidence: number | null = null;
         try {
             const { detectStartFrame } = await import('@/ai/flows/detect-start-frame');
             const detection = await detectStartFrame({
@@ -669,7 +687,25 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             });
             detectedStartIndex = detection.startIndex;
             detectedStartTimestamp = detection.startTimestamp;
+            detectedStartConfidence = typeof detection?.confidence === 'number' ? detection.confidence : null;
             console.log('🤖 IA detectó inicio en frame', detectedStartIndex, 'ts', detectedStartTimestamp, 'conf', detection.confidence);
+            // Notificación por "duda alta": umbral 0.6
+            try {
+                const conf = Number(detection?.confidence || 0);
+                const threshold = 0.6;
+                if (!(conf >= threshold)) {
+                    await sendCustomEmail({
+                        to: 'abengolea1@gmail.com',
+                        subject: 'Duda alta en detección de inicio de tiro',
+                        html: `<p>Se detectó <b>duda alta</b> (confianza ${conf.toFixed(2)}) en un análisis.</p>
+                              <p><b>Jugador:</b> ${currentUser?.name || currentUser?.id || 'desconocido'}</p>
+                              <p><b>Shot Type:</b> ${shotType}</p>
+                              <p><a href="/admin/revision-ia">Ir a Revisión IA</a></p>`,
+                    });
+                }
+            } catch (e) {
+                console.warn('No se pudo enviar email de duda alta:', e);
+            }
         } catch (detErr) {
             console.warn('⚠️ No se pudo ejecutar la detección IA de inicio:', detErr);
         }
@@ -740,6 +776,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 startFrameDetection: detectedStartIndex != null ? {
                     index: detectedStartIndex,
                     timestamp: detectedStartTimestamp,
+                    confidence: detectedStartConfidence,
                 } : null,
                 keyframeAnalysis: analysisResult.keyframeAnalysis,
                 updatedAt: new Date().toISOString()

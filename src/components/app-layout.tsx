@@ -57,7 +57,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className="shrink-0" asChild>
               <Link href="/">
-                <Image src="/chas-logo.svg" alt="chas.com logo" width={28} height={28} />
+                <img src="/chas-logo.svg" alt="chas.com logo" className="h-7 w-auto" />
               </Link>
             </Button>
             <div className="flex flex-col group-data-[collapsible=icon]:hidden">
