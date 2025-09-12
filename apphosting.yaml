@@ -8,6 +8,15 @@ runConfig:
   # The server action timeout can be increased to a maximum of 10 minutes.
   # The default is 60s.
   timeoutSeconds: 120
+  env:
+    NEXT_PUBLIC_FIREBASE_API_KEY: "AIzaSyBYvIGN0-Yd1b7LG2Seg6VwfKnTYIo4n_4"
+    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "shotanalisys.firebaseapp.com"
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID: "shotanalisys"
+    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: "shotanalisys.appspot.com"
+    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "602998191800"
+    NEXT_PUBLIC_FIREBASE_APP_ID: "1:602998191800:web:260531cd75a04d37c5264d"
+    NEXT_PUBLIC_APP_URL: "https://shot-analysis--shotanalisys.us-central1.hosted.app"
+    MP_WEBHOOK_URL: "https://shot-analysis--shotanalisys.us-central1.hosted.app/api/payments/webhook"
 
 # Defines a "flow" that can be deployed to Cloud Functions.
 # This can be triggered via an HTTP request or any other supported
