@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { AnalysisView } from '@/components/analysis-view';
+import type { ShotAnalysis, Player as PlayerType } from '@/lib/types';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Loader2 } from 'lucide-react';
@@ -120,6 +121,36 @@ export default function AnalysisPage() {
     );
   }
 
+  // Adaptar a tipos fuertes de AnalysisView
+  const shotAnalysis: ShotAnalysis = {
+    id: analysis.id,
+    playerId: analysis.playerId,
+    createdAt: analysis.createdAt,
+    videoUrl: analysis.videoUrl,
+    shotType: analysis.shotType as any,
+    analysisSummary: (analysis as any).analysisSummary || analysis.analysisResult?.analysisSummary || '',
+    strengths: (analysis as any).strengths || analysis.analysisResult?.strengths || [],
+    weaknesses: (analysis as any).weaknesses || analysis.analysisResult?.weaknesses || [],
+    recommendations: (analysis as any).recommendations || analysis.analysisResult?.recommendations || [],
+    keyframes: (analysis as any).keyframes || { front: [], back: [], left: [], right: [] },
+    detailedChecklist: (analysis as any).detailedChecklist || analysis.analysisResult?.detailedChecklist || [],
+    score: (analysis as any).score,
+    fluidezScore10: (analysis as any).fluidezScore10,
+  };
+
+  const playerStrong: PlayerType = {
+    id: player.id,
+    name: player.name,
+    email: '',
+    role: 'player',
+    avatarUrl: player.avatarUrl,
+    status: 'active',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    playerLevel: player.playerLevel as any,
+    ageGroup: player.ageGroup as any,
+  } as any;
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex items-center gap-4 mb-8">
@@ -157,7 +188,7 @@ export default function AnalysisPage() {
         </div>
       </div>
 
-      <AnalysisView analysis={analysis} player={player} />
+      <AnalysisView analysis={shotAnalysis} player={playerStrong} />
     </div>
   );
 }

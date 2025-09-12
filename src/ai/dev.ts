@@ -13,12 +13,11 @@ import { processUploadedVideo } from '@/ai/flows/process-uploaded-video';
 // You can edit the files in the src/ai/ directory to customize your AI flows.
 
 // This is the entrypoint for the Genkit dev server.
-export {
-  analyzeBasketballShot,
-  contentModeration,
-  generatePersonalizedDrills,
-  processUploadedVideo,
-} from 'genkit/dev';
+// Exportar flows explícitamente para dev si la CLI lo requiere (evitar import de 'genkit/dev')
+export { analyzeBasketballShot } from '@/ai/flows/analyze-basketball-shot';
+export { moderateContent as contentModeration } from '@/ai/flows/content-moderation';
+export { generatePersonalizedDrills } from '@/ai/flows/generate-personalized-drills';
+export { processUploadedVideo as processUploadedVideoFlowEntry } from '@/ai/flows/process-uploaded-video';
 
 // This is the entrypoint for your App Hosting flows.
 // You can edit this file to add or remove flows.

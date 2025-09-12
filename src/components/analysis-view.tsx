@@ -47,7 +47,7 @@ import {
 } from "lucide-react";
 import { DrillCard } from "./drill-card";
 import { DetailedChecklist } from "./detailed-checklist";
-import { computeCategorySubtotal, getCategoryNominalWeight, getItemWeight } from "@/lib/scoring";
+import { CANONICAL_CATEGORIES } from "@/lib/canonical-checklist";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -126,252 +126,66 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   // Estado del checklist (usar directamente lo que venga en analysis)
   const normalizeChecklist = (cats: ChecklistCategory[]): ChecklistCategory[] => {
-    if (!Array.isArray(cats)) return [];
-    // Target buckets
-    const buckets: Record<string, ChecklistCategory> = {};
-    const getBucket = (name: string) => {
-      const key = name.trim();
-      if (!buckets[key]) buckets[key] = { category: key, items: [] } as ChecklistCategory;
-      return buckets[key];
-    };
-    // Helper to decide destination
-    const toPrep = (name: string) => /pies|base|posición de los pies|ancho/i.test(name);
-    const toAscenso = (name: string) => /ascenso|elevaci[oó]n|tiempo\s*de\s*lanzamiento|captura\s*[→\->]\s*liberaci[oó]n|codo|alineaci[oó]n\s*del\s*codo|set\s*point|subida\s*recta|trayectoria\s*hasta\s*el\s*set\s*point/i.test(name);
-    const toLiberacion = (name: string) => /liberaci[oó]n|extensi[oó]n\s*del\s*brazo|follow\s*-?through|giro\s*de\s*la\s*pelota|giro\s*de\s*bal[oó]n|back\s*spin|backspin/i.test(name);
-    const isTimingCat = (catName: string) => /timing\s*y?\s*giro/i.test(catName);
-    const isBackspinItem = (name: string) => /giro\s*de\s*la\s*pelota|giro\s*de\s*bal[oó]n|back\s*spin|backspin/i.test(name);
-    const isTiempoLanzamiento = (it: DetailedChecklistItem) =>
-      (it.id && /tiempo_?lanzamiento/i.test(it.id)) ||
-      /tiempo\s*de\s*lanzamiento|velocidad\s*de\s*tir|captura\s*[→\->]\s*liberaci[oó]n/i.test(it.name || '');
-    const isMunecaCargada = (it: DetailedChecklistItem) =>
-      (it.id && /muneca_cargada/i.test(it.id)) ||
-      /muñeca\s*cargada/i.test(it.name || '');
-    cats.forEach((cat) => {
-      const isFeetCat = /pies\s*y?\s*bases?/i.test(cat.category);
-      const isTiming = isTimingCat(cat.category);
-      cat.items.forEach((item) => {
-        const itemName = item.name || '';
-        // Normalizar: si no hay rating numérico, derivarlo desde status (legacy)
-        const s = (item.status as unknown as string | undefined);
-        const normalizedRating =
-          typeof item.rating === 'number'
-            ? item.rating
-            : s === 'Incorrecto'
-              ? 1
-              : s === 'Incorrecto leve'
-                ? 2
-                : s === 'Mejorable'
-                  ? 3
-                  : s === 'Correcto'
-                    ? 4
-                    : s === 'Excelente'
-                      ? 5
-                      : 3; // fallback prudente
-        const normalizedItem = { ...item, rating: normalizedRating } as DetailedChecklistItem;
-        if (isMunecaCargada(item)) {
-          getBucket('Preparación (17%)').items.push(normalizedItem);
-        } else if (isTiming) {
-          // Conservar Backspin y Tiempo/Velocidad dentro de "Ascenso y Liberación"
-          if (isBackspinItem(itemName) || isTiempoLanzamiento(item)) {
-            getBucket('Ascenso y Liberación').items.push(normalizedItem);
-          }
-        } else if (toPrep(itemName) || isFeetCat) {
-          getBucket('Preparación (17%)').items.push(normalizedItem);
-        } else if (toAscenso(itemName)) {
-          getBucket('Ascenso (17%)').items.push(normalizedItem);
-        } else if (toLiberacion(itemName)) {
-          getBucket('Liberación (10%)').items.push(normalizedItem);
-        } else {
-          getBucket(cat.category).items.push(normalizedItem);
+    // Construir mapa de ítems IA por id (normalizados)
+    const iaItemById: Record<string, DetailedChecklistItem> = {};
+    if (Array.isArray(cats)) {
+      for (const cat of cats) {
+        for (const item of (cat.items || [])) {
+          const id = String(item.id || '').trim().toLowerCase();
+          if (!id) continue;
+          const s = (item.status as unknown as string | undefined);
+          const normalizedRating =
+            typeof item.rating === 'number'
+              ? item.rating
+              : s === 'Incorrecto'
+                ? 1
+                : s === 'Incorrecto leve'
+                  ? 2
+                  : s === 'Mejorable'
+                    ? 3
+                    : s === 'Correcto'
+                      ? 4
+                      : s === 'Excelente'
+                        ? 5
+                        : 3;
+          iaItemById[id] = {
+            ...item,
+            id: id,
+            rating: normalizedRating as DetailedChecklistItem['rating'],
+          } as DetailedChecklistItem;
         }
-      });
-    });
-    // Asegurar existencia de la categoría de Fluidez/Armonía (aunque venga vacía desde IA)
-    const fluidezCategoryName = 'Fluidez (50%)';
-    if (!buckets[fluidezCategoryName]) buckets[fluidezCategoryName] = { category: fluidezCategoryName, items: [] } as ChecklistCategory;
-    // Inyectar ítem por defecto si falta
-    const hasFluidezItem = (buckets[fluidezCategoryName].items || []).some(
-      (it) => (it.name || '').trim() === fluidezCategoryName
-    );
-    if (!hasFluidezItem) {
-      const defaultFluidez: DetailedChecklistItem = {
-        id: 'fluidez_armonia',
-        name: fluidezCategoryName,
-        description: 'Evaluación de la transferencia energética coordinada a lo largo de todo el movimiento. Puntúa de 1 (muy pobre) a 10 (excelente).',
-        rating: 4,
-        comment: '',
-        // incluir rating10 (campo opcional para este ítem especial)
-        rating10: (typeof (analysis as any).fluidezScore10 === 'number' ? (analysis as any).fluidezScore10 : 5) as any,
-      } as unknown as DetailedChecklistItem;
-      buckets[fluidezCategoryName].items.push(defaultFluidez);
-    }
-
-    // Asegurar existencia de las categorías "Ascenso" y "Liberación"
-    const ascensoCatName = 'Ascenso (17%)';
-    const liberacionCatName = 'Liberación (10%)';
-    if (!buckets[ascensoCatName]) buckets[ascensoCatName] = { category: ascensoCatName, items: [] } as ChecklistCategory;
-    if (!buckets[liberacionCatName]) buckets[liberacionCatName] = { category: liberacionCatName, items: [] } as ChecklistCategory;
-    // Inyectar ítem por defecto de Set Point si falta
-    const setPointName = 'Set point (inicio del empuje de la pelota)';
-    const hasSetPointItem = (buckets[ascensoCatName].items || []).some(
-      (it) => /set\s*point/i.test(it.id || '') || (it.name || '').trim().toLowerCase() === setPointName.toLowerCase()
-    );
-    if (!hasSetPointItem) {
-      const defaultSetPoint: DetailedChecklistItem = {
-        id: 'set_point',
-        name: setPointName,
-        description: 'Altura de inicio del empuje y continuidad (un solo tiempo). Para Sub-12/13: pecho a debajo de la pera. En mayores: subir gradualmente sin superar la frente.',
-        rating: 3,
-        comment: '',
-      } as DetailedChecklistItem;
-      buckets[ascensoCatName].items.push(defaultSetPoint);
-    }
-
-    // Inyectar ítem por defecto: Subida recta del balón (3%)
-    const subidaRectaId = 'subida_recta_balon';
-    const hasSubidaRecta = (buckets[ascensoCatName].items || []).some(
-      (it) => (it.id || '').trim() === subidaRectaId || /subida\s*recta\s*del\s*bal[oó]n/i.test(it.name || '')
-    );
-    if (!hasSubidaRecta) {
-      const defaultSubidaRecta: DetailedChecklistItem = {
-        id: subidaRectaId,
-        name: 'Subida recta del balón',
-        description: 'El balón debe ascender de forma vertical y cercana al eje corporal; evitar trayectorias inclinadas o desde el costado que rompan la alineación y la eficiencia del tiro.',
-        rating: 3,
-        comment: '',
-      } as DetailedChecklistItem;
-      buckets[ascensoCatName].items.push(defaultSubidaRecta);
-    }
-
-    // Inyectar ítem por defecto: Trayectoria del balón hasta el set point (3%)
-    const trayectoriaId = 'trayectoria_hasta_set_point';
-    const hasTrayectoria = (buckets[ascensoCatName].items || []).some(
-      (it) => (it.id || '').trim() === trayectoriaId || /trayectoria\s*del\s*bal[oó]n\s*hasta\s*el\s*set\s*point/i.test(it.name || '')
-    );
-    if (!hasTrayectoria) {
-      const defaultTrayectoria: DetailedChecklistItem = {
-        id: trayectoriaId,
-        name: 'Trayectoria del balón hasta el set point',
-        description: 'El balón debe subir recto y cercano al eje corporal hacia el set point, evitando trayectorias circulares o abiertas que resten eficiencia.',
-        rating: 3,
-        comment: '',
-      } as DetailedChecklistItem;
-      buckets[ascensoCatName].items.push(defaultTrayectoria);
-    }
-
-    // Inyectar ítem por defecto: Mano no dominante durante el ascenso (binario, 2%)
-    const ascensoHandId = 'mano_no_dominante_ascenso';
-    const hasAscensoHand = (buckets[ascensoCatName].items || []).some(
-      (it) => (it.id || '').trim() === ascensoHandId || /mano\s*no\s*dominante.*ascenso/i.test(it.name || '')
-    );
-    if (!hasAscensoHand) {
-      const defaultAscensoHand: DetailedChecklistItem = {
-        id: ascensoHandId,
-        name: 'Posición de la mano no dominante (ascenso)',
-        description: 'Debe acompañar sin interferir la dirección ni la fuerza de la mano dominante. No empuja ni desvía la pelota durante el ascenso.',
-        rating: 3,
-        comment: '',
-      } as DetailedChecklistItem;
-      buckets[ascensoCatName].items.push(defaultAscensoHand);
-    }
-
-    // Si quedó una categoría legacy "Ascenso y Liberación", migrar sus ítems y eliminarla
-    const legacyAL = buckets['Ascenso y Liberación'];
-    if (legacyAL && Array.isArray(legacyAL.items) && legacyAL.items.length) {
-      for (const it of legacyAL.items) {
-        const nm = (it.name || '');
-        if (toLiberacion(nm)) buckets[liberacionCatName].items.push(it as DetailedChecklistItem);
-        else buckets[ascensoCatName].items.push(it as DetailedChecklistItem);
       }
-      delete buckets['Ascenso y Liberación'];
     }
 
-    // Diagnóstico: registrar ids duplicados por categoría antes de deduplicar
-    try {
-      Object.keys(buckets).forEach((catName) => {
-        const counts: Record<string, number> = {};
-        (buckets[catName].items || []).forEach((it) => {
-          const id = (it.id || '').trim();
-          if (!id) return;
-          counts[id] = (counts[id] || 0) + 1;
-        });
-        const dupIds = Object.keys(counts).filter((k) => counts[k] > 1);
-        if (dupIds.length) {
-          console.warn('Checklist: ids duplicados detectados en categoría', catName, dupIds);
+    // Construir checklist canónico y superponer datos de IA por id (sin agregar otros ítems)
+    const canonical = CANONICAL_CATEGORIES.map((cat) => {
+      const items = cat.items.map((def) => {
+        const id = def.id.trim().toLowerCase();
+        const fromIA = iaItemById[id];
+        if (fromIA) {
+          return {
+            id: def.id,
+            name: def.name, // mantener nombre canónico
+            description: def.description,
+            rating: (fromIA.rating ?? 3) as DetailedChecklistItem['rating'],
+            comment: String(fromIA.comment || ''),
+            coachComment: fromIA.coachComment,
+            na: Boolean((fromIA as any).na),
+          } as DetailedChecklistItem;
         }
+        // Ítem faltante en IA → mostrar como N/A sin penalizar
+        return {
+          id: def.id,
+          name: def.name,
+          description: def.description,
+          rating: 3,
+          comment: '',
+          na: true,
+        } as DetailedChecklistItem;
       });
-    } catch {}
-
-    // Deduplicar por id dentro de cada categoría para evitar keys duplicadas (p.ej. giro_pelota)
-    Object.keys(buckets).forEach((catName) => {
-      const seen = new Set<string>();
-      const deduped: DetailedChecklistItem[] = [];
-      for (const it of buckets[catName].items) {
-        const key = (it.id || '').trim();
-        if (!key) { deduped.push(it as DetailedChecklistItem); continue; }
-        if (seen.has(key)) continue;
-        seen.add(key);
-        deduped.push(it as DetailedChecklistItem);
-      }
-      buckets[catName].items = deduped;
+      return { category: cat.category, items } as ChecklistCategory;
     });
-
-    // Asegurar ítem Backspin en Liberación si falta (después de migrar y deduplicar)
-    const backspinName = 'Giro de la pelota (backspin)';
-    const hasBackspinItem = (buckets[liberacionCatName].items || []).some(
-      (it) => /(^|\s)giro_pelota(\s|$)/i.test(it.id || '') || /giro\s*de\s*la\s*pelota|back\s*spin|backspin/i.test((it.name || ''))
-    );
-    if (!hasBackspinItem) {
-      const defaultBackspin: DetailedChecklistItem = {
-        id: 'giro_pelota',
-        name: backspinName,
-        description: 'El balón debe tener un giro limpio hacia atrás en el aire. Comenta la calidad del backspin (limpio/bajo/irregular).',
-        rating: 3,
-        comment: '',
-      } as DetailedChecklistItem;
-      buckets[liberacionCatName].items.push(defaultBackspin);
-    }
-
-    // Inyectar ítem por defecto: Mano no dominante en la liberación (3% + posibles penalizaciones)
-    const liberacionHandId = 'mano_no_dominante_liberacion';
-    const hasLiberacionHand = (buckets[liberacionCatName].items || []).some(
-      (it) => (it.id || '').trim() === liberacionHandId || /mano\s*no\s*dominante.*liberaci[oó]n/i.test(it.name || '')
-    );
-    if (!hasLiberacionHand) {
-      const defaultLiberacionHand: DetailedChecklistItem = {
-        id: liberacionHandId,
-        name: 'Mano no dominante en la liberación',
-        description: 'Debe acompañar y “apagarse” en la suelta; no empuja ni añade fuerza lateral/frontal. Dedos hacia arriba al finalizar. Si empuja (leve/fuerte), se penaliza el puntaje total.',
-        rating: 3,
-        comment: '',
-      } as DetailedChecklistItem;
-      buckets[liberacionCatName].items.push(defaultLiberacionHand);
-    }
-
-    // Segunda pasada de deduplicación por seguridad
-    Object.keys(buckets).forEach((catName) => {
-      const seen = new Set<string>();
-      buckets[catName].items = buckets[catName].items.filter((it) => {
-        const key = (it.id || '').trim();
-        if (!key) return true;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    });
-
-    // Orden estable esperado en UI
-    const order = ['Preparación (17%)', 'Ascenso (17%)', 'Liberación (10%)', fluidezCategoryName, 'Seguimiento / Post-liberación (9%)'];
-    const ordered: ChecklistCategory[] = [];
-    order.forEach((n) => {
-      if (!buckets[n]) return;
-      if (n === fluidezCategoryName) { ordered.push(buckets[n]); return; }
-      if (buckets[n].items.length) ordered.push(buckets[n]);
-    });
-    Object.keys(buckets)
-      .filter((k) => !order.includes(k) && buckets[k].items.length)
-      .forEach((k) => ordered.push(buckets[k]));
-    return ordered;
+    return canonical;
   };
 
   const [checklistState, setChecklistState] = useState<ChecklistCategory[]>(() => {
@@ -847,18 +661,18 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   return (
     <>
       <Tabs defaultValue="ai-analysis" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="ai-analysis">
+        <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap md:grid md:grid-cols-4">
+          <TabsTrigger value="ai-analysis" className="min-w-[140px] md:min-w-0 whitespace-nowrap flex-shrink-0">
             <Bot className="mr-2" /> Análisis IA
           </TabsTrigger>
-          <TabsTrigger value="checklist">
+          <TabsTrigger value="checklist" className="min-w-[120px] md:min-w-0 whitespace-nowrap flex-shrink-0">
               <ListChecks className="mr-2" /> Checklist
           </TabsTrigger>
         
-          <TabsTrigger value="coach-feedback">
+          <TabsTrigger value="coach-feedback" className="min-w-[160px] md:min-w-0 whitespace-nowrap flex-shrink-0">
             <FilePenLine className="mr-2" /> Feedback de la IA
           </TabsTrigger>
-          <TabsTrigger value="improvement-plan">
+          <TabsTrigger value="improvement-plan" className="min-w-[160px] md:min-w-0 whitespace-nowrap flex-shrink-0">
             <Dumbbell className="mr-2" /> Plan de Mejora
           </TabsTrigger>
         </TabsList>
@@ -870,7 +684,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between gap-2">
-                    <CardTitle className="font-headline">Intentos detectados</CardTitle>
+                    <CardTitle className="font-headline text-lg sm:text-xl">Intentos detectados</CardTitle>
                     <Badge variant="secondary">{attemptsState.length}</Badge>
                   </div>
                   <CardDescription>
@@ -878,7 +692,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
+                  <div className="space-y-2 text-sm sm:text-base">
                     {attemptsState.map((a, i) => (
                       <div key={i} className="flex items-center justify-between gap-3 rounded border p-2">
                         <div className="flex flex-col gap-1 text-sm text-muted-foreground">
@@ -1215,16 +1029,14 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
           </div>
         </TabsContent>
         <TabsContent value="checklist" className="mt-6">
-          {analysis.detailedChecklist && (
-            <DetailedChecklist
-              categories={checklistState}
-              onChecklistChange={handleChecklistChange}
-              analysisId={safeAnalysis.id}
-              currentScore={safeAnalysis.score}
-              editable={userProfile?.role === 'coach' && userProfile.id === (player.coachId || '')}
-              showCoachBox={Boolean(player.coachId)}
-            />
-          )}
+          <DetailedChecklist
+            categories={checklistState}
+            onChecklistChange={handleChecklistChange}
+            analysisId={safeAnalysis.id}
+            currentScore={safeAnalysis.score}
+            editable={userProfile?.role === 'coach' && userProfile.id === (player.coachId || '')}
+            showCoachBox={Boolean(player.coachId)}
+          />
         </TabsContent>
         <TabsContent value="improvement-plan" className="mt-6">
           <Card>

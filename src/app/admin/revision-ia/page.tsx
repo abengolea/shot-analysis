@@ -7,10 +7,13 @@ import { getAuth, getIdToken } from "firebase/auth";
 type AdminAnalysisListItem = {
   id: string;
   playerId: string;
+  playerName?: string | null;
+  playerEmail?: string | null;
   createdAt: string;
   shotType?: string;
   score?: number;
   startFrameDetection?: { confidence?: number } | null;
+  adminReviewStatus?: 'pendiente' | 'listo';
 };
 
 export default function AdminRevisionIAPage() {
@@ -23,15 +26,20 @@ export default function AdminRevisionIAPage() {
   const [onlyHighDoubt, setOnlyHighDoubt] = useState<boolean>(false);
 
   const filtered = useMemo(() => {
+    const query = filterPlayer.trim().toLowerCase();
     return items.filter((it) => {
-      const byPlayer = filterPlayer ? (it.playerId || "").includes(filterPlayer) : true;
-      // TODO: cuando exista admin_feedback, filtrar por estado real
-      const byStatus = true;
+      const idStr = String(it.playerId || '').toLowerCase();
+      const nameStr = String(it.playerName || '').toLowerCase();
+      const emailStr = String(it.playerEmail || '').toLowerCase();
+      const byPlayer = query ? (idStr.includes(query) || nameStr.includes(query) || emailStr.includes(query)) : true;
+      const byStatus = filterStatus === 'todos'
+        ? true
+        : (filterStatus === 'listos' ? it.adminReviewStatus === 'listo' : it.adminReviewStatus !== 'listo');
       const conf = Number(it?.startFrameDetection?.confidence || 1);
       const byDoubt = onlyHighDoubt ? !(conf >= 0.6) : true;
       return byPlayer && byStatus && byDoubt;
     });
-  }, [items, filterPlayer, filterStatus]);
+  }, [items, filterPlayer, filterStatus, onlyHighDoubt]);
 
   const loadAllAnalyses = async () => {
     try {
@@ -52,6 +60,8 @@ export default function AdminRevisionIAPage() {
         arr.map((d: any) => ({
           id: String(d.id),
           playerId: String(d.playerId || ""),
+          playerName: typeof d.playerName === 'string' ? d.playerName : null,
+          playerEmail: typeof d.playerEmail === 'string' ? d.playerEmail : null,
           createdAt: String(d.createdAt || ""),
           shotType: d.shotType,
           score: typeof d.score === "number" ? d.score : undefined,
@@ -87,8 +97,8 @@ export default function AdminRevisionIAPage() {
       <div className="rounded border p-4 space-y-3">
         <div className="flex gap-3 items-center">
           <div className="flex items-center gap-2">
-            <label className="text-sm">Jugador (ID)</label>
-            <input className="rounded border px-2 py-1" value={filterPlayer} onChange={(e)=>setFilterPlayer(e.target.value)} placeholder="uid" />
+            <label className="text-sm">Jugador</label>
+            <input className="rounded border px-2 py-1" value={filterPlayer} onChange={(e)=>setFilterPlayer(e.target.value)} placeholder="id, nombre o email" />
           </div>
           <div className="flex items-center gap-2">
             <label className="text-sm">Estado</label>
@@ -121,7 +131,12 @@ export default function AdminRevisionIAPage() {
               {filtered.map((it) => (
                 <tr key={it.id} className="border-b last:border-b-0">
                   <td className="py-2 pr-3">{new Date(it.createdAt).toLocaleString()}</td>
-                  <td className="py-2 pr-3">{it.playerId}</td>
+                  <td className="py-2 pr-3">
+                    <div>{it.playerName || it.playerEmail || it.playerId}</div>
+                    {(it.playerName || it.playerEmail) && (
+                      <div className="text-xs text-slate-500">{it.playerEmail || it.playerId}</div>
+                    )}
+                  </td>
                   <td className="py-2 pr-3">{it.shotType || "-"}</td>
                   <td className="py-2 pr-3">{typeof it.score === 'number' ? it.score : '-'}</td>
                   <td className="py-2 pr-3">
@@ -145,7 +160,7 @@ export default function AdminRevisionIAPage() {
               ))}
               {!loading && filtered.length === 0 && (
                 <tr>
-                  <td className="py-3 text-slate-500" colSpan={5}>Sin elementos</td>
+                  <td className="py-3 text-slate-500" colSpan={7}>Sin elementos</td>
                 </tr>
               )}
             </tbody>

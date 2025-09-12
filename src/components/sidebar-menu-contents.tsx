@@ -2,6 +2,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/hooks/use-auth';
 import {
   LayoutDashboard,
   PlusSquare,
@@ -18,6 +19,7 @@ import {
 
 export function SidebarMenuContents() {
   const pathname = usePathname();
+  const { userProfile } = useAuth();
 
   const isActive = (path: string, exact: boolean = false) => {
     if (exact) return pathname === path;
@@ -173,6 +175,6 @@ export function SidebarMenuContents() {
   )
     
   if (isCoachView) return <CoachMenu />;
-  if (isAdminView) return <AdminMenu />;
+  if (isAdminView) return (userProfile as any)?.role === 'admin' ? <AdminMenu /> : null;
   return <PlayerMenu />;
 }

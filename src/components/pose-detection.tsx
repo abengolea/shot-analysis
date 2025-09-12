@@ -91,7 +91,8 @@ export function PoseDetection({
         
       } catch (err) {
         console.error('❌ Error loading MediaPipe:', err);
-        setError(`Error al cargar el modelo: ${err.message}`);
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(`Error al cargar el modelo: ${msg}`);
       }
     };
 

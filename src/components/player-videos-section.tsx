@@ -171,8 +171,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                         </div>
                         <Progress 
                           value={analysis.score * 10} 
-                          className="h-2"
-                          indicatorClassName={getProgressColor(analysis.score)}
+                          className={`h-2 ${getProgressColor(analysis.score)}`}
                         />
                       </div>
                     )}

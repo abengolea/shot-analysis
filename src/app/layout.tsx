@@ -5,7 +5,7 @@ import { AuthProvider } from "@/hooks/use-auth";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "chas.com",
+  title: "chaaaas.com",
   description: "Plataforma de análisis de lanzamiento en básquet",
   icons: {
     icon: "/favicon.svg",

@@ -39,20 +39,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (user) {
         try {
-          // Solo obtener el perfil si el email está verificado
-          if (user.emailVerified) {
-            const userDoc = await getDoc(doc(db, 'players', user.uid));
-            if (userDoc.exists()) {
-              setUserProfile({ id: user.uid, ...userDoc.data() } as Player);
-            } else {
-              // Si no es un jugador, intentar como entrenador
-              const coachDoc = await getDoc(doc(db, 'coaches', user.uid));
-              if (coachDoc.exists()) {
-                setUserProfile({ id: user.uid, ...coachDoc.data() } as Coach);
-              }
-            }
+          // Obtener el perfil siempre; permitirlo si email verificado o es admin
+          let profile: (Player | Coach) | null = null;
+          let role: string | undefined;
+          const playerDoc = await getDoc(doc(db, 'players', user.uid));
+          if (playerDoc.exists()) {
+            const data = playerDoc.data() as any;
+            role = data?.role;
+            profile = { id: user.uid, ...(data as any) } as Player;
           } else {
-            // Si el email no está verificado, no establecer el perfil
+            const coachDoc = await getDoc(doc(db, 'coaches', user.uid));
+            if (coachDoc.exists()) {
+              const data = coachDoc.data() as any;
+              role = data?.role;
+              profile = { id: user.uid, ...(data as any) } as Coach;
+            }
+          }
+
+          if (profile && (user.emailVerified || role === 'admin')) {
+            setUserProfile(profile);
+          } else {
             setUserProfile(null);
           }
         } catch (error) {
@@ -73,14 +79,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
-      // Verificar si el email está verificado
+      // Si el email no está verificado, permitir sólo si el rol del perfil en Firestore es 'admin'
       if (!user.emailVerified) {
-        // Enviar email de verificación nuevamente si no está verificado
-        await sendEmailVerification(user);
-        return { 
-          success: false, 
-          message: 'Tu email no está verificado. Revisa tu bandeja de entrada o spam. Te hemos enviado un nuevo email de verificación.' 
-        };
+        let role: string | undefined;
+        try {
+          const pSnap = await getDoc(doc(db, 'players', user.uid));
+          if (pSnap.exists()) role = (pSnap.data() as any)?.role;
+          if (!role) {
+            const cSnap = await getDoc(doc(db, 'coaches', user.uid));
+            if (cSnap.exists()) role = (cSnap.data() as any)?.role;
+          }
+        } catch {}
+        if (role !== 'admin') {
+          // Enviar email de verificación nuevamente si no es admin
+          await sendEmailVerification(user);
+          return {
+            success: false,
+            message: 'Tu email no está verificado. Revisa tu bandeja de entrada o spam. Te hemos enviado un nuevo email de verificación.'
+          };
+        }
       }
       
       // Marcar el status como 'active' al confirmar email verificado

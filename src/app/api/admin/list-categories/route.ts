@@ -1,8 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebase-admin';
+import { adminDb, adminAuth } from '@/lib/firebase-admin';
 
-export async function GET(_req: NextRequest) {
+async function requireAdmin(req: NextRequest): Promise<boolean> {
   try {
+    const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
+    if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) return false;
+    const token = authHeader.split(' ')[1];
+    const decoded = await adminAuth.verifyIdToken(token);
+    const uid = decoded.uid;
+    const coachSnap = await adminDb.collection('coaches').doc(uid).get();
+    const playerSnap = await adminDb.collection('players').doc(uid).get();
+    const role = coachSnap.exists ? (coachSnap.data() as any)?.role : (playerSnap.exists ? (playerSnap.data() as any)?.role : undefined);
+    return role === 'admin';
+  } catch {
+    return false;
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    if (!await requireAdmin(req)) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 403 });
     const categories = new Set<string>();
     const batchSize = 200;
     let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | undefined;

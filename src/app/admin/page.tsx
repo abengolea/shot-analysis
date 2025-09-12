@@ -1,4 +1,4 @@
-"use client";
+	"use client";
 	import Link from "next/link";	
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
@@ -30,7 +30,11 @@ export default function AdminHome() {
 			setRunning(true);
 			setError(null);
 			setResult(null);
-			const res = await fetch('/api/admin/diagnostics');
+			const auth = getAuth();
+			const cu = auth.currentUser;
+			if (!cu) throw new Error('Usuario no autenticado');
+			const token = await getIdToken(cu, true);
+			const res = await fetch('/api/admin/diagnostics', { headers: { 'Authorization': `Bearer ${token}` } });
 			if (!res.ok) {
 				throw new Error(`HTTP ${res.status}`);
 			}
@@ -102,6 +106,9 @@ export default function AdminHome() {
 			<ul className="list-disc pl-6 space-y-2">
 				<li>
 					<Link className="text-blue-600 underline" href="/admin/labeling">Herramienta de etiquetado</Link>
+				</li>
+				<li>
+					<Link className="text-blue-600 underline" href="/admin/revision-ia">Revisión IA (ver lanzamientos)</Link>
 				</li>
 				<li>
 					<Link className="text-blue-600 underline" href="/admin/upload-analyze">Subir JSON y analizar</Link>

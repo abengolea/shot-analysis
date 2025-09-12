@@ -85,6 +85,12 @@ export default function DashboardPage() {
     return null;
   }
 
+  // Si es admin, redirigir al panel de admin
+  if ((userProfile as any).role === 'admin') {
+    router.push('/admin');
+    return null;
+  }
+
   // Helpers: derivar score desde checklist si falta
   const mapStatusToRating = (s?: string): number | null => {
     if (!s) return null;
@@ -193,12 +199,12 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
          <div className="flex items-center gap-4">
             <Avatar className="h-16 w-16">
-              <AvatarImage src={userProfile.avatarUrl} alt={userProfile.name} />
-              <AvatarFallback>{userProfile.name.charAt(0)}</AvatarFallback>
+              <AvatarImage src={userProfile.avatarUrl} alt={userProfile.name || user.email || 'Usuario'} />
+              <AvatarFallback>{(userProfile.name && userProfile.name.charAt(0)) || (user?.email?.[0]?.toUpperCase() ?? 'U')}</AvatarFallback>
             </Avatar>
             <div>
               <h1 className="font-headline text-3xl font-bold tracking-tight">
-                Bienvenido, {userProfile.name}
+                Bienvenido, {userProfile.name || user.email || 'Usuario'}
               </h1>
               <p className="text-muted-foreground">Aquí está tu resumen de actividad.</p>
             </div>

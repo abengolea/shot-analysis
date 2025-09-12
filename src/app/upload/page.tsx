@@ -5,7 +5,6 @@ import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import { startAnalysis } from "@/app/actions";
 import { useAuth } from "@/hooks/use-auth";
-import { VideoFrameExtractor } from "@/components/video-frame-extractor";
 import {
   Card,
   CardContent,
@@ -74,8 +73,10 @@ function PendingNotice() {
   );
 }
 
+type StartState = { message: string; error?: boolean; redirectTo?: string; analysisId?: string; videoUrl?: string; shotType?: string; status?: string; analysisResult?: any };
+
 export default function UploadPage() {
-  const [state, formAction] = useActionState(startAnalysis, { message: "" });
+  const [state, formAction] = useActionState<StartState, FormData>(startAnalysis as any, { message: "", error: false });
   const formRef = useRef<HTMLFormElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -88,31 +89,18 @@ export default function UploadPage() {
   const [tipsOpen, setTipsOpen] = useState(false);
   const [dontShowTipsAgain, setDontShowTipsAgain] = useState(false);
   
-  // Estados para el video y frames
-  const [selectedVideo, setSelectedVideo] = useState<File | null>(null);
-  const [extractedFrames, setExtractedFrames] = useState<VideoFrame[]>([]);
+  // Estados para los videos (sin frames)
+  const [selectedVideo, setSelectedVideo] = useState<File | null>(null); // frontal
   const [leftVideo, setLeftVideo] = useState<File | null>(null);
   const [rightVideo, setRightVideo] = useState<File | null>(null);
   const [backVideo, setBackVideo] = useState<File | null>(null);
   const [shotType, setShotType] = useState<string>("");
   const [wallet, setWallet] = useState<{ credits: number; freeLeft: number } | null>(null);
   const [buyUrl, setBuyUrl] = useState<string | null>(null);
+  const frontInputRef = useRef<HTMLInputElement>(null);
   const leftInputRef = useRef<HTMLInputElement>(null);
   const rightInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
-
-  const handleVideoSelected = (file: File) => {
-    setSelectedVideo(file);
-  };
-
-  const handleFramesExtracted = (frames: VideoFrame[]) => {
-    setExtractedFrames(frames);
-    toast({
-      title: "Frames Extraídos",
-      description: `${frames.length} frames extraídos del video`,
-      variant: "default",
-    });
-  };
 
   const handleSubmit = async (formData: FormData) => {
     if (!shotType) {
@@ -132,6 +120,20 @@ export default function UploadPage() {
       return;
     }
 
+    // Control de tamaño total (dejar margen bajo 100 MB server action)
+    const totalBytes = [selectedVideo, backVideo, leftVideo, rightVideo]
+      .filter((f): f is File => !!f)
+      .reduce((sum, f) => sum + f.size, 0);
+    const maxBytes = 90 * 1024 * 1024; // 90 MB
+    if (totalBytes > maxBytes) {
+      toast({
+        title: "Archivo demasiado grande",
+        description: "El tamaño total supera 90 MB. Reduce la calidad/duración o sube menos ángulos.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Agregar el video principal y ángulos al FormData (preferir back)
     if (backVideo) {
       formData.append('video-back', backVideo);
@@ -141,13 +143,6 @@ export default function UploadPage() {
     }
     if (leftVideo) formData.append('video-left', leftVideo);
     if (rightVideo) formData.append('video-right', rightVideo);
-
-    // Adjuntar frames extraídos del cliente como fallback para el backend
-    if (Array.isArray(extractedFrames) && extractedFrames.length > 0) {
-      try {
-        formData.append('frames', JSON.stringify(extractedFrames));
-      } catch {}
-    }
 
     // Mostrar modal de análisis en curso
     setAnalyzingOpen(true);
@@ -163,7 +158,7 @@ export default function UploadPage() {
         variant: 'destructive',
       });
     }, 120000);
-    formAction(formData);
+    (formAction as any)(formData);
   };
 
   useEffect(() => {
@@ -187,7 +182,6 @@ export default function UploadPage() {
   }, []);
 
   const handleFormSubmit: React.FormEventHandler<HTMLFormElement> = () => {
-    // Permitimos enviar siempre; si faltan ángulos, solo avisamos (no bloqueamos)
     setConfirmedPartial(false);
   };
 
@@ -201,7 +195,6 @@ export default function UploadPage() {
                   description: state.message,
                   variant: "destructive",
               });
-              // Abrir modal de saldo si corresponde
               if (typeof state.message === 'string' && (state.message.includes('no tenés créditos') || state.message.toLowerCase().includes('límite') || state.message.toLowerCase().includes('crédit'))) {
                   setNoBalanceOpen(true);
               }
@@ -213,27 +206,22 @@ export default function UploadPage() {
                   description: state.message,
                   variant: "default",
               });
-              
-              // Limpiar el formulario después del éxito
               if (formRef.current) {
                   formRef.current.reset();
               }
-              
-              // Limpiar estados
               setSelectedVideo(null);
-              setExtractedFrames([]);
-              
-              // Redirigir al dashboard después de un análisis exitoso
-              if (state.redirectTo && !state.error) {
+              setLeftVideo(null);
+              setRightVideo(null);
+              setBackVideo(null);
+              if (state && typeof state.redirectTo === 'string' && !state.error) {
                   setTimeout(() => {
-                      router.push(state.redirectTo);
-                  }, 2000); // Esperar 2 segundos para que el usuario vea el mensaje de éxito
+                      router.push(state.redirectTo as string);
+                  }, 2000);
               }
           }
       }
   }, [state, toast, router]);
 
-  // Si no hay usuario, mostrar mensaje de carga
   if (!user) {
     return (
       <div className="mx-auto max-w-2xl text-center">
@@ -243,6 +231,8 @@ export default function UploadPage() {
     );
   }
 
+  const anyVideoSelected = !!(selectedVideo || backVideo || leftVideo || rightVideo);
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="text-center">
@@ -250,8 +240,11 @@ export default function UploadPage() {
           Analizar Nuevo Lanzamiento
         </h1>
         <p className="mt-2 text-muted-foreground">
-          Sube o graba un video y automáticamente extraeremos los frames clave para el análisis con IA
+          Sube o graba un video y analizaremos tu técnica con IA
         </p>
+        <div className="mt-2 text-xs text-blue-700">
+          Recomendado: subir con conexión Wi‑Fi y mantener la app en primer plano durante la subida.
+        </div>
         <div className="mt-4">
           <Button type="button" variant="secondary" onClick={() => setTipsOpen(true)}>
             Ver recomendaciones
@@ -259,85 +252,70 @@ export default function UploadPage() {
         </div>
       </div>
 
-      {/* Extracción de frames */}
-      <VideoFrameExtractor
-        onVideoSelected={handleVideoSelected}
-        onFramesExtracted={handleFramesExtracted}
-        onRangeConfirmed={(s, e) => {
-          // Guardar en atributos data para enviarlo en el form
-          if (formRef.current) {
-            let sEl = formRef.current.querySelector('input[name="rangeStart"]') as HTMLInputElement | null;
-            let eEl = formRef.current.querySelector('input[name="rangeEnd"]') as HTMLInputElement | null;
-            if (!sEl) {
-              sEl = document.createElement('input');
-              sEl.type = 'hidden'; sEl.name = 'rangeStart';
-              formRef.current.appendChild(sEl);
-            }
-            if (!eEl) {
-              eEl = document.createElement('input');
-              eEl.type = 'hidden'; eEl.name = 'rangeEnd';
-              formRef.current.appendChild(eEl);
-            }
-            sEl.value = String(s);
-            eEl.value = String(e);
-          }
-          toast({ title: 'Rango confirmado', description: `Inicio ${s.toFixed(2)}s • Fin ${e.toFixed(2)}s (se usará para el análisis)` });
-        }}
-      />
-
-      {/* Subida de otros ángulos (opcional) - aparece antes que configuración */}
-      {selectedVideo && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Subir otros ángulos (opcional)</CardTitle>
-            <CardDescription>
-              Para mejor precisión, podés agregar Lateral Izquierdo, Lateral Derecho y Trasera.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="video-left">Lateral Izquierdo</Label>
-                <Button type="button" onClick={() => leftInputRef.current?.click()} className="w-full">
-                  Subir lateral izquierdo desde archivos
-                </Button>
-                <Input ref={leftInputRef} id="video-left" type="file" accept="video/*" onChange={(e) => setLeftVideo(e.target.files?.[0] || null)} className="hidden" />
-                {leftVideo && (
-                  <p className="text-xs text-muted-foreground">
-                    {leftVideo.name} — {(leftVideo.size / 1024 / 1024).toFixed(2)} MB
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="video-right">Lateral Derecho</Label>
-                <Button type="button" onClick={() => rightInputRef.current?.click()} className="w-full">
-                  Subir lateral derecho desde archivos
-                </Button>
-                <Input ref={rightInputRef} id="video-right" type="file" accept="video/*" onChange={(e) => setRightVideo(e.target.files?.[0] || null)} className="hidden" />
-                {rightVideo && (
-                  <p className="text-xs text-muted-foreground">
-                    {rightVideo.name} — {(rightVideo.size / 1024 / 1024).toFixed(2)} MB
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="video-back">Trasera</Label>
-                <Button type="button" onClick={() => backInputRef.current?.click()} className="w-full">
-                  Subir trasera desde archivos
-                </Button>
-                <Input ref={backInputRef} id="video-back" type="file" accept="video/*" onChange={(e) => setBackVideo(e.target.files?.[0] || null)} className="hidden" />
-                {backVideo && (
-                  <p className="text-xs text-muted-foreground">
-                    {backVideo.name} — {(backVideo.size / 1024 / 1024).toFixed(2)} MB
-                  </p>
-                )}
-              </div>
+      {/* Selector de videos (unificado) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Subí tus videos</CardTitle>
+          <CardDescription>
+            Preferimos Trasera (hasta 40s). Si no la tenés, subí Frontal (hasta 30s). Laterales son opcionales.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="video-back">Trasera (preferida)</Label>
+              <Button type="button" onClick={() => backInputRef.current?.click()} className="w-full">
+                Subir trasera desde archivos
+              </Button>
+              <Input ref={backInputRef} id="video-back" type="file" accept="video/*" onChange={(e) => setBackVideo(e.target.files?.[0] || null)} className="hidden" />
+              {backVideo && (
+                <p className="text-xs text-muted-foreground">
+                  {backVideo.name} — {(backVideo.size / 1024 / 1024).toFixed(2)} MB
+                </p>
+              )}
             </div>
-          </CardContent>
-        </Card>
-      )}
-      {/* Configuración del Análisis (parámetros) */}
-      {selectedVideo && (
+            <div className="space-y-2">
+              <Label htmlFor="video-front">Frontal (alternativa)</Label>
+              <Button type="button" onClick={() => frontInputRef.current?.click()} className="w-full">
+                Subir frontal desde archivos
+              </Button>
+              <Input ref={frontInputRef} id="video-front" type="file" accept="video/*" onChange={(e) => setSelectedVideo(e.target.files?.[0] || null)} className="hidden" />
+              {selectedVideo && (
+                <p className="text-xs text-muted-foreground">
+                  {selectedVideo.name} — {(selectedVideo.size / 1024 / 1024).toFixed(2)} MB
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="video-left">Lateral Izquierdo (opcional)</Label>
+              <Button type="button" onClick={() => leftInputRef.current?.click()} className="w-full">
+                Subir lateral izquierdo desde archivos
+              </Button>
+              <Input ref={leftInputRef} id="video-left" type="file" accept="video/*" onChange={(e) => setLeftVideo(e.target.files?.[0] || null)} className="hidden" />
+              {leftVideo && (
+                <p className="text-xs text-muted-foreground">
+                  {leftVideo.name} — {(leftVideo.size / 1024 / 1024).toFixed(2)} MB
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="video-right">Lateral Derecho (opcional)</Label>
+              <Button type="button" onClick={() => rightInputRef.current?.click()} className="w-full">
+                Subir lateral derecho desde archivos
+              </Button>
+              <Input ref={rightInputRef} id="video-right" type="file" accept="video/*" onChange={(e) => setRightVideo(e.target.files?.[0] || null)} className="hidden" />
+              {rightVideo && (
+                <p className="text-xs text-muted-foreground">
+                  {rightVideo.name} — {(rightVideo.size / 1024 / 1024).toFixed(2)} MB
+                </p>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Configuración del Análisis */}
+      {anyVideoSelected && (
         <Card>
           <CardHeader>
             <CardTitle>Configuración del Análisis</CardTitle>
@@ -349,7 +327,6 @@ export default function UploadPage() {
             <form ref={formRef} action={handleSubmit} onSubmit={handleFormSubmit} className="space-y-4">
               {/* Usuario ID oculto */}
               <input type="hidden" name="userId" value={user.uid} />
-              
               {/* Tipo de lanzamiento */}
               <div className="space-y-2">
                 <Label htmlFor="shotType">Tipo de Lanzamiento</Label>
@@ -366,56 +343,37 @@ export default function UploadPage() {
                 </Select>
               </div>
 
-              {/* Los otros ángulos se suben en la tarjeta anterior */}
-
               {/* Información del video */}
               <div className="p-4 bg-blue-50 rounded-lg">
                 <h3 className="font-semibold text-blue-800 mb-2">Videos Seleccionados</h3>
                 <p className="text-sm text-blue-600">
-                  {backVideo ? (
-                    <>
-                      <strong>Trasera:</strong> {backVideo.name} — {(backVideo.size / 1024 / 1024).toFixed(2)} MB<br/>
-                      {selectedVideo && (
-                        <>
-                          <strong>Frontal:</strong> {selectedVideo.name} — {(selectedVideo.size / 1024 / 1024).toFixed(2)} MB<br/>
-                        </>
-                      )}
-                    </>
-                  ) : selectedVideo ? (
-                    <>
-                      <strong>Frontal:</strong> {selectedVideo.name} — {(selectedVideo.size / 1024 / 1024).toFixed(2)} MB<br/>
-                    </>
-                  ) : (
-                    <>Aún no seleccionaste video</>
-                  )}
+                  {backVideo && (<><strong>Trasera:</strong> {backVideo.name} — {(backVideo.size / 1024 / 1024).toFixed(2)} MB<br/></>)}
+                  {selectedVideo && (<><strong>Frontal:</strong> {selectedVideo.name} — {(selectedVideo.size / 1024 / 1024).toFixed(2)} MB<br/></>)}
                   {leftVideo && (<><strong>Lateral Izquierdo:</strong> {leftVideo.name} — {(leftVideo.size / 1024 / 1024).toFixed(2)} MB<br/></>)}
                   {rightVideo && (<><strong>Lateral Derecho:</strong> {rightVideo.name} — {(rightVideo.size / 1024 / 1024).toFixed(2)} MB<br/></>)}
+                  {!backVideo && !selectedVideo && <>Aún no seleccionaste video principal</>}
                 </p>
-                <p className="text-xs text-blue-700 mt-2">Duración recomendada: 40s para Trasera; 30s para Frontal/Laterales.</p>
+                <p className="text-xs text-blue-700 mt-2">Duración recomendada: 40s para Trasera; 30s para Frontal/Laterales. Subí con Wi‑Fi si es posible.</p>
               </div>
 
-
-              {/* Submit siempre visible con estado de carga */}
               <SubmitButton analyzing={analyzingOpen} />
               <PendingNotice />
             </form>
           </CardContent>
-          {/* CardFooter eliminado para evitar botón fuera del form */}
         </Card>
       )}
 
       {/* Instrucciones */}
-      {(!selectedVideo || extractedFrames.length === 0) && (
+      {(!anyVideoSelected) && (
         <Card className="bg-amber-50 border-amber-200">
           <CardContent className="pt-6">
             <div className="text-center text-amber-800">
               <Video className="h-12 w-12 mx-auto mb-2 text-amber-600" />
               <h3 className="font-semibold mb-2">Pasos para el Análisis</h3>
               <ol className="text-sm space-y-1 text-left max-w-md mx-auto">
-                <li>1. Sube o graba el video Trasero (preferido). Si no lo tenés, subí el Frontal.</li>
-                <li>2. Opcional: agregá Lateral Izquierdo, Lateral Derecho y el que te falte.</li>
-                <li>3. La IA extrae frames de todos los videos por igual.</li>
-                <li>4. Completa el tipo de lanzamiento y envía para análisis.</li>
+                <li>1. Subí el video Trasero (preferido). Si no lo tenés, subí el Frontal.</li>
+                <li>2. Opcional: agregá Lateral Izquierdo y Lateral Derecho.</li>
+                <li>3. Seleccioná el tipo de lanzamiento y envía para análisis.</li>
               </ol>
             </div>
           </CardContent>
@@ -444,14 +402,13 @@ export default function UploadPage() {
           <div className="text-sm space-y-2">
             <ol className="list-decimal pl-5 space-y-2">
               <li>Graba 40 segundos para la cámara trasera; 30 segundos para las demás.</li>
+              <li>Subí con conexión Wi‑Fi para evitar cortes o demoras.</li>
               <li>Iluminación: buena luz; evitá contraluces fuertes y escenas oscuras.</li>
-              <li>Encuadre: que se vea el cuerpo entero y, desde atrás, el aro para ver la parábola y si entra.</li>
-              <li>Estabilidad: apoyá el teléfono o usá trípode; evitá el zoom digital y los movimientos bruscos.</li>
+              <li>Encuadre: que se vea el cuerpo entero y, desde atrás, el aro.</li>
+              <li>Estabilidad: apoyá el teléfono o usá trípode.</li>
               <li>Orientación: horizontal (apaisado) recomendada.</li>
-              <li>Distancia: 4 a 6 metros para que entre el cuerpo completo sin recortes.</li>
+              <li>Distancia: 4 a 6 metros para que entre el cuerpo completo.</li>
               <li>Calidad: 1080p a 30 fps o más.</li>
-              <li>Fondo: que contraste con tu ropa para facilitar la detección.</li>
-              <li>Recomendación final: grabá los videos con calma y subí los archivos cuando estés conforme.</li>
             </ol>
             <div className="flex items-center gap-2 pt-2">
               <Checkbox id="dont-show-tips" checked={dontShowTipsAgain} onCheckedChange={(v) => setDontShowTipsAgain(Boolean(v))} />

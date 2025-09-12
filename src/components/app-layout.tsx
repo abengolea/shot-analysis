@@ -23,6 +23,7 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/logo";
 import Image from "next/image";
 import { SidebarMenuContents } from "./sidebar-menu-contents";
 import { UserMenu } from "./user-menu";
@@ -57,12 +58,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className="shrink-0" asChild>
               <Link href="/">
-                <img src="/chas-logo.svg" alt="chas.com logo" className="h-7 w-auto" />
+                <Logo size="sm" />
               </Link>
             </Button>
             <div className="flex flex-col group-data-[collapsible=icon]:hidden">
               <h2 className="font-headline text-lg font-semibold tracking-tight uppercase">
-                chas.com
+                chaaaas.com
               </h2>
             </div>
           </div>
@@ -76,7 +77,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <SidebarSeparator />
           <div className="p-2 group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:px-1">
             <div className="text-center text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-              chas.com v1.0
+              chaaaas.com v1.0
             </div>
           </div>
         </SidebarFooter>

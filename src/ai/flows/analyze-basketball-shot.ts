@@ -80,25 +80,25 @@ const AnalyzeBasketballShotOutputSchema = z.object({
 });
 export type AnalyzeBasketballShotOutput = z.infer<typeof AnalyzeBasketballShotOutputSchema>;
 
-export async function analyzeBasketballShot(input: AnalyzeBasketballShotInput): Promise<AnalyzeBasketballShotOutput>
-{
-  const hasKey = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENAI_API_KEY);
-  if (!hasKey) {
-    console.warn('[analyzeBasketballShot] Sin API key; devolviendo análisis básico');
+export async function analyzeBasketballShot(input: AnalyzeBasketballShotInput): Promise<AnalyzeBasketballShotOutput> {
+  try {
+    // Intentar correr la IA directamente; si falla por clave ausente u otro motivo, caemos al básico
+    return await analyzeBasketballShotFlow(input);
+  } catch (e: any) {
+    console.warn('[analyzeBasketballShot] IA falló, usando análisis básico. Motivo:', e?.message || e);
     const selected = Array.isArray(input.availableKeyframes)
       ? input.availableKeyframes.slice(0, 6).map((k) => k.index)
       : [];
     return {
-      analysisSummary: 'Análisis básico sin IA: configura la API key para resultados completos.',
+      analysisSummary: 'Análisis básico: no se pudo ejecutar la IA (ver logs del servidor).',
       strengths: [],
       weaknesses: [],
-      recommendations: ['Configura GEMINI_API_KEY o GOOGLE_API_KEY para activar el análisis completo.'],
+      recommendations: ['Verifica la GEMINI_API_KEY/GOOGLE_API_KEY y vuelve a intentar.'],
       selectedKeyframes: selected,
       keyframeAnalysis: selected.length > 0 ? 'Selección automática de los primeros fotogramas disponibles.' : 'Sin fotogramas disponibles.',
       detailedChecklist: [],
     } as AnalyzeBasketballShotOutput;
   }
-  return analyzeBasketballShotFlow(input);
 }
 
 const analyzeShotPrompt = ai.definePrompt({
@@ -115,22 +115,43 @@ IMPORTANTE: NO intentes generar imágenes. Solo analiza el contenido del video y
 - Recomendaciones específicas (3-5, accionables)
 - Un checklist detallado y estructurado (4–6 categorías, 3–5 ítems por categoría) usando los estados: Correcto | Mejorable | Incorrecto. 
   Si falta evidencia por no contar con ciertos ángulos, NO penalices: marca el ítem con na: true e indica en el comentario: "No evaluable por falta de ángulo <front/back/left/right>".
-  IMPORTANTE: Debe existir SIEMPRE una categoría llamada exactamente "Fluidez / Armonía (transferencia energética)" que contenga un ítem con el mismo nombre y el campo rating10 (1..10) además del comentario que explique por qué recibió esa puntuación. Esta métrica es la más importante.
+  IMPORTANTE: Debes devolver EXACTAMENTE estas 5 categorías y sus ítems, en este orden: "Preparación" → "Ascenso" → "Fluidez" → "Liberación" → "Seguimiento / Post-liberación". NO inventes categorías ni ítems y NO cambies los ids. Si un ítem no puede evaluarse, déjalo con na: true y comentario explicando por qué.
 
-  Debes INCLUIR obligatoriamente estos ítems en el checklist de Tiro de Tres (default) y en las categorías indicadas:
-  - id: "muneca_cargada", name: "Muñeca cargada antes del ascenso" — categoría: "Preparación".
-  - id: "tiempo_lanzamiento", name: "Tiempo de lanzamiento (captura → liberación)" — categoría: "Ascenso" (4%). En el comentario escribe el tiempo estimado (p. ej., "Tiempo: 0.62s"). Si no es medible, indícalo y marca na: true.
-  - id: "trayectoria_hasta_set_point", name: "Trayectoria del balón hasta el set point" — categoría: "Ascenso" (3%).
-  - id: "subida_recta_balon", name: "Subida recta del balón" — categoría: "Ascenso" (3%).
-  - id: "giro_pelota", name: "Giro de la pelota (backspin)" — categoría: "Liberación" (2%). Evalúa: gira hacia atrás (adecuado), gira poco (insuficiente), no gira (malo), gira hacia delante (inadecuado). Si no hay evidencia, indícalo y marca na: true.
+  Checklist canónico (Tiro de Tres) — estructura obligatoria:
+  1) Preparación
+     - id: "alineacion_pies", name: "Alineación de los pies"
+     - id: "alineacion_cuerpo", name: "Alineación del cuerpo"
+     - id: "muneca_cargada", name: "Muñeca cargada"
+     - id: "flexion_rodillas", name: "Flexión de rodillas"
+     - id: "hombros_relajados", name: "Hombros relajados"
+     - id: "enfoque_visual", name: "Enfoque visual"
+  2) Ascenso
+     - id: "mano_no_dominante_ascenso", name: "Posición de la mano no dominante (ascenso)"
+     - id: "codos_cerca_cuerpo", name: "Codos cerca del cuerpo"
+     - id: "subida_recta_balon", name: "Subida recta del balón"
+     - id: "trayectoria_hasta_set_point", name: "Trayectoria del balón hasta el set point"
+     - id: "set_point", name: "Set point"
+     - id: "tiempo_lanzamiento", name: "Tiempo de lanzamiento (captura → liberación)" (en el comentario escribe el tiempo estimado, p. ej. "Tiempo: 0.62s").
+  3) Fluidez
+     - id: "tiro_un_solo_tiempo", name: "Tiro en un solo tiempo"
+     - id: "sincronia_piernas", name: "Transferencia energética – sincronía con piernas"
+  4) Liberación
+     - id: "mano_no_dominante_liberacion", name: "Mano no dominante en la liberación"
+     - id: "extension_completa_brazo", name: "Extensión completa del brazo (follow-through)"
+     - id: "giro_pelota", name: "Giro de la pelota (backspin)" (evalúa: gira hacia atrás/adecuado, gira poco/insuficiente, no gira/malo, gira hacia delante/inadecuado)
+     - id: "angulo_salida", name: "Ángulo de salida"
+  5) Seguimiento / Post-liberación
+     - id: "mantenimiento_equilibrio", name: "Mantenimiento del equilibrio"
+     - id: "equilibrio_aterrizaje", name: "Equilibrio en el aterrizaje"
+     - id: "duracion_follow_through", name: "Duración del follow-through"
+     - id: "consistencia_repetitiva", name: "Consistencia repetitiva"
+  Devuelve exactamente estas categorías e ítems, con estos ids y names. Para cada ítem incluye: rating (1..5), status (Correcto/Mejorable/Incorrecto), comment (en español, breve y concreto), y na: true cuando falte evidencia (explicándolo en comment). No devuelvas categorías ni ítems extra.
 
-  Añade TAMBIÉN el ítem obligatorio de Set Point en "Ascenso":
-  - id: "set_point", name: "Set point (inicio del empuje de la pelota)", description: "Altura y continuidad del punto donde comienza el empuje del balón". Reglas:
-    * En categorías menores hasta Sub-12/Sub-13: empuje desde el pecho hasta debajo de la pera.
-    * Con el correr de los años: el set point debe subir gradualmente desde la pera hacia arriba, sin superar la altura de la frente.
-    * Un set point por encima de la frente NO es recomendable porque afecta la fluidez/armonía.
-    * Se trabaja tiros de un solo tiempo (1-time): la pelota sube y NO se detiene (un único movimiento continuo) para asegurar transferencia energética. Evalúa y comenta explícitamente si hay pausa/corte en el ascenso.
-  En el comentario del set point, explica si la altura es adecuada para la edad y si el movimiento es de un solo tiempo, indicando recomendaciones específicas. Si no hay evidencia, marca na: true.
+  Notas técnicas clave a reflejar en comentarios:
+  - Set point: altura adecuada por edad; mantener continuidad (un solo tiempo); si hay pausa/corte, menciónalo.
+  - Tiempo de lanzamiento: reporta el tiempo estimado entre recepción y liberación (en segundos).
+  - Backspin: especifica calidad y dirección del giro.
+  - Ángulo de salida: indica si está en el rango recomendado según el jugador.
 
 Si existe configuración de prompts de admin, considérela como guía adicional para redactar el análisis:
 - Intro adicional: {{promptConfig.intro}}

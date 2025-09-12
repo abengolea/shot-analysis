@@ -18,9 +18,9 @@ console.log("  - FIREBASE_ADMIN_PRIVATE_KEY:", process.env.FIREBASE_ADMIN_PRIVAT
 
 // Initialize Firebase Admin SDK for the server
 let adminApp: AdminApp | undefined;
-let adminAuth: AdminAuth | undefined;
-let adminDb: AdminFirestore | undefined;
-let adminStorage: AdminStorage | undefined;
+let _adminAuth: AdminAuth | undefined;
+let _adminDb: AdminFirestore | undefined;
+let _adminStorage: AdminStorage | undefined;
 
 try {
   const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
@@ -64,14 +64,14 @@ try {
   }
 
   if (adminApp) {
-    adminAuth = getAdminAuth(adminApp);
-    adminDb = getAdminFirestore(adminApp);
-    adminStorage = getAdminStorage(adminApp);
+    _adminAuth = getAdminAuth(adminApp);
+    _adminDb = getAdminFirestore(adminApp);
+    _adminStorage = getAdminStorage(adminApp);
     console.log("✅ Servicios de Firebase Admin inicializados");
     
     // Verificar que adminStorage esté disponible
-    if (adminStorage) {
-      const bucket = adminStorage.bucket();
+    if (_adminStorage) {
+      const bucket = _adminStorage.bucket();
       console.log("✅ Admin Storage disponible, bucket:", bucket.name);
       console.log("🔍 Verificando bucket name:", bucket.name);
       
@@ -88,4 +88,8 @@ try {
   console.error("❌ Error al inicializar Firebase Admin SDK:", error);
 }
 
-export { adminApp, adminAuth, adminDb, adminStorage };
+// Exportar como no opcionales para simplificar tipos en rutas; en runtime usar ADC o fallar temprano
+export const adminAuth: AdminAuth = _adminAuth as unknown as AdminAuth;
+export const adminDb: AdminFirestore = _adminDb as unknown as AdminFirestore;
+export const adminStorage: AdminStorage = _adminStorage as unknown as AdminStorage;
+export { adminApp };

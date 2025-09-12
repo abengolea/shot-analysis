@@ -29,6 +29,7 @@ import { PlayerProgressChart } from "@/components/player-progress-chart";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlayerEvaluationCard } from "@/components/player-evaluation-card";
 import { PlayerCommentsSection } from "@/components/player-comments-section";
+import { Button } from "@/components/ui/button";
 import { PlayerVideosSection } from "@/components/player-videos-section";
 
 

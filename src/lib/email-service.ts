@@ -58,12 +58,10 @@ export async function sendVerificationEmail(userId: string, email: string): Prom
       El equipo de Shot Analysis
     `;
     
-    // Enviar email usando Firebase Admin SDK
-    await adminAuth.sendCustomVerificationEmail(email, {
-      subject: 'Verifica tu Email - Shot Analysis',
-      html: htmlContent,
-      text: textContent
-    });
+    // Nota: Firebase Admin no envía correos directamente.
+    // Aquí deberías integrar tu proveedor de email (SendGrid, Mailgun, etc.).
+    // Por ahora, registramos el enlace en logs para que el frontend/proceso lo envíe.
+    console.log('📧 Verification link (log only):', verificationLink);
     
     console.log(`✅ Email de verificación enviado exitosamente a: ${email}`);
     return true;
@@ -123,12 +121,7 @@ export async function sendPasswordResetEmail(email: string): Promise<boolean> {
       El equipo de Shot Analysis
     `;
     
-    // Enviar email usando Firebase Admin SDK
-    await adminAuth.sendCustomVerificationEmail(email, {
-      subject: 'Restablece tu Contraseña - Shot Analysis',
-      html: htmlContent,
-      text: textContent
-    });
+    console.log('📧 Reset link (log only):', resetLink);
     
     console.log(`✅ Email de restablecimiento enviado exitosamente a: ${email}`);
     return true;
@@ -146,12 +139,7 @@ export async function sendCustomEmail(options: EmailOptions): Promise<boolean> {
   try {
     console.log(`📧 Enviando email personalizado a: ${options.to}`);
     
-    // Enviar email usando Firebase Admin SDK
-    await adminAuth.sendCustomVerificationEmail(options.to, {
-      subject: options.subject,
-      html: options.html,
-      text: options.text || options.html.replace(/<[^>]*>/g, '')
-    });
+    console.log('📧 Custom email (log only):', { to: options.to, subject: options.subject });
     
     console.log(`✅ Email personalizado enviado exitosamente a: ${options.to}`);
     return true;

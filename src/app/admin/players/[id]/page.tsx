@@ -3,6 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { adminUpdatePlayerStatus, adminUpdateWallet, adminSetHistoryPlus, adminSendPasswordReset, giftAnalyses } from "@/app/actions";
+
+// Server action wrappers with single-parameter signature for <form action>
+export async function actionUpdatePlayerStatus(formData: FormData) { 'use server'; return await (adminUpdatePlayerStatus as any)(undefined, formData); }
+export async function actionGiftAnalyses(formData: FormData) { 'use server'; return await (giftAnalyses as any)(undefined, formData); }
+export async function actionSetHistoryPlus(formData: FormData) { 'use server'; return await (adminSetHistoryPlus as any)(undefined, formData); }
+export async function actionSendPasswordReset(formData: FormData) { 'use server'; return await (adminSendPasswordReset as any)(undefined, formData); }
 import { Button } from "@/components/ui/button";
 
 export const dynamic = 'force-dynamic';
@@ -80,7 +86,7 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
           <CardContent className="space-y-6">
             <div className="space-y-2">
               <div className="text-sm font-medium">Estado de la cuenta</div>
-              <form action={adminUpdatePlayerStatus} className="flex items-center gap-2">
+              <form action={actionUpdatePlayerStatus} className="flex items-center gap-2">
                 <input type="hidden" name="userId" value={data.id} />
                 <select name="status" defaultValue={player.status || 'active'} className="border rounded px-2 py-1">
                   <option value="active">Activo</option>
@@ -105,12 +111,12 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
                 </div>
               </form>
               <div className="flex items-center gap-2">
-                <form action={giftAnalyses}>
+                <form action={actionGiftAnalyses}>
                   <input type="hidden" name="userId" value={data.id} />
                   <input type="hidden" name="count" value={1} />
                   <Button type="submit" variant="outline" size="sm">Regalar 1</Button>
                 </form>
-                <form action={giftAnalyses}>
+                <form action={actionGiftAnalyses}>
                   <input type="hidden" name="userId" value={data.id} />
                   <input type="hidden" name="count" value={3} />
                   <Button type="submit" variant="outline" size="sm">Regalar 3</Button>
@@ -120,7 +126,7 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
 
             <div className="space-y-2">
               <div className="text-sm font-medium">History+</div>
-              <form action={adminSetHistoryPlus} className="grid grid-cols-2 gap-2 items-center">
+              <form action={actionSetHistoryPlus} className="grid grid-cols-2 gap-2 items-center">
                 <input type="hidden" name="userId" value={data.id} />
                 <label className="text-sm text-muted-foreground">Activo</label>
                 <input name="historyPlusActive" type="checkbox" defaultChecked={!!wallet?.historyPlusActive} />
@@ -134,7 +140,7 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
 
             <div className="space-y-2">
               <div className="text-sm font-medium">Seguridad</div>
-              <form action={adminSendPasswordReset} className="flex items-center gap-2">
+              <form action={actionSendPasswordReset} className="flex items-center gap-2">
                 <input type="hidden" name="userId" value={data.id} />
                 <Button type="submit" variant="outline" size="sm">Enviar reset de contraseña</Button>
               </form>

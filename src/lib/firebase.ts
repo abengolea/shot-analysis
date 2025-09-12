@@ -6,13 +6,13 @@ import { getStorage } from "firebase/storage";
 
 // Your web app's Firebase configuration
 const firebaseConfig: FirebaseOptions = {
-  projectId: "shotanalisys",
-  appId: "1:602998191800:web:92f34de8304fc30ac5264d",
-  storageBucket: "shotanalisys.appspot.com",
-  apiKey: "AIzaSyBYvIGN0-Yd1b7LG2Seg6VwfKnTYIo4n_4", // This is a public key
-  authDomain: process.env.NODE_ENV === 'development' ? 'localhost:9999' : "shotanalisys.firebaseapp.com",
-  messagingSenderId: "602998191800",
-  measurementId: "G-4J79G4X1B6",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "shotanalysis.firebaseapp.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "shotanalysis",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "shotanalysis.appspot.com",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
+  // measurementId es opcional en desarrollo
 };
 
 // Initialize Firebase Client SDK

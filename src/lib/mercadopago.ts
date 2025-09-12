@@ -12,10 +12,11 @@ type PreferenceItem = {
 };
 
 type CreatePreferenceInput = {
-  userId: string;
+  userId?: string;
   productId: 'analysis_1' | 'pack_3' | 'pack_10' | 'history_plus_annual';
   amountARS: number;
   title: string;
+  userEmail?: string;
 };
 
 export async function createPreference(input: CreatePreferenceInput) {
@@ -32,6 +33,7 @@ export async function createPreference(input: CreatePreferenceInput) {
     ],
     metadata: {
       userId: input.userId,
+      ...(input.userEmail ? { userEmail: input.userEmail } : {}),
       productId: input.productId,
     },
     notification_url: MP_NOTIFICATION_URL,
@@ -91,8 +93,9 @@ export async function handleWebhook(event: any) {
 
       const status = payment.status as string;
       const prefId = payment?.metadata?.payment_preference_id || payment.order?.id || payment.external_reference || payment.metadata?.preference_id || payment.metadata?.preferenceId;
-      const userId = payment?.metadata?.userId;
+      let userId = payment?.metadata?.userId as string | undefined;
       const productId = payment?.metadata?.productId as CreatePreferenceInput['productId'];
+      const emailCandidate = (payment?.metadata?.userEmail || payment?.payer?.email || payment?.additional_info?.payer?.email) as string | undefined;
 
       if (!userId || !productId) {
         // Intentar leer del doc de preferencia
@@ -100,9 +103,29 @@ export async function handleWebhook(event: any) {
         const prefData = prefDoc?.exists ? prefDoc.data() : undefined;
         if (!userId && prefData?.userId) {
           (payment.metadata ||= {}).userId = prefData.userId;
+          userId = prefData.userId;
         }
         if (!productId && prefData?.productId) {
           (payment.metadata ||= {}).productId = prefData.productId;
+        }
+      }
+
+      // Si aún falta userId, resolverlo por email
+      if (!userId && emailCandidate && adminDb) {
+        try {
+          const playersSnap = await adminDb.collection('players').where('email', '==', emailCandidate).limit(1).get();
+          if (!playersSnap.empty) {
+            userId = playersSnap.docs[0].id;
+            (payment.metadata ||= {}).userId = userId;
+          } else {
+            const coachesSnap = await adminDb.collection('coaches').where('email', '==', emailCandidate).limit(1).get();
+            if (!coachesSnap.empty) {
+              userId = coachesSnap.docs[0].id;
+              (payment.metadata ||= {}).userId = userId;
+            }
+          }
+        } catch (e) {
+          console.error('Error resolviendo userId por email en webhook:', e);
         }
       }
 
@@ -128,7 +151,7 @@ export async function handleWebhook(event: any) {
       // Acreditar beneficios si approved
       if (status === 'approved' && adminDb) {
         const productIdResolved = (payment.metadata?.productId || 'analysis_1') as CreatePreferenceInput['productId'];
-        const userIdResolved = payment.metadata?.userId as string;
+        const userIdResolved = (payment.metadata?.userId || userId) as string;
         const walletRef = adminDb.collection('wallets').doc(userIdResolved);
         const walletSnap = await walletRef.get();
         const nowIso = new Date().toISOString();

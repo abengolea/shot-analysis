@@ -67,7 +67,7 @@ Responder SOLO JSON.`;
     };
   }
 
-  const result = await ai.generate({ input: parts });
+  const result = await ai.generate(parts);
   const text = (result as any)?.outputText ?? (result as any)?.text ?? '';
   let parsed: DetectEndFrameOutput | null = null;
   try {

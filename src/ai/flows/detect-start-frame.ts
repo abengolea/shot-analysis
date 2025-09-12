@@ -67,7 +67,7 @@ Reglas: earliest-first si hay dudas; si el siguiente está más alto, elegir el 
     };
   }
 
-  const result = await ai.generate({ input: parts });
+  const result = await ai.generate(parts);
   const text = (result as any)?.outputText ?? (result as any)?.text ?? '';
   let parsed: DetectStartFrameOutput | null = null;
   try {

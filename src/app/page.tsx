@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Video, BarChart3, BotMessageSquare, LogIn } from "lucide-react";
 import {
@@ -57,9 +58,8 @@ export default function LandingPage() {
   return (
     <div className="flex flex-1 flex-col">
        <header className="container mx-auto flex h-20 items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 font-headline text-xl font-bold uppercase">
-            <img src="/chas-logo.svg" alt="chas.com logo" className="h-8 w-auto" />
-            <span>chas.com</span>
+        <Link href="/" className="flex items-center gap-2">
+            <Logo size="md" />
         </Link>
         <div className="flex items-center gap-4">
             <Button asChild variant="outline">
@@ -74,30 +74,12 @@ export default function LandingPage() {
       <div className="flex flex-1 flex-col gap-16 md:gap-24">
         {/* Hero Section */}
         <section className="relative flex flex-col items-center justify-center pt-8 text-center md:pt-16">
-          <img src="/chas-logo.svg" alt="chas.com logo" className="mb-4 h-16 w-auto" />
-          <h1 className="font-headline text-5xl font-bold tracking-tight md:text-6xl uppercase">
-            chas.com
-          </h1>
-          <div className="mt-8 flex flex-wrap justify-center gap-4">
-            <Button size="lg" asChild>
-              <Link href="/register">
-                Crear cuenta <ArrowRight className="ml-2" />
-              </Link>
-            </Button>
-            <Button size="lg" variant="outline" asChild>
-              <Link href="/coach-register">Entrenadores</Link>
-            </Button>
-          </div>
-          <div className="relative mt-16 w-full max-w-5xl">
-              <div className="absolute -bottom-8 -left-8 -right-8 top-8 bg-primary/10 rounded-3xl -z-10"></div>
-              <Image
-                  src="https://placehold.co/1200x675.png"
-                  width={1200}
-                  height={675}
-                  alt="Panel de chas.com"
-                  className="rounded-xl border shadow-2xl"
-                  data-ai-hint="basketball analysis dashboard"
-              />
+          <div className="mt-16 w-full max-w-5xl">
+            <img
+              src="/Generated Image September 09, 2025 - 7_20PM.png"
+              alt="Logo chaaaas.com"
+              className="mx-auto w-full max-w-3xl h-auto rounded-xl border shadow-2xl bg-white p-4"
+            />
           </div>
         </section>
 
@@ -153,17 +135,17 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Final CTA */}
-        <section className="container mx-auto max-w-3xl text-center">
-          <h2 className="font-headline text-3xl font-bold uppercase">
-            Comenzar
-          </h2>
-          <div className="mt-8">
+        {/* Footer con botones */}
+        <footer className="container mx-auto max-w-3xl py-10 text-center">
+          <div className="flex justify-center gap-4">
             <Button size="lg" asChild>
-              <Link href="/register">Crear mi cuenta <ArrowRight className="ml-2" /></Link>
+              <Link href="/register">Crear cuenta <ArrowRight className="ml-2" /></Link>
+            </Button>
+            <Button size="lg" variant="outline" asChild>
+              <Link href="/coach-register">Entrenadores</Link>
             </Button>
           </div>
-        </section>
+        </footer>
       </div>
     </div>
   );

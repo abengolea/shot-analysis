@@ -47,27 +47,8 @@ export function VideoPlayer({
 
     const handleLoadedMetadata = () => {
       setDuration(video.duration);
-      // Intentar detectar FPS
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        video.currentTime = 0;
-        setTimeout(() => {
-          ctx.drawImage(video, 0, 0);
-          const frame1 = ctx.getImageData(0, 0, 1, 1);
-          video.currentTime = 1/30;
-          setTimeout(() => {
-            ctx.drawImage(video, 0, 0);
-            const frame2 = ctx.getImageData(0, 0, 1, 1);
-            if (frame1.data[0] !== frame2.data[0]) {
-              setFps(30);
-            } else {
-              setFps(25);
-            }
-            video.currentTime = 0;
-          }, 50);
-        }, 50);
-      }
+      // Fallback seguro: usar 30fps por defecto para evitar CORS/tainted canvas
+      setFps(30);
     };
 
     const handleTimeUpdate = () => {
@@ -159,12 +140,20 @@ export function VideoPlayer({
             ref={videoRef}
             src={src}
             className="w-full h-auto max-h-96"
+            playsInline
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
             onEnded={() => setIsPlaying(false)}
             onError={(e) => {
-              console.error('Error loading video:', e);
-              console.error('Video source:', src);
+              const el = e.currentTarget as HTMLVideoElement;
+              const err = (el && (el.error as any)) || {};
+              console.error('Error loading video:', {
+                code: err?.code,
+                message: err?.message,
+                networkState: el?.networkState,
+                readyState: el?.readyState,
+                src,
+              });
             }}
             controls
           />

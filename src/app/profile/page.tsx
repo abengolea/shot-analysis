@@ -49,7 +49,7 @@ export default function ProfilePage() {
   const coachProfile = userProfile as Coach;
 
   const handleInputChange = (field: string, value: any) => {
-    setFormData(prev => ({
+    setFormData((prev: any) => ({
       ...prev,
       [field]: value
     }));

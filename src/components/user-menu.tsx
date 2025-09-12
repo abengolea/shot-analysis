@@ -47,6 +47,7 @@ export function UserMenu() {
   };
 
   const isCoach = userProfile?.role === 'coach';
+  const isAdmin = (userProfile as any)?.role === 'admin';
 
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
@@ -70,12 +71,20 @@ export function UserMenu() {
               {user.email}
             </p>
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              {isCoach ? <Shield className="h-3 w-3" /> : <User className="h-3 w-3" />}
-              {isCoach ? 'Entrenador' : 'Jugador'}
+              {isAdmin ? <Shield className="h-3 w-3" /> : (isCoach ? <Shield className="h-3 w-3" /> : <User className="h-3 w-3" />)}
+              {isAdmin ? 'Admin' : (isCoach ? 'Entrenador' : 'Jugador')}
             </div>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {isAdmin && (
+          <DropdownMenuItem asChild>
+            <a href="/admin" className="cursor-pointer">
+              <Shield className="mr-2 h-4 w-4" />
+              Admin
+            </a>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem asChild>
           <a href={isCoach ? '/coach/dashboard' : '/dashboard'} className="cursor-pointer">
             <User className="mr-2 h-4 w-4" />

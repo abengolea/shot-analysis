@@ -15,15 +15,11 @@ import {
   analyzeBasketballShot,
   AnalyzeBasketballShotOutput,
 } from './analyze-basketball-shot';
-import { adminDb } from '@/lib/firebase';
+import { adminDb } from '@/lib/firebase-admin';
 import type { Player } from '@/lib/types';
-import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
+// Usar Admin SDK (adminDb) directamente; no importar helpers del SDK cliente
 
-if (!adminDb) {
-  throw new Error(
-    'Admin DB not initialized. Make sure FIREBASE_SERVICE_ACCOUNT is set.'
-  );
-}
+// Nota: no lanzar error a nivel de módulo para no romper SSR; validamos en tiempo de ejecución
 
 const ProcessUploadedVideoInputSchema = z.object({
   videoUrl: z
@@ -48,6 +44,10 @@ const processUploadedVideoFlow = ai.defineFlow(
     outputSchema: z.void(),
   },
   async ({ videoUrl, filePath }) => {
+    if (!adminDb) {
+      console.error('Admin DB not initialized. Set FIREBASE_ADMIN_* env vars.');
+      return;
+    }
     console.log(`Starting processing for video: ${videoUrl}`);
     // 1. Extract metadata from the file path
     // The path is `videos/${userId}/${Date.now()}-${file.name}`
@@ -63,43 +63,48 @@ const processUploadedVideoFlow = ai.defineFlow(
     }
 
     // 2. Retrieve the pending analysis document from Firestore
-    const pendingDocRef = doc(adminDb, 'pending_analyses', docId);
-    const pendingDocSnap = await getDoc(pendingDocRef);
+    const pendingDocRef = adminDb.collection('pending_analyses').doc(docId);
+    const pendingDocSnap = await pendingDocRef.get();
 
-    if (!pendingDocSnap.exists()) {
+    if (!pendingDocSnap.exists) {
       console.error(`Pending analysis document not found: ${docId}`);
       // Maybe it was already processed, or it's an upload we don't care about.
       return;
     }
-    const pendingData = pendingDocSnap.data();
+    const pendingData = pendingDocSnap.data() as any | undefined;
+    if (!pendingData) {
+      console.error('Pending data is empty for:', docId);
+      return;
+    }
 
     // 3. Retrieve player data
-    const playerDocRef = doc(adminDb, 'players', userId);
-    const playerDocSnap = await getDoc(playerDocRef);
+    const playerDocRef = adminDb.collection('players').doc(userId);
+    const playerDocSnap = await playerDocRef.get();
 
-    if (!playerDocSnap.exists()) {
+    if (!playerDocSnap.exists) {
       console.error(`Player not found: ${userId}`);
       return;
     }
     const player = playerDocSnap.data() as Player;
 
     // 4. Prepare input for the analysis flow
+    const ageGroup = player.ageGroup || 'Amateur';
     const ageCategory =
-      player.ageGroup === 'Amateur'
+      ageGroup === 'Amateur'
         ? 'Amateur adulto'
-        : (`Sub-${player.ageGroup.replace('U', '')}` as any);
+        : (`Sub-${String(ageGroup).replace('U', '')}` as any);
 
     // 4.5. Load admin prompt config for this shot type (if any)
     let promptConfig: any | undefined = undefined;
     try {
-      const cfgRef = doc(adminDb, 'config',
+      const cfgRef = adminDb.collection('config').doc(
         (pendingData.shotType || '').toLowerCase().includes('tres') ? 'prompts_tres'
         : ((pendingData.shotType || '').toLowerCase().includes('media') || (pendingData.shotType || '').toLowerCase().includes('jump')) ? 'prompts_media'
         : (pendingData.shotType || '').toLowerCase().includes('libre') ? 'prompts_libre'
         : 'prompts_general'
       );
-      const cfgSnap = await getDoc(cfgRef);
-      const cfgData = cfgSnap.exists() ? (cfgSnap.data() as any) : undefined;
+      const cfgSnap = await cfgRef.get();
+      const cfgData = cfgSnap.exists ? (cfgSnap.data() as any) : undefined;
       promptConfig = cfgData?.config;
     } catch (e) {
       console.warn('Could not load prompt config', e);
@@ -108,8 +113,9 @@ const processUploadedVideoFlow = ai.defineFlow(
     const aiInput = {
       videoUrl: videoUrl, // Use the GCS URI
       ageCategory: ageCategory,
-      playerLevel: player.playerLevel,
+      playerLevel: player.playerLevel || 'Intermedio',
       shotType: pendingData.shotType,
+      availableKeyframes: [],
       promptConfig,
     };
 
@@ -130,13 +136,13 @@ const processUploadedVideoFlow = ai.defineFlow(
       // For now, GCS path is enough for backend processing.
     };
 
-    const newAnalysisRef = doc(adminDb, 'analyses', docId);
-    await setDoc(newAnalysisRef, finalAnalysisData);
+    const newAnalysisRef = adminDb.collection('analyses').doc(docId);
+    await newAnalysisRef.set(finalAnalysisData);
 
     console.log(`Analysis saved successfully for doc: ${docId}`);
 
     // 7. Clean up the pending document
-    await deleteDoc(pendingDocRef);
+    await pendingDocRef.delete();
     console.log(`Pending document deleted: ${docId}`);
   }
 );
