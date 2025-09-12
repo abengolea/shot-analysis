@@ -15,16 +15,20 @@ const firebaseConfig: FirebaseOptions = {
   // measurementId es opcional en desarrollo
 };
 
-// Initialize Firebase Client SDK
-let app;
-if (getApps().length === 0) {
-  app = initializeApp(firebaseConfig);
-} else {
-  app = getApp();
+// Evitar inicializar en build del lado servidor sin variables válidas
+const isBrowser = typeof window !== 'undefined';
+
+let app: any = undefined;
+if (isBrowser) {
+  if (getApps().length === 0) {
+    app = initializeApp(firebaseConfig);
+  } else {
+    app = getApp();
+  }
 }
 
-const auth = getAuth(app);
-const db = getFirestore(app);
-const storage = getStorage(app);
+const auth: any = isBrowser && app ? getAuth(app) : undefined as any;
+const db: any = isBrowser && app ? getFirestore(app) : undefined as any;
+const storage: any = isBrowser && app ? getStorage(app) : undefined as any;
 
 export { app, auth, db, storage };
