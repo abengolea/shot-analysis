@@ -17,7 +17,7 @@ export interface LogoProps extends React.HTMLAttributes<HTMLImageElement> {
   alt?: string;
 }
 
-export function Logo({ size = "md", src = "/Generated Image September 09, 2025 - 7_20PM.png", alt = "chaaaas.com logo", className = "", ...rest }: LogoProps) {
+export function Logo({ size = "md", src = "/chas-logo.svg", alt = "chaaaas.com logo", className = "", ...rest }: LogoProps) {
   const classNames = `block ${sizeToClass[size]} ${className}`.trim();
   const [srcIndex, setSrcIndex] = React.useState(0);
   const sources = [src, "/chas-logo.png", "/chas-logo.svg", "/favicon.svg"];

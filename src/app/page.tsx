@@ -76,7 +76,7 @@ export default function LandingPage() {
         <section className="relative flex flex-col items-center justify-center pt-8 text-center md:pt-16">
           <div className="mt-16 w-full max-w-5xl">
             <img
-              src="/Generated Image September 09, 2025 - 7_20PM.png"
+              src="/chas-logo.svg"
               alt="Logo chaaaas.com"
               className="mx-auto w-full max-w-3xl h-auto rounded-xl border shadow-2xl bg-white p-4"
             />
