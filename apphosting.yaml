@@ -20,8 +20,13 @@ runConfig:
     GEMINI_API_KEY: "AIzaSyBGVlvWqL2FZmOMvNQu8lzxcOQtbmTTEcM"
     GOOGLE_API_KEY: "AIzaSyBGVlvWqL2FZmOMvNQu8lzxcOQtbmTTEcM"
     GOOGLE_GENAI_API_KEY: "AIzaSyBGVlvWqL2FZmOMvNQu8lzxcOQtbmTTEcM"
-    # Firebase Admin en App Hosting usa ADC; no setear client_email/private_key
+    # Firebase Admin - usar service account en local (recomendado)
     FIREBASE_ADMIN_PROJECT_ID: "shotanalisys"
+    FIREBASE_ADMIN_CLIENT_EMAIL: "firebase-adminsdk-fbsvc@shotanalisys.iam.gserviceaccount.com"
+    # Importante: mantener los \n escapados en una sola l�nea
+    FIREBASE_ADMIN_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDJ/MM9xjT1PGjR\\nmUYfWMOWVQw98g/8OO08h+ZOwRzhN6adofVSn0go8tJ0j1z25Yd3J+ZlT06hDA2J\\n6gD3a2BgT3Pj3iAO2yi7GqgGYo/2VYreCW8Rx6hoBKhYblULB27w8h02nbW1/8xp\\nqmUzrPqrDfKbA3lpP/Au3gqIAFi7yyIOBejGVg28SCja36Z6PPVV2BNIlW8BCKvR\\nd37MJHZzpntB3Dk8XQFXOOGySjUckk4PnKcbhlYK6ZOK28hJCAXJnRiy1B2yf8rz\\ntZeFcxoZdi6np2EQ7XmP50/ZNJl8H1ip/aJGdPphrAD0r7LZg9/zioxNwv4rjbvy\\nBleOGdlfAgMBAAECggEABkcx9liTys+O3nzqHg1PPvvzvnUopAlM7mW29dmwwRtO\\ntXWUP3Yt8v/hJLhUBmSJ+l0mHx4A7qaGQTQhxY7z1uqBSqLb0jpjoLUqZdBocxqj\\nj1Uxu5a+GEWUyfLb99TKUPjliY4LWNXTj7E5JgsJW4m6cbEA9BGFsJ88KpAAMg4H\\nC9PFfWQsbY0J5sb2OqEbNlBIaUYsZEtcstHB3XGzyzJIHMoDyMrltu+VinYNVKUC\\nWsLnh+ztpQFyvEQtfJGPkf5dLJR3VbD1CM32kEWI1Ym6eER+GIjHAvgBUvP2330m\\n1tautAnmPEykHDwqi9X6U388XpTYXZqLbuP3XQK+6QKBgQD/8M/gTS9jgSY+JAWU\\nBEpZuW9AxbDOHLg/dwEIYoFM32OxPB92VLsO7FoXe66wE5fM5tG2NzLomgOpx8OH\\nXmhpBTzyOfNvZbg/jLlHg2fzq7e1aXaeuPUdIVx9f8pEjY4RfFZYX45Ty5evQvBc\\noflEHVgnbNkYldtTpmz0H3o2EwKBgQDKCL+7qlUPz58ocZ9BY46XKNoXD1MDXL3j\\nF+xiqAbK9WXweFZDnsf2dcQ2ae8epedm7A8lUdtWEuGsN5s87UG3Nv/ctT8y/jIm\\nxDyco+aQvZpHOYuTltLXX7XkM0yxv7AG9ambwF5icgax2e29BNQbttVJIJqaP78Y\\nkAq3InNpBQKBgEkfYATRiIyBRY/TctSLNULVO/fhg1Yf1nQrZ9whaJex6yWj68k/\\nBAKLfGHhMFOWBXTBLYFF3AGgnxNOw4pVarc2i+cYr3hQM4fUiMrpvDVeBiqKax2F\\n8mHUOjyQ2hUj7EcKoxC0nFFMhZXJJisRC8puJ9V7v7rKddM8ZTyKEbyJAoGAbFfe\\nwjvo287CkkTEW6ORDvzoX59nLBFq/0KQEKP86JBK93cBA8g9gazL6UZL5kqf2nDS\\n+nd4QSNlBB7Z0AWHzUHgWjKUTrtEl8d6naHDfnE/L9zrPd2O+dKoz1S3V0btlf3d\\n09mIhBCUCIJO3KOfP7F/lXS3k+qFhx2PsX/3FiUCgYEAuJnz7g/amfGpIvnN9vx0\\njzSTUYZLbuEU2lZHreRx0km/WFu6FqlaP3WqIvUH1dJ7/x1K8+mSmpdVCz3lB5aR\\nJjxRyriOrSQzkYpyCVC2MdeIbqWEJzfVLkJ0lwMAm805jvBRNOPPKF6l051LEypA\\nYw7K26IhSUrYYLgZQHupFE0=\\n-----END PRIVATE KEY-----\\n"
+    # Alternativa (ADC): definir GOOGLE_APPLICATION_CREDENTIALS apuntando a un JSON local
+    # GOOGLE_APPLICATION_CREDENTIALS: "C:\\ruta\\a\\service-account.json"
 
 # Defines a "flow" that can be deployed to Cloud Functions.
 # This can be triggered via an HTTP request or any other supported
