@@ -109,7 +109,7 @@ const analyzeShotPrompt = ai.definePrompt({
 
 IMPORTANTE: NO intentes generar imágenes. Solo analiza el contenido del video y proporciona:
 
-- Resumen del análisis de la técnica
+- Resumen del análisis de la técnica (EMPEZAR por los puntos más críticos/impacto alto: enumera primero las 2–3 debilidades más severas y su efecto, luego los aciertos principales y finalmente matices menores)
 - Fortalezas técnicas identificadas (al menos 3 si hay evidencia)
 - Debilidades a mejorar (al menos 3 si hay evidencia)
 - Recomendaciones específicas (3-5, accionables)
@@ -177,6 +177,11 @@ Selecciona exactamente 6 keyframes que mejor representen:
 Retorna los índices de los 6 keyframes seleccionados y explica brevemente por qué los elegiste.
 
 Adapta el lenguaje según la categoría de edad: {{ageCategory}}.
+
+REGLA DE REDACCIÓN CRÍTICA PARA EL RESUMEN:
+- Ordena la información por importancia: primero lo más crítico, luego lo importante, por último lo deseable.
+- Usa frases cortas, directas y específicas. Evita generalidades.
+- Si faltan ángulos para evaluar algún punto, acláralo sin penalizar.
 
 Video a analizar: {{videoUrl}}`,
 });

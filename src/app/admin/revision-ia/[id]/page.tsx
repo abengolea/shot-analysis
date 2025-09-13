@@ -298,14 +298,22 @@ export default function AdminRevisionIADetailPage() {
             const flatItems: any[] = checklistAll.flatMap((c: any) => Array.isArray(c?.items) ? c.items : []);
             const strengthsFromChecklist: string[] = flatItems
               .filter((it: any) => (typeof it.rating === 'number' ? it.rating >= 4 : (it.status === 'Correcto' || it.status === 'Excelente')))
+              .sort((a: any, b: any) => (Number(b?.rating ?? 3) - Number(a?.rating ?? 3)))
               .map((it: any) => String(it?.name || it?.id))
               .filter(Boolean);
             const weaknessesFromChecklist: string[] = flatItems
               .filter((it: any) => (typeof it.rating === 'number' ? it.rating <= 2 : (it.status === 'Incorrecto' || it.status === 'Incorrecto leve')))
+              .sort((a: any, b: any) => (Number(a?.rating ?? 3) - Number(b?.rating ?? 3)))
               .map((it: any) => String(it?.name || it?.id))
               .filter(Boolean);
             const recommendationsFromChecklist: string[] = flatItems
               .filter((it: any) => (typeof it.rating === 'number' ? it.rating <= 3 : (it.status === 'Mejorable' || it.status === 'Incorrecto' || it.status === 'Incorrecto leve')))
+              .sort((a: any, b: any) => {
+                const ra = Number(a?.rating ?? 3); const rb = Number(b?.rating ?? 3);
+                if (ra !== rb) return ra - rb; // peor primero
+                const la = String(a?.comment || '').length; const lb = String(b?.comment || '').length;
+                return lb - la; // comentario más sustancioso primero
+              })
               .map((it: any) => `Trabajar: ${String(it?.name || it?.id)}`)
               .filter(Boolean);
 

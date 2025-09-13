@@ -82,12 +82,6 @@ export default function LandingPage() {
               height={1080}
               priority
               className="mx-auto w-full max-w-3xl h-auto"
-              style={{
-                WebkitMaskImage:
-                  "linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)",
-                maskImage:
-                  "linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)",
-              }}
             />
           </div>
         </section>

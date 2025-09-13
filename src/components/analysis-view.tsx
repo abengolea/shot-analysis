@@ -195,20 +195,29 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     return [];
   });
 
-  // Derivados del checklist basados en rating 1..5
-  const checklistStrengths = checklistState
-    .flatMap((c) => c.items)
+  // Derivados del checklist basados en rating 1..5 (ordenados por importancia)
+  const flatChecklistItems = checklistState.flatMap((c) => c.items);
+
+  const checklistStrengths = flatChecklistItems
     .filter((item) => (item.rating || 3) >= 4)
+    .sort((a, b) => (b.rating || 3) - (a.rating || 3)) // 5 primero, luego 4
     .map((item) => item.name);
 
-  const checklistWeaknesses = checklistState
-    .flatMap((c) => c.items)
+  const checklistWeaknesses = flatChecklistItems
     .filter((item) => (item.rating || 3) <= 2)
+    .sort((a, b) => (a.rating || 3) - (b.rating || 3)) // 1 primero, luego 2
     .map((item) => item.name);
 
-  const checklistRecommendations = checklistState
-    .flatMap((c) => c.items)
-    .filter((item) => (item.rating || 3) <= 3 && item.comment.trim() !== "")
+  const checklistRecommendations = flatChecklistItems
+    .filter((item) => (item.rating || 3) <= 3 && String(item.comment || '').trim() !== "")
+    .sort((a, b) => {
+      const ra = a.rating || 3;
+      const rb = b.rating || 3;
+      if (ra !== rb) return ra - rb; // peor primero
+      const la = String(a.comment || '').length;
+      const lb = String(b.comment || '').length;
+      return lb - la; // comentario más sustancioso primero
+    })
     .map((item) => `${item.name}: ${item.comment}`);
 
   // Evaluación final: promedio 1..5 (usa rating; si falta, mapea status legacy)
