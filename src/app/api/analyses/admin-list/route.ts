@@ -10,6 +10,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
+    if (!adminDb) {
+      return NextResponse.json({ ok: false, error: 'Admin SDK no inicializado (FIREBASE_ADMIN_* o ADC faltante)' }, { status: 500 });
+    }
     const { searchParams } = new URL(req.url);
     const qp = searchParams.get('token') || '';
     const hp = req.headers.get('x-bootstrap-token') || '';

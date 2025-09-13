@@ -75,10 +75,19 @@ export default function LandingPage() {
         {/* Hero Section */}
         <section className="relative flex flex-col items-center justify-center pt-8 text-center md:pt-16">
           <div className="mt-16 w-full max-w-5xl">
-            <img
-              src="/chas-logo.svg"
-              alt="Logo chaaaas.com"
-              className="mx-auto w-full max-w-3xl h-auto rounded-xl border shadow-2xl bg-white p-4"
+            <Image
+              src="/Generated Image September 09, 2025 - 7_20PM.png"
+              alt="Portada ShotAnalysis"
+              width={1920}
+              height={1080}
+              priority
+              className="mx-auto w-full max-w-3xl h-auto"
+              style={{
+                WebkitMaskImage:
+                  "linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)",
+                maskImage:
+                  "linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)",
+              }}
             />
           </div>
         </section>

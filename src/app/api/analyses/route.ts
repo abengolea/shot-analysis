@@ -22,6 +22,9 @@ async function isAdminRequest(request: NextRequest): Promise<boolean> {
 
 export async function GET(request: NextRequest) {
   try {
+    if (!adminDb) {
+      return NextResponse.json({ error: 'Admin SDK no inicializado (FIREBASE_ADMIN_* o ADC faltante)' }, { status: 500 });
+    }
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
     const adminFlag = searchParams.get('admin');

@@ -23,14 +23,21 @@ let _adminDb: AdminFirestore | undefined;
 let _adminStorage: AdminStorage | undefined;
 
 try {
-  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
+  const rawClientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL || '';
+  const rawPrivateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY || '';
+  const privateKey = rawPrivateKey ? rawPrivateKey.replace(/\\n/g, '\n') : undefined;
+  const hasRealServiceAccount = Boolean(
+    rawClientEmail && privateKey &&
+    !rawClientEmail.includes('REEMPLAZAR') &&
+    !rawPrivateKey.includes('REEMPLAZAR')
+  );
 
-  if (process.env.FIREBASE_ADMIN_CLIENT_EMAIL && privateKey) {
+  if (hasRealServiceAccount) {
     const firebaseAdminConfig = {
       credential: credential.cert({
         projectId,
-        clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-        privateKey: privateKey,
+        clientEmail: rawClientEmail,
+        privateKey: privateKey as string,
       }),
       storageBucket,
     } as any;

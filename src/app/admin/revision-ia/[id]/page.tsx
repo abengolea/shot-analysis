@@ -104,6 +104,8 @@ export default function AdminRevisionIADetailPage() {
   const chatInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState<boolean>(false);
   const [attachments, setAttachments] = useState<string[]>([]);
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+  const [recentThumbs, setRecentThumbs] = useState<string[]>([]);
 
   const issueMap = useMemo(() => Object.fromEntries(ISSUE_OPTIONS.map(o => [o.id, o.label])), []);
 
@@ -181,6 +183,36 @@ export default function AdminRevisionIADetailPage() {
   };
 
   useEffect(() => { if (analysisId) loadChat(); /* eslint-disable-next-line */ }, [analysisId]);
+
+  // Subida reutilizable de imágenes (archivos) al Storage
+  const uploadFiles = async (files: File[]) => {
+    try {
+      const validFiles = files.filter((f) => f && f.type && f.type.startsWith('image/'));
+      if (!validFiles.length) return;
+      setUploading(true);
+      const uploaded: string[] = [];
+      for (const f of validFiles) {
+        const path = `analyses/${encodeURIComponent(analysisId)}/admin_chat/${Date.now()}-${Math.random().toString(36).slice(2)}-${f.name || 'clip.png'}`;
+        const r = storageRef(storage, path);
+        await uploadBytes(r, f);
+        const url = await getDownloadURL(r);
+        uploaded.push(url);
+      }
+      if (uploaded.length) setAttachments((prev) => [...prev, ...uploaded]);
+      if (uploaded.length) {
+        const plural = uploaded.length > 1 ? 'imágenes' : 'imagen';
+        setUploadNotice(`Se agregó ${uploaded.length} ${plural}`);
+        setTimeout(() => setUploadNotice(null), 3000);
+        setRecentThumbs(uploaded);
+        setTimeout(() => setRecentThumbs([]), 3000);
+      }
+    } catch (err) {
+      console.error('upload error', err);
+      setChatError('Error subiendo imágenes');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const addIssue = () => {
     setIssues((prev) => {
@@ -545,36 +577,86 @@ export default function AdminRevisionIADetailPage() {
                   ))}
                 </div>
               )}
+              {m.role === 'assistant' && (
+                <div className="mt-2">
+                  <button
+                    className="text-xs text-green-700 underline"
+                    onClick={async () => {
+                      try {
+                        setSaving(true);
+                        setError(null);
+                        const auth = getAuth();
+                        const cu = auth.currentUser;
+                        if (!cu) throw new Error('Usuario no autenticado');
+                        const token = await getIdToken(cu, true);
+                        const body = {
+                          category: 'chat_review',
+                          itemId: 'assistant_comment',
+                          itemName: 'Mensaje IA',
+                          rating: null,
+                          status: null,
+                          comment: String(m.text || ''),
+                          attachments: Array.isArray(m.attachments) ? m.attachments : [],
+                        };
+                        const res = await fetch(`/api/analyses/${encodeURIComponent(analysisId)}/training-examples`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+                        const data = await res.json();
+                        if (!res.ok || !data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+                      } catch (e:any) {
+                        setError(e?.message || 'Error desconocido');
+                      } finally {
+                        setSaving(false);
+                      }
+                    }}
+                  >
+                    Aprobar como ejemplo
+                  </button>
+                </div>
+              )}
             </div>
           ))}
           {chatMessages.length === 0 && !chatLoading && <p className="text-sm text-muted-foreground">Sin mensajes.</p>}
         </div>
         <div className="flex flex-col gap-2">
           <div className="flex gap-2 items-center">
-            <input ref={chatInputRef} className="flex-1 rounded border px-2 py-1" placeholder="Escribe tu objeción o pregunta…" value={chatInput} onChange={(e)=>setChatInput(e.target.value)} />
+            <input
+              ref={chatInputRef}
+              className="flex-1 rounded border px-2 py-1"
+              placeholder="Escribe tu objeción o pregunta… (puedes pegar capturas)"
+              value={chatInput}
+              onChange={(e)=>setChatInput(e.target.value)}
+              onPaste={async (e) => {
+                try {
+                  const items = Array.from(e.clipboardData?.items || []);
+                  const filesFromItems = items
+                    .filter((it) => it.kind === 'file' && it.type && it.type.startsWith('image/'))
+                    .map((it) => it.getAsFile())
+                    .filter((f): f is File => !!f);
+                  const filesFromList = Array.from(e.clipboardData?.files || [])
+                    .filter((f) => f && f.type && f.type.startsWith('image/'));
+                  const files = [...filesFromItems, ...filesFromList];
+                  if (files.length > 0) {
+                    e.preventDefault();
+                    await uploadFiles(files);
+                  }
+                } catch (err) {
+                  console.error('paste upload error', err);
+                  setChatError('Error pegando imagen');
+                }
+              }}
+            />
             <label className="text-xs px-2 py-1 rounded border cursor-pointer bg-white">
               Adjuntar imágenes
-              <input type="file" accept="image/*" multiple className="hidden" onChange={async (e)=>{
-                try {
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={async (e)=>{
                   const files = Array.from(e.target.files || []);
                   if (!files.length) return;
-                  setUploading(true);
-                  const uploaded: string[] = [];
-                  for (const f of files) {
-                    const path = `analyses/${encodeURIComponent(analysisId)}/admin_chat/${Date.now()}-${Math.random().toString(36).slice(2)}-${f.name}`;
-                    const r = storageRef(storage, path);
-                    await uploadBytes(r, f);
-                    const url = await getDownloadURL(r);
-                    uploaded.push(url);
-                  }
-                  setAttachments(prev => [...prev, ...uploaded]);
-                } catch (err) {
-                  console.error('upload error', err);
-                  setChatError('Error subiendo imágenes');
-                } finally {
-                  setUploading(false);
-                }
-              }} />
+                  await uploadFiles(files);
+                }}
+              />
             </label>
             <button className="rounded bg-slate-700 px-3 py-1 text-white disabled:opacity-60" disabled={!chatInput.trim()} onClick={async ()=>{
             try {
@@ -595,6 +677,18 @@ export default function AdminRevisionIADetailPage() {
             } finally { setChatLoading(false); }
           }}>Enviar</button>
           </div>
+          {recentThumbs.length > 0 && (
+            <div className="flex items-center gap-2 pl-1">
+              <span className="text-xs text-green-700">Imagen agregada</span>
+              <div className="flex gap-1">
+                {recentThumbs.slice(0, 3).map((url, i) => (
+                  <div key={`recent-${i}`} className="w-10 h-10 rounded overflow-hidden border">
+                    <img src={url} alt="preview" className="w-full h-full object-cover" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {attachments.length > 0 && (
             <div className="flex gap-2 flex-wrap">
               {attachments.map((url, i) => (
@@ -605,8 +699,10 @@ export default function AdminRevisionIADetailPage() {
               {uploading && <span className="text-xs text-muted-foreground">Subiendo…</span>}
             </div>
           )}
+          {uploadNotice && (
+            <div className="text-xs text-green-700">{uploadNotice}</div>
+          )}
         </div>
-        <p className="text-xs text-muted-foreground">Próximo: adjuntar imágenes y “Aplicar al feedback” desde la respuesta de la IA.</p>
       </div>
     </div>
   );
