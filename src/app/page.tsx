@@ -76,11 +76,12 @@ export default function LandingPage() {
         <section className="relative flex flex-col items-center justify-center pt-8 text-center md:pt-16">
           <div className="mt-16 w-full max-w-5xl">
             <Image
-              src="/Generated Image September 09, 2025 - 7_20PM.png"
+              src={encodeURI("/Generated Image September 09, 2025 - 7_20PM.png")}
               alt="Portada ShotAnalysis"
               width={1920}
               height={1080}
               priority
+              unoptimized
               className="mx-auto w-full max-w-3xl h-auto"
             />
           </div>
