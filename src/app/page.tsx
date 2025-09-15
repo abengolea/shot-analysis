@@ -81,7 +81,7 @@ export default function LandingPage() {
           </div>
           <div className="mt-16 w-full max-w-5xl">
             <img
-              src="/Generated%20Image%20September%2009,%202025%20-%207_20PM.png"
+              src="/landing-hero.png"
               alt="Portada ShotAnalysis"
               className="mx-auto w-full max-w-3xl h-auto"
             />

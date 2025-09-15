@@ -5,6 +5,16 @@ import Link from "next/link";
 import { PlusCircle, User, BarChart, FileText, Eye, Calendar, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -35,6 +45,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [userAnalyses, setUserAnalyses] = useState<any[]>([]);
   const [analysesLoading, setAnalysesLoading] = useState(true);
+  const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
 
   // Controles de filtro/rango
   const [range, setRange] = useState<string>("12m"); // 3m,6m,12m,5y,all
@@ -212,7 +223,15 @@ export default function DashboardPage() {
 
         <div className="flex items-center gap-2">
             <Button asChild>
-              <Link href="/upload">
+              <Link href="/upload" onClick={(e) => {
+                const p: any = userProfile as any;
+                const isNonEmptyString = (v: any) => typeof v === 'string' && v.trim().length > 0;
+                const isComplete = !!p && isNonEmptyString(p.name) && !!p.dob && isNonEmptyString(p.country) && isNonEmptyString(p.ageGroup) && isNonEmptyString(p.playerLevel) && isNonEmptyString(p.position) && p.height && p.wingspan;
+                if (!isComplete) {
+                  e.preventDefault();
+                  setProfileIncompleteOpen(true);
+                }
+              }}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Analizar Nuevo Lanzamiento
               </Link>
@@ -299,7 +318,15 @@ export default function DashboardPage() {
             <div className="py-8 text-center text-muted-foreground">
               <p className="mb-4">Aún no tienes análisis de lanzamiento.</p>
               <Button asChild>
-                <Link href="/upload">
+                <Link href="/upload" onClick={(e) => {
+                  const p: any = userProfile as any;
+                  const isNonEmptyString = (v: any) => typeof v === 'string' && v.trim().length > 0;
+                  const isComplete = !!p && isNonEmptyString(p.name) && !!p.dob && isNonEmptyString(p.country) && isNonEmptyString(p.ageGroup) && isNonEmptyString(p.playerLevel) && isNonEmptyString(p.position) && p.height && p.wingspan;
+                  if (!isComplete) {
+                    e.preventDefault();
+                    setProfileIncompleteOpen(true);
+                  }
+                }}>
                   <PlusCircle className="mr-2 h-4 w-4" />
                   Analiza tu primer lanzamiento
                 </Link>
@@ -390,6 +417,21 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={profileIncompleteOpen} onOpenChange={setProfileIncompleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Completa tu perfil para comenzar</AlertDialogTitle>
+            <AlertDialogDescription>
+              No podés iniciar un análisis hasta completar tu perfil. Completá tu nombre, fecha de nacimiento, país, grupo de edad, nivel, posición, altura y envergadura.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setProfileIncompleteOpen(false)}>Cerrar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setProfileIncompleteOpen(false); router.push('/profile'); }}>Ir a mi perfil</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

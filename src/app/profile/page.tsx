@@ -611,7 +611,16 @@ export default function ProfilePage() {
                 </a>
               </Button>
               <Button variant="outline" className="w-full" asChild>
-                <a href="/upload">
+                <a href="/upload" onClick={(e) => {
+                  const p: any = userProfile as any;
+                  const isNonEmptyString = (v: any) => typeof v === 'string' && v.trim().length > 0;
+                  const isComplete = !!p && isNonEmptyString(p.name) && !!p.dob && isNonEmptyString(p.country) && isNonEmptyString(p.ageGroup) && isNonEmptyString(p.playerLevel) && isNonEmptyString(p.position) && p.height && p.wingspan;
+                  if (!isComplete) {
+                    e.preventDefault();
+                    // Mostrar un toast suave aquí, y que el usuario ya está en perfil
+                    // No se agregó AlertDialog para no duplicar; el usuario está en esta página
+                  }
+                }}>
                   Subir Video
                 </a>
               </Button>

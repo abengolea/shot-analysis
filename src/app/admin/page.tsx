@@ -45,6 +45,63 @@ export default function AdminHome() {
 	const [subsNext, setSubsNext] = useState<string | undefined>(undefined);
 	const [subsLoading, setSubsLoading] = useState(false);
 
+	// Filtros de búsqueda
+	const [playersQuery, setPlayersQuery] = useState<string>("");
+	const [coachesQuery, setCoachesQuery] = useState<string>("");
+	const [paymentsQuery, setPaymentsQuery] = useState<string>("");
+	const [subsQuery, setSubsQuery] = useState<string>("");
+
+	// Helpers CSV export
+	const toCsvAndDownload = (filename: string, headers: string[], rows: Array<(string|number|null|undefined)[]>) => {
+		try {
+			const escape = (v: any) => {
+				if (v == null) return '';
+				const s = String(v);
+				if (s.includes('"') || s.includes(',') || s.includes('\n')) {
+					return '"' + s.replace(/"/g, '""') + '"';
+				}
+				return s;
+			};
+			const lines = [headers.join(',')].concat(rows.map(r => r.map(escape).join(',')));
+			const blob = new Blob(["\ufeff" + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+			const link = document.createElement('a');
+			link.href = URL.createObjectURL(blob);
+			link.download = filename;
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+		} catch {}
+	};
+
+	// Datos filtrados (cliente) - barato
+	const filteredPlayers = useMemo(() => {
+		const q = playersQuery.trim().toLowerCase();
+		if (!q) return players;
+		return players.filter(p => String(p.id).toLowerCase().includes(q)
+			|| String(p.email||'').toLowerCase().includes(q)
+			|| String(p.name||'').toLowerCase().includes(q));
+	}, [players, playersQuery]);
+	const filteredCoaches = useMemo(() => {
+		const q = coachesQuery.trim().toLowerCase();
+		if (!q) return coaches;
+		return coaches.filter(c => String(c.id).toLowerCase().includes(q)
+			|| String(c.email||'').toLowerCase().includes(q)
+			|| String(c.name||'').toLowerCase().includes(q));
+	}, [coaches, coachesQuery]);
+	const filteredPayments = useMemo(() => {
+		const q = paymentsQuery.trim().toLowerCase();
+		if (!q) return payments;
+		return payments.filter(p => String(p.id).toLowerCase().includes(q)
+			|| String(p.userId||'').toLowerCase().includes(q)
+			|| String(p.productId||'').toLowerCase().includes(q));
+	}, [payments, paymentsQuery]);
+	const filteredSubs = useMemo(() => {
+		const q = subsQuery.trim().toLowerCase();
+		if (!q) return subs;
+		return subs.filter(w => String(w.id).toLowerCase().includes(q)
+			|| String(w.userId||'').toLowerCase().includes(q));
+	}, [subs, subsQuery]);
+
 	useEffect(() => {
 		try {
 			const sp = new URLSearchParams(window.location.search);
@@ -177,8 +234,16 @@ export default function AdminHome() {
 			{/* Suscripciones */}
 			{activeTab === 'subscriptions' && (
 				<div className="space-y-3">
-					<div className="flex items-center justify-between">
+					<div className="flex items-center justify-between gap-2 flex-wrap">
 						<h2 className="text-lg font-medium">Suscripciones (History+)</h2>
+						<div className="flex items-center gap-2">
+							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Usuario" value={subsQuery} onChange={(e)=>setSubsQuery(e.target.value)} />
+							<button className="rounded border px-3 py-1 text-sm" onClick={() => {
+								const headers = ['userId','active','validUntil','credits','updatedAt'];
+								const rows = filteredSubs.map((w:any) => [w.userId||w.id, w.historyPlusActive?'SI':'NO', w.historyPlusValidUntil, w.credits, w.updatedAt]);
+								toCsvAndDownload('subscriptions.csv', headers, rows);
+							}}>Exportar CSV</button>
+						</div>
 						<button
 							className="rounded border px-3 py-1 text-sm"
 							onClick={async () => {
@@ -199,7 +264,7 @@ export default function AdminHome() {
 								} finally {
 									setSubsLoading(false);
 								}
-						}}
+							}}
 						>
 							{subs.length ? 'Refrescar' : 'Cargar'}
 						</button>
@@ -216,7 +281,7 @@ export default function AdminHome() {
 								</tr>
 							</thead>
 							<tbody>
-								{subs.map((w) => (
+								{filteredSubs.map((w) => (
 									<tr key={w.id} className="border-t">
 										<td className="py-2 px-3">{w.userId || w.id}</td>
 										<td className="py-2 px-3">{w.historyPlusActive ? 'Sí' : 'No'}</td>
@@ -225,7 +290,7 @@ export default function AdminHome() {
 										<td className="py-2 px-3">{w.updatedAt || '-'}</td>
 									</tr>
 								))}
-								{!subs.length && (
+								{!filteredSubs.length && (
 									<tr>
 										<td className="py-6 px-3 text-gray-500" colSpan={5}>{subsLoading ? 'Cargando…' : 'Sin datos'}</td>
 									</tr>
@@ -281,6 +346,12 @@ export default function AdminHome() {
 								<option value="pending">Pendientes</option>
 								<option value="rejected">Rechazados</option>
 							</select>
+							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Usuario/Producto" value={paymentsQuery} onChange={(e)=>setPaymentsQuery(e.target.value)} />
+							<button className="rounded border px-3 py-1 text-sm" onClick={() => {
+								const headers = ['id','userId','productId','status','amount','currency','createdAt'];
+								const rows = filteredPayments.map((p:any) => [p.id,p.userId,p.productId,p.status,p.amount,p.currency,p.createdAt]);
+								toCsvAndDownload('payments.csv', headers, rows);
+							}}>Exportar CSV</button>
 							<button
 								className="rounded border px-3 py-1 text-sm"
 								onClick={async () => {
@@ -322,7 +393,7 @@ export default function AdminHome() {
 								</tr>
 							</thead>
 							<tbody>
-								{payments.map((p) => (
+								{filteredPayments.map((p:any) => (
 									<tr key={p.id} className="border-t">
 										<td className="py-2 px-3">{p.id}</td>
 										<td className="py-2 px-3">{p.userId || '-'}</td>
@@ -333,7 +404,7 @@ export default function AdminHome() {
 										<td className="py-2 px-3">{p.createdAt || '-'}</td>
 									</tr>
 								))}
-								{!payments.length && (
+								{!filteredPayments.length && (
 									<tr>
 										<td className="py-6 px-3 text-gray-500" colSpan={7}>{paymentsLoading ? 'Cargando…' : 'Sin datos'}</td>
 									</tr>
@@ -377,8 +448,16 @@ export default function AdminHome() {
 			{/* Jugadores */}
 			{activeTab === 'players' && (
 				<div className="space-y-3">
-					<div className="flex items-center justify-between">
+					<div className="flex items-center justify-between gap-2 flex-wrap">
 						<h2 className="text-lg font-medium">Jugadores</h2>
+						<div className="flex items-center gap-2">
+							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Email/Nombre" value={playersQuery} onChange={(e)=>setPlayersQuery(e.target.value)} />
+							<button className="rounded border px-3 py-1 text-sm" onClick={() => {
+								const headers = ['id','name','email','playerLevel','status','createdAt'];
+								const rows = filteredPlayers.map((p:any) => [p.id,p.name,p.email,p.playerLevel,p.status,p.createdAt]);
+								toCsvAndDownload('players.csv', headers, rows);
+							}}>Exportar CSV</button>
+						</div>
 						<button
 							className="rounded border px-3 py-1 text-sm"
 							onClick={async () => {
@@ -399,7 +478,7 @@ export default function AdminHome() {
 								} finally {
 									setPlayersLoading(false);
 								}
-						}}
+							}}
 						>
 							{players.length ? 'Refrescar' : 'Cargar'}
 						</button>
@@ -417,7 +496,7 @@ export default function AdminHome() {
 								</tr>
 							</thead>
 							<tbody>
-								{players.map((p) => (
+								{filteredPlayers.map((p:any) => (
 									<tr key={p.id} className="border-t">
 										<td className="py-2 px-3">{p.id}</td>
 										<td className="py-2 px-3">{p.name || '-'}</td>
@@ -427,7 +506,7 @@ export default function AdminHome() {
 										<td className="py-2 px-3">{p.createdAt || '-'}</td>
 									</tr>
 								))}
-								{!players.length && (
+								{!filteredPlayers.length && (
 									<tr>
 										<td className="py-6 px-3 text-gray-500" colSpan={6}>{playersLoading ? 'Cargando…' : 'Sin datos'}</td>
 									</tr>
@@ -469,8 +548,16 @@ export default function AdminHome() {
 			{/* Entrenadores */}
 			{activeTab === 'coaches' && (
 				<div className="space-y-3">
-					<div className="flex items-center justify-between">
+					<div className="flex items-center justify-between gap-2 flex-wrap">
 						<h2 className="text-lg font-medium">Entrenadores</h2>
+						<div className="flex items-center gap-2">
+							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Email/Nombre" value={coachesQuery} onChange={(e)=>setCoachesQuery(e.target.value)} />
+							<button className="rounded border px-3 py-1 text-sm" onClick={() => {
+								const headers = ['id','name','email','status','ratePerAnalysis','createdAt'];
+								const rows = filteredCoaches.map((c:any) => [c.id,c.name,c.email,c.status,c.ratePerAnalysis,c.createdAt]);
+								toCsvAndDownload('coaches.csv', headers, rows);
+							}}>Exportar CSV</button>
+						</div>
 						<button
 							className="rounded border px-3 py-1 text-sm"
 							onClick={async () => {
@@ -491,7 +578,7 @@ export default function AdminHome() {
 								} finally {
 									setCoachesLoading(false);
 								}
-						}}
+							}}
 						>
 							{coaches.length ? 'Refrescar' : 'Cargar'}
 						</button>
@@ -509,7 +596,7 @@ export default function AdminHome() {
 								</tr>
 							</thead>
 							<tbody>
-								{coaches.map((c) => (
+								{filteredCoaches.map((c:any) => (
 									<tr key={c.id} className="border-t">
 										<td className="py-2 px-3">{c.id}</td>
 										<td className="py-2 px-3">{c.name || '-'}</td>
@@ -519,7 +606,7 @@ export default function AdminHome() {
 										<td className="py-2 px-3">{c.createdAt || '-'}</td>
 									</tr>
 								))}
-								{!coaches.length && (
+								{!filteredCoaches.length && (
 									<tr>
 										<td className="py-6 px-3 text-gray-500" colSpan={6}>{coachesLoading ? 'Cargando…' : 'Sin datos'}</td>
 									</tr>

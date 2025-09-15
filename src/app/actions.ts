@@ -269,6 +269,38 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         const currentUser = playerDoc.exists ? { id: userId, ...(playerDoc.data() as any) } : null;
         if (!currentUser) return { message: "Usuario no autenticado.", error: true };
 
+        // Validación de perfil completo (antes de tocar créditos)
+        const isNonEmptyString = (v: any) => typeof v === 'string' && v.trim().length > 0;
+        const hasDob = Boolean((currentUser as any).dob);
+        const heightOk = (() => {
+            const h = (currentUser as any).height;
+            if (typeof h === 'number') return h > 0;
+            const n = Number(h);
+            return !Number.isNaN(n) && n > 0;
+        })();
+        const wingspanOk = (() => {
+            const w = (currentUser as any).wingspan;
+            if (typeof w === 'number') return w > 0;
+            const n = Number(w);
+            return !Number.isNaN(n) && n > 0;
+        })();
+        const profileComplete = (
+            isNonEmptyString((currentUser as any).name) &&
+            hasDob &&
+            isNonEmptyString((currentUser as any).country) &&
+            isNonEmptyString((currentUser as any).ageGroup) &&
+            isNonEmptyString((currentUser as any).playerLevel) &&
+            isNonEmptyString((currentUser as any).position) &&
+            heightOk &&
+            wingspanOk
+        );
+        if (!profileComplete) {
+            return {
+                message: 'Tu perfil está incompleto. Completá nombre, fecha de nacimiento, país, grupo de edad, nivel, posición, altura y envergadura antes de iniciar un análisis.',
+                error: true,
+            };
+        }
+
         // Enforce créditos / gratis
         const currentYear = new Date().getFullYear();
         let billingInfo: { type: 'free' | 'credit'; year: number } | null = null;

@@ -39,25 +39,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (user) {
         try {
-          // Obtener el perfil siempre; permitirlo si email verificado o es admin
-          let profile: (Player | Coach) | null = null;
-          let role: string | undefined;
-          const playerDoc = await getDoc(doc(db, 'players', user.uid));
-          if (playerDoc.exists()) {
-            const data = playerDoc.data() as any;
-            role = data?.role;
-            profile = { id: user.uid, ...(data as any) } as Player;
+          // Determinar preferencia de rol según ruta y preferencia guardada
+          const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+          const preferredRole = typeof window !== 'undefined' ? (localStorage.getItem('preferredRole') || '') : '';
+          const preferCoach = pathname.startsWith('/coach') || preferredRole === 'coach';
+
+          // Cargar ambos perfiles en paralelo para decidir correctamente cuando existen los dos
+          const [playerSnap, coachSnap] = await Promise.all([
+            getDoc(doc(db, 'players', user.uid)),
+            getDoc(doc(db, 'coaches', user.uid)),
+          ]);
+
+          let selected: (Player | Coach) | null = null;
+          if (preferCoach) {
+            if (coachSnap.exists()) {
+              const data = coachSnap.data() as any;
+              selected = { id: user.uid, ...(data as any) } as Coach;
+            } else if (playerSnap.exists()) {
+              const data = playerSnap.data() as any;
+              selected = { id: user.uid, ...(data as any) } as Player;
+            }
           } else {
-            const coachDoc = await getDoc(doc(db, 'coaches', user.uid));
-            if (coachDoc.exists()) {
-              const data = coachDoc.data() as any;
-              role = data?.role;
-              profile = { id: user.uid, ...(data as any) } as Coach;
+            if (playerSnap.exists()) {
+              const data = playerSnap.data() as any;
+              selected = { id: user.uid, ...(data as any) } as Player;
+            } else if (coachSnap.exists()) {
+              const data = coachSnap.data() as any;
+              selected = { id: user.uid, ...(data as any) } as Coach;
             }
           }
 
-          if (profile && (user.emailVerified || role === 'admin')) {
-            setUserProfile(profile);
+          const selectedRole = (selected as any)?.role as string | undefined;
+          if (selected && (user.emailVerified || selectedRole === 'admin')) {
+            setUserProfile(selected);
           } else {
             setUserProfile(null);
           }

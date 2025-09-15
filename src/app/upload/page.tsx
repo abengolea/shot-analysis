@@ -79,7 +79,7 @@ export default function UploadPage() {
   const [state, formAction] = useActionState<StartState, FormData>(startAnalysis as any, { message: "", error: false });
   const formRef = useRef<HTMLFormElement>(null);
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
   const router = useRouter();
   const [confirmPartialOpen, setConfirmPartialOpen] = useState(false);
   const [confirmedPartial, setConfirmedPartial] = useState(false);
@@ -88,6 +88,7 @@ export default function UploadPage() {
   const analyzingTimerRef = useRef<number | null>(null);
   const [tipsOpen, setTipsOpen] = useState(false);
   const [dontShowTipsAgain, setDontShowTipsAgain] = useState(false);
+  const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
   
   // Estados para los videos (sin frames)
   const [selectedVideo, setSelectedVideo] = useState<File | null>(null); // frontal
@@ -102,7 +103,24 @@ export default function UploadPage() {
   const rightInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
 
+  const isPlayerProfileComplete = (p: any | null | undefined): boolean => {
+    if (!p) return false;
+    const hasName = typeof p.name === 'string' && p.name.trim().length > 1;
+    const hasDob = Boolean(p.dob);
+    const hasCountry = typeof p.country === 'string' && p.country.trim().length > 0;
+    const hasAgeGroup = typeof p.ageGroup === 'string' && p.ageGroup.trim().length > 0;
+    const hasPlayerLevel = typeof p.playerLevel === 'string' && p.playerLevel.trim().length > 0;
+    const hasPosition = typeof p.position === 'string' && p.position.trim().length > 0;
+    const heightOk = p.height !== undefined && p.height !== null && !Number.isNaN(Number(p.height)) && Number(p.height) > 0;
+    const wingspanOk = p.wingspan !== undefined && p.wingspan !== null && !Number.isNaN(Number(p.wingspan)) && Number(p.wingspan) > 0;
+    return hasName && hasDob && hasCountry && hasAgeGroup && hasPlayerLevel && hasPosition && heightOk && wingspanOk;
+  };
+
   const handleSubmit = async (formData: FormData) => {
+    if (!isPlayerProfileComplete(userProfile)) {
+      setProfileIncompleteOpen(true);
+      return;
+    }
     if (!shotType) {
       toast({
         title: "Error",
@@ -133,6 +151,9 @@ export default function UploadPage() {
       });
       return;
     }
+
+    // Asegurar tipo de lanzamiento en el FormData
+    formData.set('shotType', shotType);
 
     // Agregar el video principal y ángulos al FormData (preferir back)
     if (backVideo) {
@@ -181,6 +202,21 @@ export default function UploadPage() {
     } catch {}
   }, []);
 
+  // Cargar última selección del tipo de lanzamiento
+  useEffect(() => {
+    try {
+      const last = localStorage.getItem('lastShotType');
+      if (last) setShotType(last);
+    } catch {}
+  }, []);
+
+  // Persistir selección del tipo de lanzamiento
+  useEffect(() => {
+    try {
+      if (shotType) localStorage.setItem('lastShotType', shotType);
+    } catch {}
+  }, [shotType]);
+  
   const handleFormSubmit: React.FormEventHandler<HTMLFormElement> = () => {
     setConfirmedPartial(false);
   };
@@ -222,6 +258,16 @@ export default function UploadPage() {
       }
   }, [state, toast, router]);
 
+  // Abrir el aviso apenas se ingresa si el perfil está incompleto
+  useEffect(() => {
+    const p: any = userProfile as any;
+    const isNonEmptyString = (v: any) => typeof v === 'string' && v.trim().length > 0;
+    const isComplete = !!p && isNonEmptyString(p.name) && !!p.dob && isNonEmptyString(p.country) && isNonEmptyString(p.ageGroup) && isNonEmptyString(p.playerLevel) && isNonEmptyString(p.position) && p.height && p.wingspan;
+    if (!isComplete) {
+      setProfileIncompleteOpen(true);
+    }
+  }, [userProfile]);
+
   if (!user) {
     return (
       <div className="mx-auto max-w-2xl text-center">
@@ -252,6 +298,30 @@ export default function UploadPage() {
         </div>
       </div>
 
+      {/* Tipo de lanzamiento (visible siempre) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Tipo de Lanzamiento</CardTitle>
+          <CardDescription>Selecciona el tipo de tiro para ajustar el análisis.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Label htmlFor="shotType">Tipo de Lanzamiento</Label>
+            <Select value={shotType} onValueChange={(v) => setShotType(v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona el tipo de lanzamiento" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Tiro Libre">Tiro Libre</SelectItem>
+                <SelectItem value="Lanzamiento de Media Distancia (Jump Shot)">Lanzamiento de Media Distancia (Jump Shot)</SelectItem>
+                <SelectItem value="Lanzamiento de Tres">Lanzamiento de Tres</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Esto nos ayuda a evaluar con reglas específicas para cada tipo de tiro.</p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Selector de videos (unificado) */}
       <Card>
         <CardHeader>
@@ -259,12 +329,15 @@ export default function UploadPage() {
           <CardDescription>
             Preferimos Trasera (hasta 40s). Si no la tenés, subí Frontal (hasta 30s). Laterales son opcionales.
           </CardDescription>
+          {!shotType && (
+            <div className="text-xs text-amber-600 mt-2">Seleccioná el tipo de lanzamiento arriba para habilitar la subida.</div>
+          )}
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="video-back">Trasera (preferida)</Label>
-              <Button type="button" onClick={() => backInputRef.current?.click()} className="w-full">
+              <Button type="button" onClick={() => backInputRef.current?.click()} className="w-full" disabled={!shotType}>
                 Subir trasera desde archivos
               </Button>
               <Input ref={backInputRef} id="video-back" type="file" accept="video/*" onChange={(e) => setBackVideo(e.target.files?.[0] || null)} className="hidden" />
@@ -276,7 +349,7 @@ export default function UploadPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="video-front">Frontal (alternativa)</Label>
-              <Button type="button" onClick={() => frontInputRef.current?.click()} className="w-full">
+              <Button type="button" onClick={() => frontInputRef.current?.click()} className="w-full" disabled={!shotType}>
                 Subir frontal desde archivos
               </Button>
               <Input ref={frontInputRef} id="video-front" type="file" accept="video/*" onChange={(e) => setSelectedVideo(e.target.files?.[0] || null)} className="hidden" />
@@ -288,7 +361,7 @@ export default function UploadPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="video-left">Lateral Izquierdo (opcional)</Label>
-              <Button type="button" onClick={() => leftInputRef.current?.click()} className="w-full">
+              <Button type="button" onClick={() => leftInputRef.current?.click()} className="w-full" disabled={!shotType}>
                 Subir lateral izquierdo desde archivos
               </Button>
               <Input ref={leftInputRef} id="video-left" type="file" accept="video/*" onChange={(e) => setLeftVideo(e.target.files?.[0] || null)} className="hidden" />
@@ -300,7 +373,7 @@ export default function UploadPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="video-right">Lateral Derecho (opcional)</Label>
-              <Button type="button" onClick={() => rightInputRef.current?.click()} className="w-full">
+              <Button type="button" onClick={() => rightInputRef.current?.click()} className="w-full" disabled={!shotType}>
                 Subir lateral derecho desde archivos
               </Button>
               <Input ref={rightInputRef} id="video-right" type="file" accept="video/*" onChange={(e) => setRightVideo(e.target.files?.[0] || null)} className="hidden" />
@@ -327,21 +400,8 @@ export default function UploadPage() {
             <form ref={formRef} action={handleSubmit} onSubmit={handleFormSubmit} className="space-y-4">
               {/* Usuario ID oculto */}
               <input type="hidden" name="userId" value={user.uid} />
-              {/* Tipo de lanzamiento */}
-              <div className="space-y-2">
-                <Label htmlFor="shotType">Tipo de Lanzamiento</Label>
-                <input type="hidden" name="shotType" value={shotType} />
-                <Select value={shotType} onValueChange={(v) => setShotType(v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona el tipo de lanzamiento" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Tiro Libre">Tiro Libre</SelectItem>
-                    <SelectItem value="Lanzamiento de Media Distancia (Jump Shot)">Lanzamiento de Media Distancia (Jump Shot)</SelectItem>
-                    <SelectItem value="Lanzamiento de Tres">Lanzamiento de Tres</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Tipo de lanzamiento (solo para envío) */}
+              <input type="hidden" name="shotType" value={shotType} />
 
               {/* Información del video */}
               <div className="p-4 bg-blue-50 rounded-lg">
@@ -371,9 +431,10 @@ export default function UploadPage() {
               <Video className="h-12 w-12 mx-auto mb-2 text-amber-600" />
               <h3 className="font-semibold mb-2">Pasos para el Análisis</h3>
               <ol className="text-sm space-y-1 text-left max-w-md mx-auto">
-                <li>1. Subí el video Trasero (preferido). Si no lo tenés, subí el Frontal.</li>
-                <li>2. Opcional: agregá Lateral Izquierdo y Lateral Derecho.</li>
-                <li>3. Seleccioná el tipo de lanzamiento y envía para análisis.</li>
+                <li>1. Seleccioná el tipo de lanzamiento.</li>
+                <li>2. Subí el video Trasero (preferido). Si no lo tenés, subí el Frontal.</li>
+                <li>3. Opcional: agregá Lateral Izquierdo y Lateral Derecho.</li>
+                <li>4. Envía para análisis.</li>
               </ol>
             </div>
           </CardContent>
@@ -445,6 +506,22 @@ export default function UploadPage() {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setConfirmPartialOpen(false)}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => { setConfirmedPartial(true); setConfirmPartialOpen(false); formRef.current?.requestSubmit(); }}>Confirmar y analizar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Perfil incompleto */}
+      <AlertDialog open={profileIncompleteOpen} onOpenChange={setProfileIncompleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Completa tu perfil para comenzar</AlertDialogTitle>
+            <AlertDialogDescription>
+              No podés iniciar un análisis hasta completar tu perfil. Completá tu nombre, fecha de nacimiento, país, grupo de edad, nivel, posición, altura y envergadura.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setProfileIncompleteOpen(false)}>Cerrar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setProfileIncompleteOpen(false); router.push('/profile'); }}>Ir a mi perfil</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
