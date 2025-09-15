@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AppLayout } from "@/components/app-layout";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/hooks/use-auth";
+import { MetricsTracker } from "@/components/metrics-tracker";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -32,6 +33,7 @@ export default function RootLayout({
         <AuthProvider>
           <AppLayout>{children}</AppLayout>
           <Toaster />
+          <MetricsTracker />
         </AuthProvider>
       </body>
     </html>

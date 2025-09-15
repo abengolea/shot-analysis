@@ -1,8 +1,14 @@
+"use client";
+
 import { CoachAdminForm } from "@/components/coach-admin-form";
 import { BasketballIcon } from "@/components/icons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, Star, Users, Award } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
+import { db } from "@/lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
 
 const benefits = [
   {
@@ -23,6 +29,36 @@ const benefits = [
 ];
 
 export default function CoachRegisterPage() {
+  const { user, userProfile } = useAuth();
+
+  const handleBecomeCoach = async () => {
+    try {
+      if (!user) {
+        window.location.href = '/login';
+        return;
+      }
+      const uid = user.uid;
+      const base = {
+        id: uid,
+        name: user.displayName || userProfile?.name || '',
+        email: user.email || '',
+        role: 'coach' as const,
+        avatarUrl: (user.photoURL || 'https://placehold.co/100x100.png'),
+        status: 'pending' as const,
+        updatedAt: new Date(),
+        createdAt: new Date(),
+      };
+      await setDoc(doc(db as any, 'coaches', uid), base, { merge: true });
+      // Feedback mínimo
+      alert('Listo. Se creó/actualizó tu perfil de entrenador.');
+    } catch (e) {
+      console.error('Error convirtiéndose en entrenador:', e);
+      alert('No se pudo crear tu perfil de entrenador.');
+    }
+  };
+
+  const isAdmin = (userProfile as any)?.role === 'admin';
+
   return (
     <div className="container mx-auto max-w-4xl py-8">
       <div className="text-center mb-12">
@@ -41,7 +77,23 @@ export default function CoachRegisterPage() {
       <div className="grid gap-8 lg:grid-cols-2">
         {/* Formulario de Registro */}
         <div>
-          <CoachAdminForm />
+          {isAdmin ? (
+            <CoachAdminForm />
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>Registro Rápido</CardTitle>
+                <CardDescription>
+                  Usa tu cuenta actual para crear tu perfil de entrenador
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button className="w-full" onClick={handleBecomeCoach}>
+                  Convertirme en Entrenador (usar mi cuenta actual)
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Beneficios y Información */}

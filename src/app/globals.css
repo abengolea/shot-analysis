@@ -10,11 +10,11 @@
     --card-foreground: 240 10% 3.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
-    /* Primary: Orange #FF6A00 */
-    --primary: 24 100% 50%;
-    --primary-foreground: 33 100% 95%;
-    /* Accent: Blue #0A4AA4 */
-    --accent: 213 88% 34%;
+    /* Primary: Blue #0B4DA1 */
+    --primary: 213 90% 34%;
+    --primary-foreground: 0 0% 98%;
+    /* Accent: Orange #FF6A00 */
+    --accent: 24 100% 50%;
     --accent-foreground: 0 0% 98%;
     --secondary: 240 4.8% 95.9%;
     --secondary-foreground: 240 5.9% 10%;
@@ -24,9 +24,9 @@
     --destructive-foreground: 0 0% 98%;
     --border: 240 5.9% 90%;
     --input: 240 5.9% 90%;
-    --ring: 24 100% 50%;
-    --chart-1: 24 100% 50%;
-    --chart-2: 213 88% 34%;
+    --ring: 213 90% 34%;
+    --chart-1: 213 90% 34%;
+    --chart-2: 24 100% 50%;
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
@@ -40,21 +40,21 @@
     --card-foreground: 0 0% 98%;
     --popover: 240 10% 3.9%;
     --popover-foreground: 0 0% 98%;
-    --primary: 24 100% 50%;
-    --primary-foreground: 24 100% 10%;
+    --primary: 213 90% 34%;
+    --primary-foreground: 0 0% 98%;
     --secondary: 240 3.7% 15.9%;
     --secondary-foreground: 0 0% 98%;
     --muted: 240 3.7% 15.9%;
     --muted-foreground: 0 0% 63.9%;
-    --accent: 213 88% 34%;
+    --accent: 24 100% 50%;
     --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
     --border: 240 3.7% 15.9%;
     --input: 240 3.7% 15.9%;
-    --ring: 24 100% 50%;
-    --chart-1: 24 100% 50%;
-    --chart-2: 213 88% 34%;
+    --ring: 213 90% 34%;
+    --chart-1: 213 90% 34%;
+    --chart-2: 24 100% 50%;
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;

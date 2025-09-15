@@ -106,6 +106,8 @@ export default function AdminRevisionIADetailPage() {
   const [attachments, setAttachments] = useState<string[]>([]);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [recentThumbs, setRecentThumbs] = useState<string[]>([]);
+  const [approvedExamples, setApprovedExamples] = useState<Record<string, boolean>>({});
+  const [questioned, setQuestioned] = useState<Record<string, boolean>>({});
 
   const issueMap = useMemo(() => Object.fromEntries(ISSUE_OPTIONS.map(o => [o.id, o.label])), []);
 
@@ -372,9 +374,11 @@ export default function AdminRevisionIADetailPage() {
                     setChatInput(txt ? `No estoy de acuerdo con el resumen: "${txt.slice(0, 140)}..." ` : 'No estoy de acuerdo con el resumen: ');
                     document.getElementById('review-chat')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     setTimeout(() => chatInputRef.current?.focus(), 150);
+                    setQuestioned((prev) => ({ ...prev, summary: true }));
                   }}
+                  disabled={questioned['summary'] === true}
                 >
-                  Cuestionar resumen
+                  {questioned['summary'] === true ? 'CUESTIONADO' : 'Cuestionar resumen'}
                 </button>
               </div>
             </div>
@@ -392,9 +396,11 @@ export default function AdminRevisionIADetailPage() {
                               setChatInput(`No estoy de acuerdo con la fortaleza "${s}": `);
                               document.getElementById('review-chat')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                               setTimeout(() => chatInputRef.current?.focus(), 150);
+                              setQuestioned((prev) => ({ ...prev, [`strength:${s}`]: true }));
                             }}
+                            disabled={questioned[`strength:${s}`] === true}
                           >
-                            Cuestionar
+                            {questioned[`strength:${s}`] === true ? 'CUESTIONADO' : 'Cuestionar'}
                           </button>
                         </li>
                       ))
@@ -414,9 +420,11 @@ export default function AdminRevisionIADetailPage() {
                               setChatInput(`No estoy de acuerdo con la debilidad "${s}": `);
                               document.getElementById('review-chat')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                               setTimeout(() => chatInputRef.current?.focus(), 150);
+                              setQuestioned((prev) => ({ ...prev, [`weak:${s}`]: true }));
                             }}
+                            disabled={questioned[`weak:${s}`] === true}
                           >
-                            Cuestionar
+                            {questioned[`weak:${s}`] === true ? 'CUESTIONADO' : 'Cuestionar'}
                           </button>
                         </li>
                       ))
@@ -436,9 +444,11 @@ export default function AdminRevisionIADetailPage() {
                               setChatInput(`No estoy de acuerdo con la recomendación "${s}": `);
                               document.getElementById('review-chat')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                               setTimeout(() => chatInputRef.current?.focus(), 150);
+                              setQuestioned((prev) => ({ ...prev, [`rec:${s}`]: true }));
                             }}
+                            disabled={questioned[`rec:${s}`] === true}
                           >
-                            Cuestionar
+                            {questioned[`rec:${s}`] === true ? 'CUESTIONADO' : 'Cuestionar'}
                           </button>
                         </li>
                       ))
@@ -499,9 +509,11 @@ export default function AdminRevisionIADetailPage() {
                               setChatInput(msg);
                               document.getElementById('review-chat')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                               setTimeout(() => chatInputRef.current?.focus(), 150);
+                              setQuestioned((prev) => ({ ...prev, [`check:${String(selCat || '')}:${String(sel?.id || '')}`]: true }));
                             }}
+                            disabled={questioned[`check:${String(selCat || '')}:${String(sel?.id || '')}`] === true}
                           >
-                            Cuestionar este ítem
+                            {questioned[`check:${String(selCat || '')}:${String(sel?.id || '')}`] === true ? 'CUESTIONADO' : 'Cuestionar este ítem'}
                           </button>
                           <button
                             className="text-xs text-green-700 underline"
@@ -525,14 +537,16 @@ export default function AdminRevisionIADetailPage() {
                                 const res = await fetch(`/api/analyses/${encodeURIComponent(analysisId)}/training-examples`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
                                 const data = await res.json();
                                 if (!res.ok || !data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+                                setApprovedExamples((prev) => ({ ...prev, [`item:${String(selCat || '')}:${String(sel?.id || '')}`]: true }));
                               } catch (e:any) {
                                 setError(e?.message || 'Error desconocido');
                               } finally {
                                 setSaving(false);
                               }
                             }}
+                            disabled={saving || approvedExamples[`item:${String(selCat || '')}:${String(sel?.id || '')}`] === true}
                           >
-                            Aprobar como ejemplo
+                            {approvedExamples[`item:${String(selCat || '')}:${String(sel?.id || '')}`] === true ? 'APROBADO COMO EJEMPLO' : 'Aprobar como ejemplo'}
                           </button>
                         </div>
                       </div>
@@ -609,14 +623,16 @@ export default function AdminRevisionIADetailPage() {
                         const res = await fetch(`/api/analyses/${encodeURIComponent(analysisId)}/training-examples`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
                         const data = await res.json();
                         if (!res.ok || !data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+                        setApprovedExamples((prev) => ({ ...prev, [`chat:${m.id}`]: true }));
                       } catch (e:any) {
                         setError(e?.message || 'Error desconocido');
                       } finally {
                         setSaving(false);
                       }
                     }}
+                    disabled={approvedExamples[`chat:${m.id}`] === true || saving}
                   >
-                    Aprobar como ejemplo
+                    {approvedExamples[`chat:${m.id}`] === true ? 'APROBADO COMO EJEMPLO' : 'Aprobar como ejemplo'}
                   </button>
                 </div>
               )}

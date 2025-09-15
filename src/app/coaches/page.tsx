@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { 
@@ -17,7 +17,9 @@ import {
   Trophy,
   GraduationCap
 } from "lucide-react";
-import { mockCoaches } from "@/lib/mock-data";
+import { db } from "@/lib/firebase";
+import { collection, onSnapshot } from "firebase/firestore";
+import type { Coach } from "@/lib/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -39,8 +41,26 @@ export default function CoachesPage() {
   const [maxPrice, setMaxPrice] = useState<number>(100);
   const [minRating, setMinRating] = useState<number>(0);
   const [sortBy, setSortBy] = useState<string>("rating");
+  const [coaches, setCoaches] = useState<Coach[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const coaches = mockCoaches;
+  useEffect(() => {
+    try {
+      const colRef = collection(db as any, 'coaches');
+      const unsubscribe = onSnapshot(colRef, (snapshot) => {
+        const list = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Coach[];
+        setCoaches(list);
+        setLoading(false);
+      }, (err) => {
+        console.error('Error cargando entrenadores:', err);
+        setLoading(false);
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.error('Error inicializando carga de entrenadores:', e);
+      setLoading(false);
+    }
+  }, []);
 
   // Get unique specialties for filter
   const specialties = useMemo(() => {
@@ -106,6 +126,11 @@ export default function CoachesPage() {
         <p className="mt-2 text-muted-foreground">
           Conecta con entrenadores profesionales para obtener feedback personalizado.
         </p>
+        <div className="mt-4">
+          <Link href="/coach-register" className="text-primary underline">
+            ¿Eres entrenador? Crea tu perfil aquí
+          </Link>
+        </div>
       </div>
 
       {/* Search and Filters */}
@@ -188,6 +213,11 @@ export default function CoachesPage() {
           Mostrando {filteredCoaches.length} de {coaches.length} entrenadores
         </div>
       </div>
+
+      {/* Loading State */}
+      {loading && (
+        <div className="text-center py-12 text-muted-foreground">Cargando entrenadores...</div>
+      )}
 
       {/* Coaches Grid */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">

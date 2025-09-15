@@ -22,6 +22,43 @@ type CreatePreferenceInput = {
 export async function createPreference(input: CreatePreferenceInput) {
   if (!MP_ACCESS_TOKEN) throw new Error('MP_ACCESS_TOKEN_AR no configurado');
 
+  // Determinar base para back_urls (debe ser https para usar auto_return)
+  const computeReturnBase = (): string | undefined => {
+    const explicit = process.env.MP_RETURN_URL;
+    if (explicit) return explicit;
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+    if (appUrl) return appUrl;
+    const webhookUrl = process.env.MP_WEBHOOK_URL;
+    if (webhookUrl) {
+      try {
+        const origin = new URL(webhookUrl).origin;
+        return origin;
+      } catch {}
+    }
+    return undefined;
+  };
+
+  const returnBase = computeReturnBase();
+  const resolveReturnUrl = (base: string): string => {
+    try {
+      const u = new URL(base);
+      return `${u.origin}/payments/return`;
+    } catch {
+      const trimmed = base.replace(/\/$/, '');
+      if (trimmed.endsWith('/payments/return')) return trimmed;
+      return `${trimmed}/payments/return`;
+    }
+  };
+  const returnUrl = returnBase ? resolveReturnUrl(returnBase) : undefined;
+  const backUrls = returnUrl
+    ? {
+        success: returnUrl,
+        failure: returnUrl,
+        pending: returnUrl,
+      }
+    : undefined;
+  const canAutoReturn = Boolean(backUrls?.success && backUrls.success.startsWith('https://'));
+
   const body = {
     items: [
       {
@@ -32,17 +69,13 @@ export async function createPreference(input: CreatePreferenceInput) {
       } as PreferenceItem,
     ],
     metadata: {
-      userId: input.userId,
+      ...(input.userId ? { userId: input.userId } : {}),
       ...(input.userEmail ? { userEmail: input.userEmail } : {}),
       productId: input.productId,
     },
     notification_url: MP_NOTIFICATION_URL,
-    back_urls: {
-      success: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-      failure: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-      pending: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-    },
-    auto_return: 'approved',
+    ...(backUrls ? { back_urls: backUrls } : {}),
+    ...(canAutoReturn ? { auto_return: 'approved' as const } : {}),
   };
 
   const res = await fetch(`${MP_BASE}/checkout/preferences`, {
@@ -62,17 +95,18 @@ export async function createPreference(input: CreatePreferenceInput) {
 
   // Registrar intento de pago
   if (adminDb) {
-    await adminDb.collection('payments').doc(pref.id).set({
+    const base: any = {
       provider: 'mercadopago',
       providerPaymentId: pref.id,
-      userId: input.userId,
       productId: input.productId,
       amount: input.amountARS,
       currency: 'ARS',
       status: 'created',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    });
+    };
+    if (input.userId) base.userId = input.userId;
+    await adminDb.collection('payments').doc(pref.id).set(base);
   }
 
   return pref;

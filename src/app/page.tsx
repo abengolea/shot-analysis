@@ -73,15 +73,16 @@ export default function LandingPage() {
 
       <div className="flex flex-1 flex-col gap-16 md:gap-24">
         {/* Hero Section */}
-        <section className="relative flex flex-col items-center justify-center pt-8 text-center md:pt-16">
+        <section className="relative flex flex-col items-center justify-center pt-8 text-center md:pt-16 overflow-hidden">
+          {/* Fondo sutil con colores de marca */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+            <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-gradient-to-br from-[#0B4DA1]/15 to-transparent blur-2xl" />
+            <div className="absolute -top-24 -right-24 h-[28rem] w-[28rem] rounded-full bg-gradient-to-bl from-[#FF6A00]/15 to-transparent blur-2xl" />
+          </div>
           <div className="mt-16 w-full max-w-5xl">
-            <Image
-              src={encodeURI("/Generated Image September 09, 2025 - 7_20PM.png")}
+            <img
+              src="/Generated%20Image%20September%2009,%202025%20-%207_20PM.png"
               alt="Portada ShotAnalysis"
-              width={1920}
-              height={1080}
-              priority
-              unoptimized
               className="mx-auto w-full max-w-3xl h-auto"
             />
           </div>
@@ -89,7 +90,7 @@ export default function LandingPage() {
 
         {/* Features Section */}
         <section className="container mx-auto max-w-5xl text-center">
-          <h2 className="font-headline text-3xl font-bold uppercase">
+          <h2 className="font-headline text-3xl font-bold uppercase text-primary">
             Funciones principales
           </h2>
           <div className="mt-12 grid gap-8 md:grid-cols-3">
@@ -111,7 +112,7 @@ export default function LandingPage() {
 
         {/* Testimonials Section */}
         <section className="container mx-auto max-w-5xl text-center">
-          <h2 className="font-headline text-3xl font-bold uppercase">
+          <h2 className="font-headline text-3xl font-bold uppercase text-primary">
             Testimonios
           </h2>
           <div className="mt-12 grid gap-8 md:grid-cols-2">
