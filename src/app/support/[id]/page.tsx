@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { getAuth, getIdToken } from "firebase/auth";
 import { useParams, useRouter } from "next/navigation";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 type Message = {
   id: string;
@@ -22,6 +25,9 @@ export default function TicketDetailPage() {
   const [sending, setSending] = useState(false);
   const [ticket, setTicket] = useState<any>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+
+  const statusLabel = { open: 'Abierto', in_progress: 'En progreso', waiting_user: 'Esperando usuario', resolved: 'Resuelto', closed: 'Cerrado' } as Record<string,string>;
+  const priorityLabel = { low: 'Baja', normal: 'Normal', high: 'Alta', urgent: 'Urgente' } as Record<string,string>;
 
   const scrollToEnd = () => {
     try { endRef.current?.scrollIntoView({ behavior: 'smooth' }); } catch {}
@@ -77,9 +83,13 @@ export default function TicketDetailPage() {
 
   return (
     <div className="max-w-3xl mx-auto p-4">
-      <button className="text-sm text-blue-600 mb-2" onClick={() => router.push('/support')}>← Volver</button>
+      <Button variant="ghost" className="h-8 px-2 text-blue-600 mb-2" onClick={() => router.push('/support')}>← Volver</Button>
       <h1 className="text-2xl font-semibold mb-1">{ticket?.subject || 'Ticket'}</h1>
-      <p className="text-sm text-gray-500 mb-4">{ticket?.category} · {ticket?.status} · prioridad {ticket?.priority}</p>
+      <div className="flex items-center gap-2 mb-2">
+        {ticket?.status ? <Badge variant={ticket.status === 'open' ? 'destructive' : (ticket.status === 'in_progress' ? 'default' : 'secondary')}>{statusLabel[ticket.status] || ticket.status}</Badge> : null}
+        {ticket?.priority ? <Badge variant={(ticket.priority === 'high' || ticket.priority === 'urgent') ? 'destructive' : (ticket.priority === 'normal' ? 'default' : 'secondary')}>{priorityLabel[ticket.priority] || ticket.priority}</Badge> : null}
+        <span className="text-xs text-gray-500">{ticket?.category}</span>
+      </div>
 
       <div className="border rounded p-3 h-[60vh] overflow-y-auto bg-white">
         {loading && <div className="text-gray-500">Cargando...</div>}
@@ -96,8 +106,8 @@ export default function TicketDetailPage() {
       </div>
 
       <form onSubmit={send} className="mt-3 flex gap-2">
-        <input value={text} onChange={(e) => setText(e.target.value)} className="flex-1 border rounded px-3 py-2" placeholder="Escribe un mensaje" />
-        <button disabled={sending} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">{sending ? 'Enviando...' : 'Enviar'}</button>
+        <Input value={text} onChange={(e) => setText(e.target.value)} className="flex-1" placeholder="Escribe un mensaje" />
+        <Button disabled={sending} type="submit">{sending ? 'Enviando...' : 'Enviar'}</Button>
       </form>
     </div>
   );

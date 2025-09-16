@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getAuth, getIdToken } from "firebase/auth";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 
 type Ticket = any;
 type Message = { id: string; senderId: string; senderRole: 'user' | 'admin'; text: string; createdAt: string };
@@ -19,6 +24,8 @@ export default function AdminTicketDetailPage() {
   const [assignee, setAssignee] = useState<string>("");
   const statuses = useMemo(() => ['open','in_progress','waiting_user','resolved','closed'], []);
   const priorities = useMemo(() => ['low','normal','high','urgent'], []);
+  const statusLabel = { open: 'Abierto', in_progress: 'En progreso', waiting_user: 'Esperando usuario', resolved: 'Resuelto', closed: 'Cerrado' } as Record<string,string>;
+  const priorityLabel = { low: 'Baja', normal: 'Normal', high: 'Alta', urgent: 'Urgente' } as Record<string,string>;
 
   const load = async () => {
     try {
@@ -72,29 +79,39 @@ export default function AdminTicketDetailPage() {
 
   return (
     <div className="max-w-6xl mx-auto p-4">
-      <button className="text-sm text-blue-600 mb-2" onClick={() => router.push('/admin/tickets')}>← Volver</button>
+      <Button variant="ghost" className="h-8 px-2 text-blue-600 mb-2" onClick={() => router.push('/admin/tickets')}>← Volver</Button>
       <h1 className="text-2xl font-semibold mb-1">{ticket?.subject || 'Ticket'}</h1>
-      <p className="text-sm text-gray-500 mb-4">{ticket?.userEmail || 'Usuario'} · {ticket?.category}</p>
+      <div className="flex items-center gap-2 mb-4">
+        {ticket?.status ? <Badge variant={ticket.status === 'open' ? 'destructive' : (ticket.status === 'in_progress' ? 'default' : 'secondary')}>{statusLabel[ticket.status] || ticket.status}</Badge> : null}
+        {ticket?.priority ? <Badge variant={(ticket.priority === 'high' || ticket.priority === 'urgent') ? 'destructive' : (ticket.priority === 'normal' ? 'default' : 'secondary')}>{priorityLabel[ticket.priority] || ticket.priority}</Badge> : null}
+        <span className="text-xs text-gray-500">{ticket?.userEmail || 'Usuario'} · {ticket?.category}</span>
+      </div>
 
       <div className="border rounded p-3 mb-4 grid grid-cols-1 md:grid-cols-4 gap-3">
         <div>
-          <label className="block text-sm mb-1">Estado</label>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full border rounded px-3 py-2">
-            {statuses.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <Label className="mb-1 block">Estado</Label>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger><SelectValue placeholder="Estado" /></SelectTrigger>
+            <SelectContent>
+              {statuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
         <div>
-          <label className="block text-sm mb-1">Prioridad</label>
-          <select value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full border rounded px-3 py-2">
-            {priorities.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
+          <Label className="mb-1 block">Prioridad</Label>
+          <Select value={priority} onValueChange={setPriority}>
+            <SelectTrigger><SelectValue placeholder="Prioridad" /></SelectTrigger>
+            <SelectContent>
+              {priorities.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
         <div>
-          <label className="block text-sm mb-1">Asignado a (uid)</label>
-          <input value={assignee} onChange={(e) => setAssignee(e.target.value)} className="w-full border rounded px-3 py-2" placeholder="uid de admin" />
+          <Label className="mb-1 block">Asignado a (uid)</Label>
+          <Input value={assignee} onChange={(e) => setAssignee(e.target.value)} placeholder="uid de admin" />
         </div>
         <div className="flex items-end">
-          <button onClick={saveMeta} className="bg-gray-100 border rounded px-4 py-2">Guardar</button>
+          <Button onClick={saveMeta}>Guardar</Button>
         </div>
       </div>
 
@@ -110,9 +127,9 @@ export default function AdminTicketDetailPage() {
           ))}
         </div>
         <form onSubmit={send} className="flex flex-col gap-2">
-          <textarea value={text} onChange={(e) => setText(e.target.value)} className="border rounded px-3 py-2 min-h-[200px]" placeholder="Responder al usuario" />
+          <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Responder al usuario" />
           <div>
-            <button className="bg-blue-600 text-white px-4 py-2 rounded">Enviar</button>
+            <Button type="submit">Enviar</Button>
           </div>
         </form>
       </div>

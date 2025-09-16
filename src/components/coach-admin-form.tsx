@@ -25,10 +25,10 @@ function SubmitButton() {
       {pending ? (
         <>
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Añadiendo Entrenador...
+          Enviando solicitud...
         </>
       ) : (
-        "Añadir Entrenador"
+        "Enviar solicitud de alta"
       )}
     </Button>
   );
@@ -64,7 +64,7 @@ export function CoachAdminForm() {
         <CardContent className="grid gap-4">
           <div className="space-y-2">
             <Label htmlFor="name">Nombre Completo</Label>
-            <Input id="name" name="name" placeholder="Ej: Daniel Beltramo" />
+            <Input id="name" name="name" placeholder="" />
             {state.errors?.name && <p className="text-sm text-destructive">{state.errors.name[0]}</p>}
           </div>
           
@@ -73,18 +73,16 @@ export function CoachAdminForm() {
             <Textarea id="experience" name="experience" placeholder="Describe la experiencia del entrenador..." />
             {state.errors?.experience && <p className="text-sm text-destructive">{state.errors.experience[0]}</p>}
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" name="email" type="email" placeholder="ejemplo@correo.com" />
+            {state.errors?.email && <p className="text-sm text-destructive">{state.errors.email[0]}</p>}
+          </div>
 
-          <div className="grid grid-cols-2 gap-4">
-             <div className="space-y-2">
-                <Label htmlFor="ratePerAnalysis">Tarifa por Análisis</Label>
-                <Input id="ratePerAnalysis" name="ratePerAnalysis" type="number" placeholder="Ej: 50" />
-                {state.errors?.ratePerAnalysis && <p className="text-sm text-destructive">{state.errors.ratePerAnalysis[0]}</p>}
-            </div>
-             <div className="space-y-2">
-                <Label htmlFor="avatarUrl">URL de la Foto</Label>
-                <Input id="avatarUrl" name="avatarUrl" placeholder="https://placehold.co/128x128.png" />
-                {state.errors?.avatarUrl && <p className="text-sm text-destructive">{state.errors.avatarUrl[0]}</p>}
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="avatarFile">Foto (JPG/PNG/WEBP, máx 5MB)</Label>
+            <Input id="avatarFile" name="avatarFile" type="file" accept="image/jpeg,image/png,image/webp" />
+            {state.errors?.avatarFile && <p className="text-sm text-destructive">{state.errors.avatarFile[0]}</p>}
           </div>
         </CardContent>
         <CardFooter>

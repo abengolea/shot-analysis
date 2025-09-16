@@ -6,9 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, Star, Users, Award } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
-import { db } from "@/lib/firebase";
-import { doc, setDoc } from "firebase/firestore";
+import { storage } from "@/lib/firebase";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { useState } from "react";
 
 const benefits = [
   {
@@ -30,30 +34,73 @@ const benefits = [
 
 export default function CoachRegisterPage() {
   const { user, userProfile } = useAuth();
+  const [name, setName] = useState<string>(user?.displayName || (userProfile as any)?.name || "");
+  const [email, setEmail] = useState<string>(user?.email || "");
+  const [bio, setBio] = useState<string>("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
-  const handleBecomeCoach = async () => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+    if (!file) { setPhotoFile(null); return; }
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    const maxBytes = 5 * 1024 * 1024; // 5MB
+    if (!allowed.includes(file.type)) {
+      alert('Tipo de archivo no permitido. Usa JPG, PNG o WEBP.');
+      e.currentTarget.value = '';
+      return;
+    }
+    if (file.size > maxBytes) {
+      alert('La imagen supera 5MB. Reduce el tamaño e intenta de nuevo.');
+      e.currentTarget.value = '';
+      return;
+    }
+    setPhotoFile(file);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
       if (!user) {
         window.location.href = '/login';
         return;
       }
-      const uid = user.uid;
-      const base = {
-        id: uid,
-        name: user.displayName || userProfile?.name || '',
-        email: user.email || '',
-        role: 'coach' as const,
-        avatarUrl: (user.photoURL || 'https://placehold.co/100x100.png'),
-        status: 'pending' as const,
-        updatedAt: new Date(),
-        createdAt: new Date(),
-      };
-      await setDoc(doc(db as any, 'coaches', uid), base, { merge: true });
-      // Feedback mínimo
-      alert('Listo. Se creó/actualizó tu perfil de entrenador.');
-    } catch (e) {
-      console.error('Error convirtiéndose en entrenador:', e);
-      alert('No se pudo crear tu perfil de entrenador.');
+      if (!email) { alert('Email es requerido'); return; }
+      if (!name) { alert('Nombre es requerido'); return; }
+      if (!photoFile) { alert('Debes subir una foto'); return; }
+
+      setSubmitting(true);
+
+      // Subir foto a Storage en una ruta interna
+      const safeName = (photoFile.name || 'photo').replace(/[^a-zA-Z0-9_.-]/g, '_');
+      const filePath = `profile-images/${user.uid}/${Date.now()}-${safeName}`;
+      const fileRef = ref(storage, filePath);
+      await uploadBytes(fileRef, photoFile, { contentType: photoFile.type });
+      const photoUrl = await getDownloadURL(fileRef);
+
+      // Llamar API para crear la solicitud
+      const token = await user.getIdToken();
+      const res = await fetch('/api/coach-applications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name, email, bio, photoUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'Error al enviar la solicitud');
+      }
+
+      alert('Solicitud enviada. Un administrador revisará tu alta como entrenador.');
+      setBio('');
+      setPhotoFile(null);
+    } catch (err: any) {
+      console.error('Error enviando solicitud de entrenador:', err);
+      alert(err?.message || 'No se pudo enviar la solicitud');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -84,13 +131,31 @@ export default function CoachRegisterPage() {
               <CardHeader>
                 <CardTitle>Registro Rápido</CardTitle>
                 <CardDescription>
-                  Usa tu cuenta actual para crear tu perfil de entrenador
+                  Completa tus datos y envía la solicitud. Un administrador aprobará tu alta.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button className="w-full" onClick={handleBecomeCoach}>
-                  Convertirme en Entrenador (usar mi cuenta actual)
-                </Button>
+                <form className="space-y-4" onSubmit={handleSubmit}>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Nombre completo</Label>
+                    <Input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Tu nombre" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bio">Bio corta (opcional)</Label>
+                    <Textarea id="bio" value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Experiencia, enfoque, logros" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="photo">Foto de perfil (JPG/PNG/WEBP, máx 5MB)</Label>
+                    <Input id="photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFileChange} required />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={submitting}>
+                    {submitting ? 'Enviando...' : 'Enviar solicitud'}
+                  </Button>
+                </form>
               </CardContent>
             </Card>
           )}
@@ -158,7 +223,7 @@ export default function CoachRegisterPage() {
                 Nuestro equipo está aquí para ayudarte a comenzar tu viaje como entrenador.
               </p>
               <p className="text-sm font-medium">
-                📧 Contacto: support@shotvision.ai
+                📧 Contacto: abengolea1@gmail.com
               </p>
             </CardContent>
           </Card>

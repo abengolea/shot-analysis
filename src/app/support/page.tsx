@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getAuth, getIdToken } from "firebase/auth";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Ticket = {
   id: string;
@@ -31,6 +36,20 @@ export default function SupportPage() {
     { value: "feedback", label: "Sugerencia/Feedback" },
     { value: "otro", label: "Otro" },
   ], []);
+
+  const statusLabel = useMemo(() => ({
+    open: 'Abierto',
+    in_progress: 'En progreso',
+    waiting_user: 'Esperando usuario',
+    resolved: 'Resuelto',
+    closed: 'Cerrado',
+  } as Record<string, string>), []);
+  const priorityLabel = useMemo(() => ({
+    low: 'Baja',
+    normal: 'Normal',
+    high: 'Alta',
+    urgent: 'Urgente',
+  } as Record<string, string>), []);
 
   const loadTickets = async () => {
     try {
@@ -89,41 +108,53 @@ export default function SupportPage() {
       <form onSubmit={onCreate} className="border rounded p-4 mb-6 space-y-3">
         <h2 className="text-lg font-medium">Nuevo ticket</h2>
         <div>
-          <label className="block text-sm mb-1">Asunto</label>
-          <input value={subject} onChange={(e) => setSubject(e.target.value)} className="w-full border rounded px-3 py-2" placeholder="Breve título" maxLength={120} />
+          <Label className="mb-1 block">Asunto</Label>
+          <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Breve título" maxLength={120} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm mb-1">Categoría</label>
-            <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full border rounded px-3 py-2">
-              {categories.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
+            <Label className="mb-1 block">Categoría</Label>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar categoría" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map(c => (
+                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
-            <label className="block text-sm mb-1">Prioridad</label>
-            <select value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full border rounded px-3 py-2">
-              <option value="low">Baja</option>
-              <option value="normal">Normal</option>
-              <option value="high">Alta</option>
-            </select>
+            <Label className="mb-1 block">Prioridad</Label>
+            <Select value={priority} onValueChange={setPriority}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar prioridad" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="low">Baja</SelectItem>
+                <SelectItem value="normal">Normal</SelectItem>
+                <SelectItem value="high">Alta</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <div>
-          <label className="block text-sm mb-1">Descripción</label>
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="w-full border rounded px-3 py-2" rows={4} placeholder="Contanos el problema o solicitud"></textarea>
+          <Label className="mb-1 block">Descripción</Label>
+          <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Contanos el problema o solicitud" />
         </div>
         <div>
-          <button disabled={creating} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">{creating ? 'Creando...' : 'Crear ticket'}</button>
+          <Button disabled={creating} type="submit">{creating ? 'Creando...' : 'Crear ticket'}</Button>
         </div>
       </form>
 
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-lg font-medium">Mis tickets</h2>
-        <button onClick={loadTickets} className="text-sm text-blue-600">Actualizar</button>
+        <Button onClick={loadTickets} variant="ghost" className="h-8 px-2 text-blue-600">Actualizar</Button>
       </div>
       {loading && <p>Cargando...</p>}
       {error && <p className="text-red-600">{error}</p>}
-      <div className="border rounded divide-y">
+      <div className="border rounded divide-y text-sm">
         {tickets.length === 0 && !loading && (
           <div className="p-4 text-gray-500">No tenés tickets abiertos.</div>
         )}
@@ -131,9 +162,9 @@ export default function SupportPage() {
           <Link key={t.id} href={`/support/${t.id}`} className="block p-4 hover:bg-gray-50">
             <div className="flex items-center justify-between">
               <div className="font-medium">{t.subject}</div>
-              <div className="text-xs uppercase text-gray-500">{t.status}</div>
+              <div className="text-xs uppercase text-gray-500">{statusLabel[t.status] || t.status}</div>
             </div>
-            <div className="text-sm text-gray-600">{t.category} · prioridad {t.priority}</div>
+            <div className="text-sm text-gray-600">{t.category} · prioridad {priorityLabel[t.priority] || t.priority}</div>
             <div className="text-xs text-gray-400">Actualizado: {new Date(t.updatedAt).toLocaleString()}</div>
           </Link>
         ))}

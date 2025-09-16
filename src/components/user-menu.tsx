@@ -12,10 +12,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { LogOut, User, Settings, Shield, Shuffle, Bell } from 'lucide-react';
+import { LogOut, User, Settings, Shield, Shuffle } from 'lucide-react';
 import { useEffect } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 
 export function UserMenu() {
   const { user, userProfile, signOutUser } = useAuth();
@@ -46,18 +46,7 @@ export function UserMenu() {
     }
   }, [user]);
 
-  if (!user) {
-    return (
-      <div className="flex gap-2">
-        <Button variant="outline" asChild>
-          <a href="/login">Ingresar</a>
-        </Button>
-        <Button asChild>
-          <a href="/register">Registrarse</a>
-        </Button>
-      </div>
-    );
-  }
+  
 
   const handleSignOut = async () => {
     await signOutUser();
@@ -74,10 +63,27 @@ export function UserMenu() {
       .slice(0, 2);
   };
 
-  // Rol efectivo según ruta o preferencia guardada
-  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
-  const storedPreferredRole = typeof window !== 'undefined' ? (localStorage.getItem('preferredRole') || '') : '';
-  const isCoach = (userProfile?.role === 'coach') || pathname.startsWith('/coach') || storedPreferredRole === 'coach';
+  //
+
+  const [isCoach, setIsCoach] = useState<boolean>(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const id = (userProfile as any)?.id || user?.uid;
+        if (!id) { setIsCoach(false); return; }
+        // Primero, si el perfil actual declara role=coach, basta
+        if ((userProfile as any)?.role === 'coach') { setIsCoach(true); return; }
+        const snap = await getDoc(doc(db as any, 'coaches', id));
+        if (!cancelled) setIsCoach(snap.exists());
+      } catch {
+        if (!cancelled) setIsCoach(false);
+      }
+    };
+    check();
+    return () => { cancelled = true; };
+  }, [user, userProfile]);
   const isAdmin = (userProfile as any)?.role === 'admin';
 
   const switchToCoach = () => {
@@ -89,6 +95,19 @@ export function UserMenu() {
     try { localStorage.setItem('preferredRole', 'player'); } catch {}
     window.location.href = '/dashboard';
   };
+
+  if (!user) {
+    return (
+      <div className="flex gap-2">
+        <Button variant="outline" asChild>
+          <a href="/login">Ingresar</a>
+        </Button>
+        <Button asChild>
+          <a href="/register">Registrarse</a>
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
@@ -140,15 +159,15 @@ export function UserMenu() {
           Configuración
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        {!isCoach ? (
-          <DropdownMenuItem onClick={switchToCoach} className="cursor-pointer">
-            <Shuffle className="mr-2 h-4 w-4" />
-            Cambiar a Entrenador
-          </DropdownMenuItem>
-        ) : (
+        {isCoach ? (
           <DropdownMenuItem onClick={switchToPlayer} className="cursor-pointer">
             <Shuffle className="mr-2 h-4 w-4" />
             Cambiar a Jugador
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={() => { window.location.href = '/coach-register'; }} className="cursor-pointer">
+            <Shuffle className="mr-2 h-4 w-4" />
+            Convertirme en Entrenador
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />

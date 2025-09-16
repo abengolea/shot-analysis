@@ -9,8 +9,8 @@ import { sendCustomEmail } from '@/lib/email-service';
 const AddCoachSchema = z.object({
     name: z.string().min(2, "Nombre demasiado corto"),
     experience: z.string().min(10, "Describe mejor la experiencia"),
-    ratePerAnalysis: z.coerce.number().min(0, "Tarifa inválida"),
-    avatarUrl: z.string().url("URL inválida").optional().or(z.literal("").transform(() => undefined)),
+    email: z.string().email("Email inválido"),
+    // avatarFile se valida en tiempo de ejecución por tamaño/tipo
 });
 
 type AddCoachState = {
@@ -27,8 +27,7 @@ export async function addCoach(prevState: AddCoachState, formData: FormData): Pr
         const parsed = AddCoachSchema.safeParse({
             name: String(formData.get('name') || ''),
             experience: String(formData.get('experience') || ''),
-            ratePerAnalysis: formData.get('ratePerAnalysis'),
-            avatarUrl: String(formData.get('avatarUrl') || ''),
+            email: String(formData.get('email') || ''),
         });
         if (!parsed.success) {
             const fieldErrors: Record<string, string[]> = {};
@@ -38,20 +37,53 @@ export async function addCoach(prevState: AddCoachState, formData: FormData): Pr
             return { success: false, message: 'Revisa los campos del formulario.', errors: fieldErrors };
         }
 
-        const data = parsed.data;
+        const data = parsed.data as { name: string; experience: string; email: string };
+
+        // Validar y subir archivo de foto si existe
+        let photoUrl: string | null = null;
+        const file = formData.get('avatarFile') as File | null;
+        if (file && file.size > 0) {
+            const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+            const maxBytes = 5 * 1024 * 1024; // 5MB
+            if (!allowed.includes(file.type)) {
+                return { success: false, message: 'Tipo de imagen no permitido', errors: { avatarFile: ['Usa JPG, PNG o WEBP'] } };
+            }
+            if (file.size > maxBytes) {
+                return { success: false, message: 'Imagen muy pesada', errors: { avatarFile: ['Máx 5MB'] } };
+            }
+            if (!adminStorage) return { success: false, message: 'Storage no inicializado' };
+            const bucket = adminStorage.bucket();
+            const buffer = Buffer.from(await file.arrayBuffer());
+            const safeName = (file.name || 'photo').replace(/[^a-zA-Z0-9_.-]/g, '_');
+            const path = `profile-images/admin-added/${Date.now()}-${safeName}`;
+            const gcsFile = bucket.file(path);
+            await gcsFile.save(buffer, { metadata: { contentType: file.type } });
+            await gcsFile.makePublic();
+            photoUrl = `https://storage.googleapis.com/${bucket.name}/${path}`;
+        }
+
         const nowIso = new Date().toISOString();
-        const payload = {
+        const application = {
+            userId: null,
+            email: data.email.toLowerCase(),
             name: data.name,
-            experience: data.experience,
-            ratePerAnalysis: Number(data.ratePerAnalysis),
-            avatarUrl: data.avatarUrl || null,
-            status: 'pending',
+            bio: data.experience,
+            photoUrl: photoUrl,
+            status: 'pending' as const,
             createdAt: nowIso,
             updatedAt: nowIso,
-        } as const;
+        };
+        const ref = await adminDb.collection('coach_applications').add(application as any);
 
-        await adminDb.collection('coaches').add(payload as any);
-        return { success: true, message: 'Entrenador agregado correctamente.' };
+        try {
+            await sendCustomEmail({
+                to: 'abengolea1@gmail.com',
+                subject: `Nueva solicitud de entrenador (admin): ${data.name}`,
+                html: `<p>Email: ${data.email}</p><p>Nombre: ${data.name}</p><p>Bio: ${data.experience}</p><p>Foto: ${photoUrl || '-'}</p><p>ID: ${ref.id}</p>`
+            });
+        } catch {}
+
+        return { success: true, message: 'Solicitud enviada para aprobación.' };
     } catch (e) {
         console.error('Error agregando entrenador:', e);
         return { success: false, message: 'No se pudo agregar el entrenador.' };
