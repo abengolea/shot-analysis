@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Image from "next/image";
 // import { getDrills } from "@/app/actions";
 import type {
@@ -54,6 +54,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { getAuth, getIdToken } from "firebase/auth";
 import ShareButtons from "@/components/share-buttons";
+import { useToast } from "@/hooks/use-toast";
 
 interface AnalysisViewProps {
   analysis: ShotAnalysis;
@@ -62,6 +63,7 @@ interface AnalysisViewProps {
 
 export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const { userProfile } = useAuth();
+  const { toast } = useToast();
   console.log('🎯 AnalysisView recibió:', analysis);
   console.log('👤 Player recibido:', player);
   
@@ -194,6 +196,58 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
     return [];
   });
+
+  // ===== Feedback del entrenador (privado para jugador y coach) =====
+  const [coachFeedbackByItemId, setCoachFeedbackByItemId] = useState<Record<string, { rating?: number; comment?: string }>>({});
+  const [coachSummary, setCoachSummary] = useState<string>("");
+  const isCoach = (userProfile as any)?.role === 'coach' || (userProfile as any)?.role === 'admin';
+
+  useEffect(() => {
+    // Cargar feedback del coach si es coach o admin
+    const load = async () => {
+      try {
+        const auth = getAuth();
+        const u = auth.currentUser;
+        if (!u) return;
+        const token = await getIdToken(u);
+        const res = await fetch(`/api/analyses/${analysis.id}/coach-feedback`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return;
+        const data = await res.json();
+        const fb = data?.feedback;
+        if (fb) {
+          setCoachFeedbackByItemId(fb.items || {});
+          setCoachSummary(fb.coachSummary || "");
+        }
+      } catch {}
+    };
+    void load();
+  }, [analysis.id]);
+
+  const onCoachFeedbackChange = (itemId: string, next: { rating?: number; comment?: string }) => {
+    setCoachFeedbackByItemId((prev) => ({ ...prev, [itemId]: { rating: next.rating, comment: next.comment } }));
+  };
+
+  // Guardar feedback del entrenador
+  const saveCoachFeedback = async () => {
+    try {
+      const auth = getAuth();
+      const u = auth.currentUser;
+      if (!u) {
+        toast({ title: 'No autenticado', description: 'Iniciá sesión para guardar feedback', variant: 'destructive' });
+        return;
+      }
+      const token = await getIdToken(u);
+      const res = await fetch(`/api/analyses/${analysis.id}/coach-feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ items: coachFeedbackByItemId, coachSummary }),
+      });
+      if (!res.ok) throw new Error('save failed');
+      toast({ title: 'Feedback guardado', description: 'Se enviaron discrepancias a revisión de IA si correspondía.' });
+    } catch (e) {
+      toast({ title: 'Error', description: 'No se pudo guardar el feedback.', variant: 'destructive' });
+    }
+  };
 
   // Derivados del checklist basados en rating 1..5 (ordenados por importancia)
   const flatChecklistItems = checklistState.flatMap((c) => c.items);
@@ -605,8 +659,27 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   // (ya calculados arriba) checklistStrengths, checklistWeaknesses, checklistRecommendations
 
+  // Resumen dinámico de revisión del entrenador
+  const coachReviewSummary = useMemo(() => {
+    const items = checklistState.flatMap((c) => c.items.map((it) => ({ id: it.id, name: it.name, ia: it.rating })));
+    let reviewed = 0;
+    let agreed = 0;
+    let changed = 0;
+    let sumCoach = 0;
+    const diffs: Array<{ id: string; name: string; ia: number; coach: number }> = [];
+    for (const it of items) {
+      const cf = coachFeedbackByItemId[it.id];
+      if (cf && typeof cf.rating === 'number') {
+        reviewed += 1;
+        sumCoach += cf.rating;
+        if (cf.rating === it.ia) agreed += 1; else { changed += 1; diffs.push({ id: it.id, name: it.name, ia: it.ia, coach: cf.rating }); }
+      }
+    }
+    const avgCoach = reviewed > 0 ? Number((sumCoach / reviewed).toFixed(2)) : null;
+    return { reviewed, agreed, changed, avgCoach, diffs };
+  }, [checklistState, coachFeedbackByItemId]);
 
-  
+
   const renderKeyframes = (keyframes: string[], angleLabel: string, angleKey: 'front'|'back'|'left'|'right') => {
     console.log(`🎨 Renderizando keyframes para ${angleLabel}:`, keyframes);
     
@@ -667,19 +740,23 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     );
   };
 
+  const defaultTab = isCoach ? 'coach-feedback' : 'ai-analysis';
   return (
     <>
-      <Tabs defaultValue="ai-analysis" className="w-full">
-        <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap md:grid md:grid-cols-4">
+      <Tabs defaultValue={defaultTab} className="w-full">
+        <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap md:grid md:grid-cols-5">
           <TabsTrigger value="ai-analysis" className="min-w-[140px] md:min-w-0 whitespace-nowrap flex-shrink-0">
             <Bot className="mr-2" /> Análisis IA
           </TabsTrigger>
           <TabsTrigger value="checklist" className="min-w-[120px] md:min-w-0 whitespace-nowrap flex-shrink-0">
-              <ListChecks className="mr-2" /> Checklist
+              <ListChecks className="mr-2" /> Checklist IA
           </TabsTrigger>
         
           <TabsTrigger value="coach-feedback" className="min-w-[160px] md:min-w-0 whitespace-nowrap flex-shrink-0">
-            <FilePenLine className="mr-2" /> Feedback de la IA
+            <FilePenLine className="mr-2" /> Entrenador
+          </TabsTrigger>
+          <TabsTrigger value="coach-checklist" className="min-w-[200px] md:min-w-0 whitespace-nowrap flex-shrink-0">
+            <ListChecks className="mr-2" /> Checklist Entrenador
           </TabsTrigger>
           <TabsTrigger value="improvement-plan" className="min-w-[160px] md:min-w-0 whitespace-nowrap flex-shrink-0">
             <Dumbbell className="mr-2" /> Plan de Mejora
@@ -862,116 +939,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="font-headline flex items-center gap-2">
-                  <Camera /> Video y Fotogramas
-                </CardTitle>
-                <CardDescription>
-                  Haz clic en un fotograma para ampliarlo, dibujar y comentar.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {/* Oculto temporalmente el aviso de selección de keyframes por IA */}
-
-                {/* Video arriba */}
-                {safeAnalysis.videoUrl && (
-                  <div className="max-w-xl mx-auto mb-6">
-                    <video 
-                      controls 
-                      className="w-full rounded-lg shadow-lg max-h-[420px]"
-                      src={safeAnalysis.videoUrl}
-                    >
-                      Tu navegador no soporta el elemento video.
-                    </video>
-                    <p className="text-sm text-muted-foreground text-center mt-2">
-                      Video: {safeAnalysis.shotType}
-                    </p>
-                  </div>
-                )}
-
-                {/* Botón dev para generar si no hay nada */}
-                {availableAngles.length === 0 && (
-                  <div className="flex items-center justify-center mb-6">
-                    <div className="flex gap-2">
-                      <Button
-                        variant="secondary"
-                        disabled={rebuilding}
-                        onClick={async () => {
-                          try {
-                            setRebuilding(true);
-                            const res = await fetch(`/api/analyses/${safeAnalysis.id}/rebuild-keyframes/dev`, { method: 'POST' });
-                            const data = await res.json();
-                            if (res.ok && data?.keyframes) {
-                              setLocalKeyframes(data.keyframes);
-                            }
-                          } finally {
-                            setRebuilding(false);
-                          }
-                        }}
-                      >
-                        {rebuilding ? 'Generando (server)…' : 'Generar (server, dev)'}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        disabled={uploadingFromClient}
-                        onClick={async () => {
-                          try {
-                            setUploadingFromClient(true);
-                            // Intentar extraer 12 frames desde el video visible del DOM
-                            const v = document.querySelector('video');
-                            if (!v) return;
-                            const videoEl = v as HTMLVideoElement;
-                            const canvas = document.createElement('canvas');
-                            const ctx = canvas.getContext('2d');
-                            if (!ctx) return;
-                            await new Promise<void>((r)=>{ if (videoEl.readyState>=2) r(); else videoEl.addEventListener('loadedmetadata', ()=>r(), { once: true }); });
-                            const count = 12; const urls: Array<{ dataUrl: string; timestamp: number }> = [];
-                            canvas.width = Math.max(160, videoEl.videoWidth/4|0); canvas.height = Math.max(160, (videoEl.videoHeight/videoEl.videoWidth*canvas.width)|0);
-                            const interval = Math.max(0.1, Math.min( (videoEl.duration||6)/(count+1), 2 ));
-                            for (let i=1;i<=count;i++){
-                              const t = Math.min(videoEl.duration-0.001, i*interval);
-                              videoEl.pause(); videoEl.currentTime = t;
-                              await new Promise<void>((r)=>{ const onS=()=>{videoEl.removeEventListener('seeked', onS); r();}; videoEl.addEventListener('seeked', onS); });
-                              ctx.drawImage(videoEl, 0,0, canvas.width, canvas.height);
-                              const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-                              urls.push({ dataUrl, timestamp: t });
-                            }
-                            const res = await fetch(`/api/analyses/${safeAnalysis.id}/keyframes/upload`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ angle:'front', frames: urls }) });
-                            const data = await res.json();
-                            if (res.ok && data?.keyframes) setLocalKeyframes(data.keyframes);
-                          } finally { setUploadingFromClient(false); }
-                        }}
-                      >
-                        {uploadingFromClient ? 'Generando (cliente)…' : 'Generar (desde este video)'}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Cuatro secciones por ángulo debajo del video */}
-                <div className="space-y-8">
-                  {([
-                    { key: 'front' as const, label: 'Frente', labelAdj: 'frontal' },
-                    { key: 'back' as const, label: 'Espalda', labelAdj: 'espalda' },
-                    { key: 'left' as const, label: 'Izquierda', labelAdj: 'izquierdo' },
-                    { key: 'right' as const, label: 'Derecha', labelAdj: 'derecho' },
-                  ]).map(({ key, label, labelAdj }) => (
-                    <div key={key}>
-                      <h4 className="font-medium mb-2">{label}</h4>
-                      {(localKeyframes[key] && localKeyframes[key].length > 0)
-                        ? renderKeyframes(localKeyframes[key], labelAdj, key)
-                        : <div className="text-sm text-muted-foreground">No hay fotogramas disponibles</div>}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-        <TabsContent value="coach-feedback" className="mt-6">
-          <div className="flex flex-col gap-8">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            {/* Fortalezas, Debilidades y Recomendaciones (IA) */}
+            <div className="grid gap-4 md:grid-cols-2">
               <Card>
                 <CardHeader>
                   <CardTitle className="font-headline flex items-center gap-2 text-green-600">
@@ -1035,8 +1004,200 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 )}
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                  <Camera /> Video y Fotogramas
+                </CardTitle>
+                <CardDescription>
+                  Haz clic en un fotograma para ampliarlo, dibujar y comentar.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {/* Oculto temporalmente el aviso de selección de keyframes por IA */}
+
+                {/* Videos disponibles (frente/espalda/izquierda/derecha) */}
+                <div className="grid gap-6 md:grid-cols-2">
+                  {((safeAnalysis as any).videoFrontUrl || (safeAnalysis as any).videoUrl) && (
+                    <div>
+                      <h4 className="font-medium mb-2">Frente</h4>
+                      <video
+                        controls
+                        className="w-full rounded-lg shadow-lg max-h-[360px]"
+                        src={(safeAnalysis as any).videoFrontUrl || (safeAnalysis as any).videoUrl}
+                      >
+                        Tu navegador no soporta el elemento video.
+                      </video>
+                    </div>
+                  )}
+                  {(safeAnalysis as any).videoBackUrl && (
+                    <div>
+                      <h4 className="font-medium mb-2">Espalda</h4>
+                      <video
+                        controls
+                        className="w-full rounded-lg shadow-lg max-h-[360px]"
+                        src={(safeAnalysis as any).videoBackUrl}
+                      >
+                        Tu navegador no soporta el elemento video.
+                      </video>
+                    </div>
+                  )}
+                  {(safeAnalysis as any).videoLeftUrl && (
+                    <div>
+                      <h4 className="font-medium mb-2">Izquierda</h4>
+                      <video
+                        controls
+                        className="w-full rounded-lg shadow-lg max-h-[360px]"
+                        src={(safeAnalysis as any).videoLeftUrl}
+                      >
+                        Tu navegador no soporta el elemento video.
+                      </video>
+                    </div>
+                  )}
+                  {(safeAnalysis as any).videoRightUrl && (
+                    <div>
+                      <h4 className="font-medium mb-2">Derecha</h4>
+                      <video
+                        controls
+                        className="w-full rounded-lg shadow-lg max-h-[360px]"
+                        src={(safeAnalysis as any).videoRightUrl}
+                      >
+                        Tu navegador no soporta el elemento video.
+                      </video>
+                    </div>
+                  )}
+                </div>
+
+                {/* Botón dev para generar si no hay nada */}
+                {availableAngles.length === 0 && (
+                  <div className="flex items-center justify-center mb-6">
+                    <div className="flex gap-2">
+                      <Button
+                        variant="secondary"
+                        disabled={rebuilding}
+                        onClick={async () => {
+                          try {
+                            setRebuilding(true);
+                            const res = await fetch(`/api/analyses/${safeAnalysis.id}/rebuild-keyframes/dev`, { method: 'POST' });
+                            const data = await res.json();
+                            if (res.ok && data?.keyframes) {
+                              setLocalKeyframes(data.keyframes);
+                            }
+                          } finally {
+                            setRebuilding(false);
+                          }
+                        }}
+                      >
+                        {rebuilding ? 'Generando (server)…' : 'Generar (server, dev)'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        disabled={uploadingFromClient}
+                        onClick={async () => {
+                          try {
+                            setUploadingFromClient(true);
+                            // Intentar extraer 12 frames desde el video visible del DOM
+                            const v = document.querySelector('video');
+                            if (!v) return;
+                            const videoEl = v as HTMLVideoElement;
+                            const canvas = document.createElement('canvas');
+                            const ctx = canvas.getContext('2d');
+                            if (!ctx) return;
+                            await new Promise<void>((r)=>{ if (videoEl.readyState>=2) r(); else videoEl.addEventListener('loadedmetadata', ()=>r(), { once: true }); });
+                            const count = 12; const urls: Array<{ dataUrl: string; timestamp: number }> = [];
+                            canvas.width = Math.max(160, videoEl.videoWidth/4|0); canvas.height = Math.max(160, (videoEl.videoHeight/videoEl.videoWidth*canvas.width)|0);
+                            const interval = Math.max(0.1, Math.min( (videoEl.duration||6)/(count+1), 2 ));
+                            for (let i=1;i<=count;i++){
+                              const t = Math.min(videoEl.duration-0.001, i*interval);
+                              videoEl.pause(); videoEl.currentTime = t;
+                              await new Promise<void>((r)=>{ const onS=()=>{videoEl.removeEventListener('seeked', onS); r();}; videoEl.addEventListener('seeked', onS); });
+                              ctx.drawImage(videoEl, 0,0, canvas.width, canvas.height);
+                              const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                              urls.push({ dataUrl, timestamp: t });
+                            }
+                            const res = await fetch(`/api/analyses/${safeAnalysis.id}/keyframes/upload`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ angle:'front', frames: urls }) });
+                            const data = await res.json();
+                            if (res.ok && data?.keyframes) setLocalKeyframes(data.keyframes);
+                          } finally { setUploadingFromClient(false); }
+                        }}
+                      >
+                        {uploadingFromClient ? 'Generando (cliente)…' : 'Generar (desde este video)'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Keyframes por ángulo (solo si existen) */}
+                {(['front','back','left','right'] as const).some((k) => Array.isArray((localKeyframes as any)[k]) && (localKeyframes as any)[k].length > 0) && (
+                  <div className="space-y-8">
+                    {([
+                      { key: 'front' as const, label: 'Frente', labelAdj: 'frontal' },
+                      { key: 'back' as const, label: 'Espalda', labelAdj: 'espalda' },
+                      { key: 'left' as const, label: 'Izquierda', labelAdj: 'izquierdo' },
+                      { key: 'right' as const, label: 'Derecha', labelAdj: 'derecho' },
+                    ]).map(({ key, label, labelAdj }) => {
+                      const arr = (localKeyframes as any)[key] as string[] | undefined;
+                      if (!Array.isArray(arr) || arr.length === 0) return null;
+                      return (
+                        <div key={key}>
+                          <h4 className="font-medium mb-2">{label}</h4>
+                          {renderKeyframes(arr, labelAdj, key)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
+        <TabsContent value="coach-feedback" className="mt-6">
+          <div className="flex flex-col gap-8">
+            {/* Se dejaron solo elementos propios del entrenador abajo (si agregás otro contenido) */}
+          </div>
+        </TabsContent>
+        {isCoach && (
+          <TabsContent value="coach-checklist" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                  <ListChecks /> Checklist del Entrenador
+                </CardTitle>
+                <CardDescription>Resultado con tus calificaciones y comentarios por ítem.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {checklistState.map((cat) => (
+                  <div key={`cc-${cat.category}`} className="space-y-2">
+                    <div className="text-sm font-semibold">{cat.category}</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {cat.items.map((it) => {
+                        const cf = coachFeedbackByItemId[it.id];
+                        if (!cf || typeof cf.rating !== 'number') return null;
+                        return (
+                          <div key={`cc-item-${it.id}`} className="rounded border p-3 text-sm">
+                            <div className="font-medium mb-1">{it.name}</div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge>Coach {cf.rating}</Badge>
+                              <span className="text-muted-foreground">IA {it.rating}</span>
+                            </div>
+                            {cf.comment && (
+                              <div className="text-muted-foreground">{cf.comment}</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                <div className="space-y-2">
+                  <div className="text-sm font-semibold">Comentario global</div>
+                  <div className="text-sm text-muted-foreground whitespace-pre-line">{coachSummary || 'Sin comentario global'}</div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
         <TabsContent value="checklist" className="mt-6">
           <DetailedChecklist
             categories={checklistState}
@@ -1044,8 +1205,59 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             analysisId={safeAnalysis.id}
             currentScore={safeAnalysis.score}
             editable={userProfile?.role === 'coach' && userProfile.id === (player.coachId || '')}
-            showCoachBox={Boolean(player.coachId)}
+            showCoachBox={false}
+            coachInline={isCoach}
+            coachIsEditable={isCoach}
+            coachFeedbackByItemId={coachFeedbackByItemId}
+            onCoachFeedbackChange={onCoachFeedbackChange}
           />
+          {isCoach && (
+            <div className="mt-6 space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="font-headline">Revisión del entrenador</CardTitle>
+                  <CardDescription>Resumen de tu revisión sobre las calificaciones de la IA.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div className="rounded-md border p-3">
+                      <div className="text-muted-foreground">Ítems revisados</div>
+                      <div className="text-xl font-semibold">{coachReviewSummary.reviewed}</div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-muted-foreground">De acuerdo con IA</div>
+                      <div className="text-xl font-semibold">{coachReviewSummary.agreed}</div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-muted-foreground">Recalificados</div>
+                      <div className="text-xl font-semibold">{coachReviewSummary.changed}</div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-muted-foreground">Promedio coach</div>
+                      <div className="text-xl font-semibold">{coachReviewSummary.avgCoach ?? '-'}</div>
+                    </div>
+                  </div>
+                  {coachReviewSummary.changed > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium">Ítems recalificados</div>
+                      <ul className="text-sm list-disc list-inside text-muted-foreground">
+                        {coachReviewSummary.diffs.map((d) => (
+                          <li key={d.id}>{d.name}: IA {d.ia} → Coach {d.coach}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <div className="text-sm font-semibold">Comentario global</div>
+                    <Textarea value={coachSummary} onChange={(e) => setCoachSummary(e.target.value)} placeholder="Comentario global y próximos pasos" className="text-sm" />
+                  </div>
+                  <div>
+                    <Button onClick={saveCoachFeedback}>Guardar revisión</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
         <TabsContent value="improvement-plan" className="mt-6">
           <Card>

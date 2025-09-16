@@ -21,6 +21,7 @@ export default function AdminRevisionIAPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<AdminAnalysisListItem[]>([]);
+  const [queue, setQueue] = useState<Array<{ id: string; analysisId: string; itemId: string; iaRating: number; coachRating: number; coachComment?: string; createdAt: string; createdBy: string; status: string }>>([]);
   const [filterPlayer, setFilterPlayer] = useState("");
   const [filterStatus, setFilterStatus] = useState<"todos" | "pendientes" | "listos">("todos");
   const [onlyHighDoubt, setOnlyHighDoubt] = useState<boolean>(false);
@@ -78,6 +79,22 @@ export default function AdminRevisionIAPage() {
 
   useEffect(() => {
     loadAllAnalyses();
+    // Cargar cola de revisión IA
+    const loadQueue = async () => {
+      try {
+        setError(null);
+        const auth = getAuth();
+        const cu = auth.currentUser;
+        if (!cu) return;
+        const token = await getIdToken(cu, true);
+        const res = await fetch('/api/analyses?queue=ia', { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return;
+        const data = await res.json();
+        const arr = Array.isArray(data?.iaQueue) ? data.iaQueue : [];
+        setQueue(arr);
+      } catch {}
+    };
+    void loadQueue();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -95,6 +112,40 @@ export default function AdminRevisionIAPage() {
       </div>
 
       <div className="rounded border p-4 space-y-3">
+        <div className="mb-4">
+          <h2 className="font-semibold mb-2">Discrepancias reportadas (cola IA)</h2>
+          <div className="overflow-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left border-b">
+                  <th className="py-2 pr-3">Fecha</th>
+                  <th className="py-2 pr-3">Análisis</th>
+                  <th className="py-2 pr-3">Ítem</th>
+                  <th className="py-2 pr-3">IA</th>
+                  <th className="py-2 pr-3">Coach</th>
+                  <th className="py-2 pr-3">Comentario</th>
+                </tr>
+              </thead>
+              <tbody>
+                {queue.map((q) => (
+                  <tr key={q.id} className="border-b last:border-b-0">
+                    <td className="py-2 pr-3">{new Date(q.createdAt).toLocaleString()}</td>
+                    <td className="py-2 pr-3"><Link className="text-blue-600 underline" href={`/admin/revision-ia/${q.analysisId}`}>{q.analysisId}</Link></td>
+                    <td className="py-2 pr-3">{q.itemId}</td>
+                    <td className="py-2 pr-3">{q.iaRating}</td>
+                    <td className="py-2 pr-3">{q.coachRating}</td>
+                    <td className="py-2 pr-3 truncate max-w-[240px]">{q.coachComment || '-'}</td>
+                  </tr>
+                ))}
+                {queue.length === 0 && (
+                  <tr>
+                    <td className="py-3 text-slate-500" colSpan={6}>Sin discrepancias reportadas</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
         <div className="flex gap-3 items-center">
           <div className="flex items-center gap-2">
             <label className="text-sm">Jugador</label>

@@ -28,10 +28,18 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
     const adminFlag = searchParams.get('admin');
+    const queueFlag = searchParams.get('queue');
 
     const requestIsAdmin = adminFlag === '1' || adminFlag === 'true' ? await isAdminRequest(request) : false;
     if (!userId && !requestIsAdmin) {
       return NextResponse.json({ error: 'userId es requerido' }, { status: 400 });
+    }
+
+    // Cola IA para admin
+    if ((queueFlag === 'ia') && await isAdminRequest(request)) {
+      const qs = await adminDb.collection('ia_review_queue').orderBy('createdAt', 'desc').limit(500).get();
+      const iaQueue = qs.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      return NextResponse.json({ iaQueue });
     }
 
     let analysesSnapshot: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>;

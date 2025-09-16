@@ -118,6 +118,7 @@ export type Coach = BaseUser & {
   // Campos opcionales que se pueden completar después
   experience?: string;
   ratePerAnalysis?: number; // rate per analysis in USD
+  showRate?: boolean; // si es false, ocultar tarifa al público
   rating?: number; // 0-5
   reviews?: number;
   playerIds?: string[];
@@ -153,6 +154,20 @@ export type ConnectionRequest = {
   position?: string;
   ageGroup?: string;
   country?: string;
+};
+
+// Mensajería simple entre usuarios (jugador ↔ entrenador)
+export type Message = {
+  id: string;
+  fromId: string;
+  fromName?: string;
+  fromAvatarUrl?: string;
+  toId: string;
+  toName?: string;
+  text: string;
+  createdAt: string; // ISO
+  read: boolean;
+  readAt?: string; // ISO
 };
 
 export type PlayerEvaluation = {

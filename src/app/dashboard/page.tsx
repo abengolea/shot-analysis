@@ -347,6 +347,11 @@ export default function DashboardPage() {
                         <FormattedDate dateString={analysis.createdAt} />
                         {getStatusBadge(analysis.status)}
                       </div>
+                      {analysis.status === 'analyzed' && (
+                        <div className="mt-1 text-xs text-green-700">
+                          Feedback del entrenador disponible si tu entrenador lo agregó.
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

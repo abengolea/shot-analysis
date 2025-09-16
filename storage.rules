@@ -1,6 +1,17 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (exists(/databases/(default)/documents/coaches/$(request.auth.uid)) && get(/databases/(default)/documents/coaches/$(request.auth.uid)).data.role == 'admin') ||
+        (exists(/databases/(default)/documents/players/$(request.auth.uid)) && get(/databases/(default)/documents/players/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
     // Reglas para videos de análisis de tiros
     match /shot-videos/{userId}/{videoId} {
       allow read: if request.auth != null && (
@@ -38,6 +49,20 @@ service firebase.storage {
         get(/databases/(default)/documents/players/$(userId)).data.coachId == request.auth.uid
       );
       allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Adjuntos de tickets: tickets/{ticketId}/{fileId}
+    match /tickets/{ticketId}/{fileId} {
+      allow read: if isSignedIn() && (
+        // Propietario del ticket
+        (exists(/databases/(default)/documents/tickets/$(ticketId)) && get(/databases/(default)/documents/tickets/$(ticketId)).data.userId == request.auth.uid) ||
+        isAdmin()
+      );
+
+      // Escribir solo si es el dueño del ticket
+      allow write: if isSignedIn() && (
+        exists(/databases/(default)/documents/tickets/$(ticketId)) && get(/databases/(default)/documents/tickets/$(ticketId)).data.userId == request.auth.uid
+      );
     }
   }
 }

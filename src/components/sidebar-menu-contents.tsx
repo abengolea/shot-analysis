@@ -95,6 +95,14 @@ export function SidebarMenuContents() {
         </SidebarMenuButton>
       </SidebarMenuItem>
       <SidebarMenuItem>
+        <SidebarMenuButton asChild isActive={isActive("/support")} tooltip="Soporte">
+          <Link href="/support">
+            <Shield />
+            Soporte
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
         <SidebarMenuButton
           asChild
           isActive={isActive("/upload")}
@@ -217,6 +225,18 @@ export function SidebarMenuContents() {
           <Link href="/admin/revision-ia">
             <Shield />
             Revisión IA
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          asChild
+          isActive={pathname.startsWith("/admin/tickets")}
+          tooltip="Tickets"
+        >
+          <Link href="/admin/tickets">
+            <ShieldCheck />
+            Tickets
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>

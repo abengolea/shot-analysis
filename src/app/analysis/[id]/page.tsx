@@ -136,7 +136,13 @@ export default function AnalysisPage() {
     detailedChecklist: (analysis as any).detailedChecklist || analysis.analysisResult?.detailedChecklist || [],
     score: (analysis as any).score,
     fluidezScore10: (analysis as any).fluidezScore10,
-  };
+  } as any;
+
+  // Inyectar URLs adicionales de videos si existen
+  (shotAnalysis as any).videoFrontUrl = (analysis as any).videoFrontUrl || (analysis as any).videoUrl || null;
+  (shotAnalysis as any).videoBackUrl = (analysis as any).videoBackUrl || null;
+  (shotAnalysis as any).videoLeftUrl = (analysis as any).videoLeftUrl || null;
+  (shotAnalysis as any).videoRightUrl = (analysis as any).videoRightUrl || null;
 
   const playerStrong: PlayerType = {
     id: player.id,

@@ -12,11 +12,39 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { LogOut, User, Settings, Shield } from 'lucide-react';
+import { LogOut, User, Settings, Shield, Shuffle, Bell } from 'lucide-react';
+import { useEffect } from 'react';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 export function UserMenu() {
   const { user, userProfile, signOutUser } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    try {
+      const q1 = query(collection(db as any, 'messages'), where('toId', '==', user.uid), where('read', '==', false));
+      const q2 = query(collection(db as any, 'messages'), where('toCoachDocId', '==', user.uid), where('read', '==', false));
+      const unsubs: Array<() => void> = [];
+      const update = (snap: any) => {
+        setUnreadCount(prev => {
+          // No tenemos el total de la otra sub, así que sumamos tamaños cuando llegan
+          // En práctica, ambos streams se mezclarán; para simplificar, recalculamos a partir de estados parciales no persistentes.
+          // Alternativamente, podríamos hacer dos contadores separados y sumarlos.
+          return undefined as any;
+        });
+      };
+      // Implementar dos contadores independientes y sumarlos
+      let c1 = 0, c2 = 0;
+      unsubs.push(onSnapshot(q1, (snap) => { c1 = snap.size; setUnreadCount(c1 + c2); }));
+      unsubs.push(onSnapshot(q2, (snap) => { c2 = snap.size; setUnreadCount(c1 + c2); }));
+      return () => { unsubs.forEach(u => u()); };
+    } catch (e) {
+      console.error('Error suscribiendo a mensajes no leídos:', e);
+    }
+  }, [user]);
 
   if (!user) {
     return (
@@ -46,8 +74,21 @@ export function UserMenu() {
       .slice(0, 2);
   };
 
-  const isCoach = userProfile?.role === 'coach';
+  // Rol efectivo según ruta o preferencia guardada
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+  const storedPreferredRole = typeof window !== 'undefined' ? (localStorage.getItem('preferredRole') || '') : '';
+  const isCoach = (userProfile?.role === 'coach') || pathname.startsWith('/coach') || storedPreferredRole === 'coach';
   const isAdmin = (userProfile as any)?.role === 'admin';
+
+  const switchToCoach = () => {
+    try { localStorage.setItem('preferredRole', 'coach'); } catch {}
+    window.location.href = '/coach/dashboard';
+  };
+
+  const switchToPlayer = () => {
+    try { localStorage.setItem('preferredRole', 'player'); } catch {}
+    window.location.href = '/dashboard';
+  };
 
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
@@ -59,6 +100,11 @@ export function UserMenu() {
               {userProfile?.name ? getInitials(userProfile.name) : user.email?.[0]?.toUpperCase() || 'U'}
             </AvatarFallback>
           </Avatar>
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] h-4 min-w-4 px-1">
+              {unreadCount}
+            </span>
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
@@ -85,18 +131,26 @@ export function UserMenu() {
             </a>
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem asChild>
-          <a href={isCoach ? '/coach/dashboard' : '/dashboard'} className="cursor-pointer">
-            <User className="mr-2 h-4 w-4" />
-            Dashboard
-          </a>
+        <DropdownMenuItem onClick={() => (isCoach ? switchToCoach() : switchToPlayer())} className="cursor-pointer">
+          <User className="mr-2 h-4 w-4" />
+          Dashboard
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <a href="/profile" className="cursor-pointer">
-            <Settings className="mr-2 h-4 w-4" />
-            Configuración
-          </a>
+        <DropdownMenuItem onClick={() => { try { localStorage.setItem('preferredRole', isCoach ? 'coach' : 'player'); } catch {}; window.location.href = '/profile'; }} className="cursor-pointer">
+          <Settings className="mr-2 h-4 w-4" />
+          Configuración
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {!isCoach ? (
+          <DropdownMenuItem onClick={switchToCoach} className="cursor-pointer">
+            <Shuffle className="mr-2 h-4 w-4" />
+            Cambiar a Entrenador
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={switchToPlayer} className="cursor-pointer">
+            <Shuffle className="mr-2 h-4 w-4" />
+            Cambiar a Jugador
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer">
           <LogOut className="mr-2 h-4 w-4" />

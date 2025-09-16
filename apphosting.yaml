@@ -24,9 +24,9 @@ env:
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
     value: "1:602998191800:web:dd8a758d589b12b3c5264d"
   - variable: NEXT_PUBLIC_APP_URL
-    value: "https://shot-analysis--shotanalisys.us-central1.hosted.app"
+    value: "https://chaaaas.com"
   - variable: MP_WEBHOOK_URL
-    value: "https://shot-analysis--shotanalisys.us-central1.hosted.app/api/payments/webhook"
+    value: "https://chaaaas.com/api/payments/webhook"
   - variable: MP_ACCESS_TOKEN_AR
     value: "APP_USR-3647146488744629-091106-8aeb480b57f1bbb536c0d2b1e876db05-799155933"
   - variable: GEMINI_API_KEY

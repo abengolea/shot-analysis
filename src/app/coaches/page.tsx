@@ -18,7 +18,7 @@ import {
   GraduationCap
 } from "lucide-react";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import { addDoc, collection, onSnapshot, serverTimestamp } from "firebase/firestore";
 import type { Coach } from "@/lib/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -33,16 +33,21 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/hooks/use-auth";
+import type { Message } from "@/lib/types";
 
 export default function CoachesPage() {
+  const { user, userProfile } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSpecialty, setSelectedSpecialty] = useState<string>("all");
-  const [maxPrice, setMaxPrice] = useState<number>(100);
-  const [minRating, setMinRating] = useState<number>(0);
   const [sortBy, setSortBy] = useState<string>("rating");
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [helpOpenFor, setHelpOpenFor] = useState<Coach | null>(null);
+  const [helpMessage, setHelpMessage] = useState<string>("Entrenador, me gustaría que analices mis tiros. ¿Podés ayudarme?");
+  const [sending, setSending] = useState<boolean>(false);
 
   useEffect(() => {
     try {
@@ -68,21 +73,16 @@ export default function CoachesPage() {
     return [...new Set(allSpecialties)];
   }, [coaches]);
 
-  // Filter and sort coaches
+  // Búsqueda básica y ordenamiento (sin filtrar por precio/rating)
   const filteredCoaches = useMemo(() => {
     let filtered = coaches.filter(coach => {
       const matchesSearch = coach.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          coach.bio?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          coach.specialties?.some(s => s.toLowerCase().includes(searchTerm.toLowerCase()));
-      
+        coach.bio?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        coach.specialties?.some(s => s.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchesSpecialty = selectedSpecialty === 'all' || coach.specialties?.includes(selectedSpecialty);
-      const matchesPrice = coach.ratePerAnalysis && coach.ratePerAnalysis <= maxPrice;
-      const matchesRating = coach.rating && coach.rating >= minRating;
-
-      return matchesSearch && matchesSpecialty && matchesPrice && matchesRating;
+      return matchesSearch && matchesSpecialty;
     });
 
-    // Sort coaches
     filtered.sort((a, b) => {
       switch (sortBy) {
         case "rating":
@@ -99,7 +99,7 @@ export default function CoachesPage() {
     });
 
     return filtered;
-  }, [coaches, searchTerm, selectedSpecialty, maxPrice, minRating, sortBy]);
+  }, [coaches, searchTerm, selectedSpecialty, sortBy]);
 
   const renderStars = (rating: number) => {
     return Array.from({ length: 5 }, (_, i) => (
@@ -168,31 +168,7 @@ export default function CoachesPage() {
             </SelectContent>
           </Select>
 
-          {/* Price Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Precio máximo: ${maxPrice}</span>
-            <Slider
-              value={[maxPrice]}
-              onValueChange={(value) => setMaxPrice(value[0])}
-              max={100}
-              min={20}
-              step={5}
-              className="w-32"
-            />
-          </div>
-
-          {/* Rating Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Rating mínimo: {minRating}</span>
-            <Slider
-              value={[minRating]}
-              onValueChange={(value) => setMinRating(value[0])}
-              max={5}
-              min={0}
-              step={0.5}
-              className="w-32"
-            />
-          </div>
+          {/* Sin filtros de precio ni rating */}
 
           {/* Sort By */}
           <Select value={sortBy} onValueChange={setSortBy}>
@@ -312,20 +288,71 @@ export default function CoachesPage() {
             </CardContent>
 
             <CardFooter className="flex flex-col items-stretch gap-3 pt-4">
-              {/* Price */}
-              <div className="flex justify-center items-baseline">
-                <span className="font-headline text-3xl font-bold text-primary">
-                  ${coach.ratePerAnalysis}
-                </span>
-                <span className="text-sm text-muted-foreground">/análisis</span>
-              </div>
+              {/* Tarifa: visible solo si showRate !== false y existe ratePerAnalysis */}
+              {(coach.showRate !== false && typeof coach.ratePerAnalysis === 'number') && (
+                <div className="flex justify-center items-baseline">
+                  <span className="font-headline text-3xl font-bold text-primary">
+                    ${coach.ratePerAnalysis}
+                  </span>
+                  <span className="text-sm text-muted-foreground">/análisis</span>
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex gap-2">
-                <Button variant="outline" className="flex-1">
-                  <MessageSquare className="mr-2 h-4 w-4" /> 
-                  Mensaje
-                </Button>
+                <Dialog open={helpOpenFor?.id === coach.id} onOpenChange={(open) => setHelpOpenFor(open ? coach : null)}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" className="flex-1">
+                      <MessageSquare className="mr-2 h-4 w-4" />
+                      Pedir ayuda
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Pedir ayuda a {coach.name}</DialogTitle>
+                      <DialogDescription>Envía un mensaje breve al entrenador.</DialogDescription>
+                    </DialogHeader>
+                    <Textarea
+                      value={helpMessage}
+                      onChange={(e) => setHelpMessage(e.target.value)}
+                      rows={4}
+                    />
+                    <DialogFooter>
+                      <Button
+                        disabled={sending || !user}
+                        onClick={async () => {
+                          if (!user) {
+                            window.location.href = '/login';
+                            return;
+                          }
+                          try {
+                            setSending(true);
+                            const colRef = collection(db as any, 'messages');
+                            const payload = {
+                              fromId: user.uid,
+                              fromName: (userProfile as any)?.name || user.displayName || 'Jugador',
+                              fromAvatarUrl: (userProfile as any)?.avatarUrl || '',
+                              toId: coach.id,
+                              toCoachDocId: coach.id,
+                              toName: coach.name,
+                              text: helpMessage,
+                              createdAt: serverTimestamp(),
+                              read: false,
+                            };
+                            await addDoc(colRef, payload as any);
+                            setHelpOpenFor(null);
+                          } catch (e) {
+                            console.error('Error enviando mensaje:', e);
+                          } finally {
+                            setSending(false);
+                          }
+                        }}
+                      >
+                        {sending ? 'Enviando…' : 'Enviar mensaje'}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
                 <Button className="flex-1">
                   <Users className="mr-2 h-4 w-4" /> 
                   Conectar

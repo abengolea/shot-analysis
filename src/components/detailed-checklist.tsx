@@ -54,18 +54,27 @@ function ChecklistItem({
     onItemChange,
     editable = true,
     showCoachBox = false,
+    coachInline = false,
+    coachIsEditable = false,
+    coachValue,
+    onCoachChange,
 }: { 
     item: DetailedChecklistItem;
     categoryName: string;
     onItemChange: (categoryName: string, itemId: string, newRating: DetailedChecklistItem['rating'], newComment: string, newRating10?: number, newNA?: boolean) => void;
     editable?: boolean;
     showCoachBox?: boolean;
+    coachInline?: boolean;
+    coachIsEditable?: boolean;
+    coachValue?: { rating?: number; comment?: string };
+    onCoachChange?: (itemId: string, next: { rating?: number; comment?: string }) => void;
 }) {
   const [rating, setRating] = useState<number>(item.rating || 3);
   const [isNA, setIsNA] = useState<boolean>(Boolean((item as any).na));
   const [rating10, setRating10] = useState<number | undefined>(item.rating10);
   const [coachComment, setCoachComment] = useState(item.coachComment || "");
   const [showCoachMobile, setShowCoachMobile] = useState(false);
+  const [showReview, setShowReview] = useState(false);
 
   useEffect(() => {
     // Si está marcado como N/A, forzar rating neutro pero UI y backend deberán ignorarlo en el cálculo
@@ -119,10 +128,7 @@ function ChecklistItem({
       </div>
       <p className="text-sm text-muted-foreground">{item.description}</p>
 
-      {/* Ocultar la casilla N/A según requerimiento */}
-
-      
-      
+      {/* Controles IA */}
       {!isNA && (
         <RadioGroup
           value={String(rating)}
@@ -161,9 +167,54 @@ function ChecklistItem({
           className="mt-1 bg-muted/30 text-sm"
         />
       </div>
+
+      {/* Controles del entrenador inline */}
+      {coachInline && (
+        <div className="mt-2 flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!coachIsEditable}
+              onClick={() => onCoachChange?.(item.id, { rating: rating as any, comment: coachValue?.comment })}
+            >
+              De acuerdo con la IA ({rating})
+            </Button>
+            <Button size="sm" variant="outline" disabled={!coachIsEditable} onClick={() => setShowReview((s)=>!s)}>
+              {showReview ? 'Cerrar revisión' : 'Revisar'}
+            </Button>
+          </div>
+          {showReview && (
+            <div className="rounded-md border p-2">
+              <div className="flex items-center gap-2 text-xs mb-2">
+                <span>Calificación:</span>
+                {[1,2,3,4,5].map((r) => (
+                  <label key={`rev-${item.id}-${r}`} className="inline-flex items-center gap-1">
+                    <input
+                      type="radio"
+                      name={`rev-${item.id}`}
+                      checked={coachValue?.rating === r}
+                      onChange={() => onCoachChange?.(item.id, { rating: r, comment: coachValue?.comment })}
+                      disabled={!coachIsEditable}
+                    />
+                    {r}
+                  </label>
+                ))}
+              </div>
+              <Textarea
+                placeholder="Comentario para el jugador / IA"
+                value={coachValue?.comment || ''}
+                onChange={(e) => onCoachChange?.(item.id, { rating: coachValue?.rating, comment: e.target.value })}
+                className="text-xs"
+                disabled={!coachIsEditable}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {showCoachBox && (
         <div>
-          {/* Móvil: colapsable por defecto */}
           <div className="sm:hidden">
             <button
               type="button"
@@ -186,7 +237,6 @@ function ChecklistItem({
               </div>
             )}
           </div>
-          {/* Desktop/tablet: siempre visible */}
           <div className="hidden sm:block">
             <Label className="text-xs text-muted-foreground">Comentarios del Entrenador</Label>
             <Textarea
@@ -210,9 +260,13 @@ interface DetailedChecklistProps {
     currentScore?: number;
     editable?: boolean;
     showCoachBox?: boolean;
+    coachInline?: boolean;
+    coachIsEditable?: boolean;
+    coachFeedbackByItemId?: Record<string, { rating?: number; comment?: string }>;
+    onCoachFeedbackChange?: (itemId: string, next: { rating?: number; comment?: string }) => void;
 }
 
-export function DetailedChecklist({ categories, onChecklistChange, analysisId, currentScore, editable = true, showCoachBox = false }: DetailedChecklistProps) {
+export function DetailedChecklist({ categories, onChecklistChange, analysisId, currentScore, editable = true, showCoachBox = false, coachInline = false, coachIsEditable = false, coachFeedbackByItemId, onCoachFeedbackChange }: DetailedChecklistProps) {
   const totalItems = Array.isArray(categories)
     ? categories.reduce((sum, c) => sum + ((c.items && c.items.length) || 0), 0)
     : 0;
@@ -259,6 +313,10 @@ export function DetailedChecklist({ categories, onChecklistChange, analysisId, c
                        onItemChange={onChecklistChange}
                        editable={editable}
                        showCoachBox={showCoachBox}
+                       coachInline={coachInline}
+                       coachIsEditable={coachIsEditable}
+                       coachValue={coachFeedbackByItemId?.[item.id]}
+                       onCoachChange={onCoachFeedbackChange}
                      />
                    ))}
                  </div>

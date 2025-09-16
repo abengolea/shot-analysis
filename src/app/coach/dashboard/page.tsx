@@ -1,10 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { mockCoaches, mockPlayers, mockConnectionRequests } from "@/lib/mock-data";
 import { PlayerCard } from "@/components/player-card";
-import { ConnectionRequestCard } from "@/components/connection-request-card";
 import {
   Card,
   CardContent,
@@ -14,32 +12,136 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, BarChart2, Video, MessageSquare, Clock, CheckCircle, XCircle } from "lucide-react";
-import { ConnectionRequest } from "@/lib/types";
-
-// For this demo, we'll assume we are the first coach
-const currentCoach = mockCoaches[0];
-const coachPlayers = mockPlayers.filter(p => currentCoach.playerIds?.includes(p.id));
-
-// Filtrar solicitudes para el entrenador actual
-const coachRequests = mockConnectionRequests.filter(req => req.coachId === "coach1");
+import { Users, BarChart2, Video, MessageSquare } from "lucide-react";
+import type { Message, Player } from "@/lib/types";
+import { useAuth } from "@/hooks/use-auth";
+import { db } from "@/lib/firebase";
+import { collection, onSnapshot, orderBy, query, where, updateDoc, doc, addDoc, serverTimestamp, setDoc, getDoc, limit, getDocs } from "firebase/firestore";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 
 export default function CoachDashboardPage() {
-  const [connectionRequests, setConnectionRequests] = useState<ConnectionRequest[]>(coachRequests);
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [players, setPlayers] = useState<Player[]>([] as any);
+  const [messages, setMessages] = useState<Message[]>([]);
 
-  const handleStatusUpdate = (requestId: string, newStatus: 'accepted' | 'rejected') => {
-    setConnectionRequests(prev => 
-      prev.map(req => 
-        req.id === requestId 
-          ? { ...req, status: newStatus, updatedAt: new Date() }
-          : req
-      )
-    );
+  useEffect(() => {
+    if (!user) return;
+    try {
+      const q = query(collection(db as any, 'players'), where('coachId', '==', user.uid));
+      const unsub = onSnapshot(q, (snap) => {
+        const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as any[];
+        setPlayers(list as any);
+      });
+      return () => unsub();
+    } catch (e) {
+      console.error('Error cargando jugadores del coach:', e);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    try {
+      const q1 = query(collection(db as any, 'messages'), where('toId', '==', user.uid), orderBy('createdAt', 'desc'));
+      const q2 = query(collection(db as any, 'messages'), where('toCoachDocId', '==', user.uid), orderBy('createdAt', 'desc'));
+      const unsubs: Array<() => void> = [];
+      const apply = (snap: any) => {
+        setMessages(prev => {
+          const incoming = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })) as Message[];
+          const merged = [...incoming, ...prev].reduce((acc: Record<string, Message>, m: Message) => { acc[m.id] = m; return acc; }, {} as any);
+          return Object.values(merged).sort((a, b) => (new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
+        });
+      };
+      unsubs.push(onSnapshot(q1, apply));
+      unsubs.push(onSnapshot(q2, apply));
+      return () => { unsubs.forEach(u => u()); };
+    } catch (e) {
+      console.error('Error cargando mensajes:', e);
+    }
+  }, [user]);
+
+  const unreadCount = useMemo(() => messages.filter(m => !m.read).length, [messages]);
+  const markAsRead = async (m: Message) => {
+    try {
+      if (!m.read) {
+        await updateDoc(doc(db as any, 'messages', m.id), { read: true, readAt: new Date().toISOString() });
+      }
+    } catch (e) {
+      console.error('No se pudo marcar como leído:', e);
+    }
   };
 
-  const pendingRequests = connectionRequests.filter(req => req.status === 'pending');
-  const acceptedRequests = connectionRequests.filter(req => req.status === 'accepted');
-  const rejectedRequests = connectionRequests.filter(req => req.status === 'rejected');
+  const [replyFor, setReplyFor] = useState<Message | null>(null);
+  const [replyText, setReplyText] = useState<string>("");
+  const [sendingReply, setSendingReply] = useState<boolean>(false);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [acceptDialogOpen, setAcceptDialogOpen] = useState<boolean>(false);
+  const [acceptTargetUrl, setAcceptTargetUrl] = useState<string>("");
+  const [acceptPlayerLabel, setAcceptPlayerLabel] = useState<string>("");
+
+  const sendReply = async () => {
+    if (!user || !replyFor || !replyText.trim()) return;
+    try {
+      setSendingReply(true);
+      const colRef = collection(db as any, 'messages');
+      const payload = {
+        fromId: user.uid,
+        fromName: 'Entrenador',
+        toId: replyFor.fromId,
+        toName: replyFor.fromName || replyFor.fromId,
+        text: replyText.trim(),
+        createdAt: serverTimestamp(),
+        read: false,
+      } as any;
+      await addDoc(colRef, payload);
+      setReplyText("");
+      setReplyFor(null);
+    } catch (e) {
+      console.error('Error enviando respuesta:', e);
+    } finally {
+      setSendingReply(false);
+    }
+  };
+
+  const acceptPlayer = async (m: Message) => {
+    try {
+      setAcceptingId(m.id);
+      // Vincula al jugador con el coach: set players/{fromId}.coachId = coach uid
+      const playerRef = doc(db as any, 'players', m.fromId);
+      const snap = await getDoc(playerRef);
+      if (!snap.exists()) {
+        console.warn('No existe el doc del jugador para vincular');
+        toast({ title: 'No se pudo aceptar', description: 'No encontramos el perfil del jugador.', variant: 'destructive' });
+        setAcceptingId(null);
+        return;
+      }
+      await setDoc(playerRef, { coachId: user?.uid, updatedAt: new Date() }, { merge: true });
+      // Marcar el mensaje como leído
+      await updateDoc(doc(db as any, 'messages', m.id), { read: true, readAt: new Date().toISOString() });
+      // Buscar último análisis del jugador
+      let targetUrl = `/players/${m.fromId}`;
+      try {
+        const qa = query(collection(db as any, 'analyses'), where('playerId', '==', m.fromId), orderBy('createdAt', 'desc'), limit(1));
+        const res = await getDocs(qa);
+        if (!res.empty) {
+          const docId = res.docs[0].id;
+          targetUrl = `/analysis/${docId}`;
+        }
+      } catch {}
+      setAcceptTargetUrl(targetUrl);
+      setAcceptPlayerLabel(m.fromName || m.fromId);
+      setAcceptDialogOpen(true);
+    } catch (e) {
+      console.error('Error aceptando jugador:', e);
+      toast({ title: 'Error', description: 'No se pudo aceptar la propuesta.', variant: 'destructive' });
+    } finally {
+      setAcceptingId(null);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-8">
@@ -61,7 +163,7 @@ export default function CoachDashboardPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{coachPlayers.length}</div>
+            <div className="text-2xl font-bold">{players.length}</div>
             <p className="text-xs text-muted-foreground">
               jugadores actualmente bajo tu tutela
             </p>
@@ -84,12 +186,12 @@ export default function CoachDashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Solicitudes Pendientes
+              Mensajes no leídos
             </CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
+            <MessageSquare className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{pendingRequests.length}</div>
+            <div className="text-2xl font-bold text-orange-600">{unreadCount}</div>
             <p className="text-xs text-muted-foreground">
               esperando tu respuesta
             </p>
@@ -111,15 +213,13 @@ export default function CoachDashboardPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="requests" className="w-full">
+      <Tabs defaultValue="messages" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="requests" className="flex items-center gap-2">
+          <TabsTrigger value="messages" className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4" />
-            Solicitudes de Conexión
-            {pendingRequests.length > 0 && (
-              <Badge variant="secondary" className="ml-1">
-                {pendingRequests.length}
-              </Badge>
+            Mensajes
+            {unreadCount > 0 && (
+              <Badge variant="secondary" className="ml-1">{unreadCount}</Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="players" className="flex items-center gap-2">
@@ -132,54 +232,58 @@ export default function CoachDashboardPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="requests" className="space-y-6">
+        <TabsContent value="messages" className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-bold">Solicitudes de Conexión</h2>
-              <p className="text-muted-foreground">
-                Revisa y gestiona las solicitudes de jugadores que quieren conectarse contigo.
-              </p>
+              <h2 className="text-2xl font-bold">Mensajes</h2>
+              <p className="text-muted-foreground">Mensajes recibidos de jugadores.</p>
             </div>
           </div>
-
-          {/* Filtros de Estado */}
-          <div className="flex gap-2">
-            <Badge variant={pendingRequests.length > 0 ? "default" : "secondary"} className="cursor-pointer">
-              <Clock className="mr-1 h-3 w-3" />
-              Pendientes ({pendingRequests.length})
-            </Badge>
-            <Badge variant={acceptedRequests.length > 0 ? "default" : "secondary"} className="cursor-pointer">
-              <CheckCircle className="mr-1 h-3 w-3" />
-              Aceptadas ({acceptedRequests.length})
-            </Badge>
-            <Badge variant={rejectedRequests.length > 0 ? "default" : "secondary"} className="cursor-pointer">
-              <XCircle className="mr-1 h-3 w-3" />
-              Rechazadas ({rejectedRequests.length})
-            </Badge>
-          </div>
-
-          {/* Lista de Solicitudes */}
-          <div className="grid gap-6 md:grid-cols-2">
-            {connectionRequests.length > 0 ? (
-              connectionRequests.map((request) => (
-                <ConnectionRequestCard
-                  key={request.id}
-                  request={request}
-                  onStatusUpdate={handleStatusUpdate}
-                />
-              ))
-            ) : (
-              <div className="col-span-full py-12 text-center">
-                <MessageSquare className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No hay solicitudes</h3>
-                <p className="text-muted-foreground mb-4">
-                  Aún no has recibido solicitudes de conexión de jugadores.
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Los jugadores pueden enviarte solicitudes desde tu perfil público.
-                </p>
-              </div>
+          <div className="grid gap-4">
+            {messages.length === 0 && (
+              <div className="py-8 text-center text-muted-foreground">Sin mensajes</div>
             )}
+            {messages.map((m) => (
+              <Card key={m.id} className="hover:shadow-sm">
+                <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                  <CardTitle className="text-base">
+                    {m.fromName || m.fromId}
+                    {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
+                  </CardTitle>
+                  <div className="flex items-center gap-3">
+                    {!m.read && (
+                      <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
+                    )}
+                    <button className="text-xs text-green-600 disabled:opacity-50" disabled={acceptingId === m.id} onClick={() => acceptPlayer(m)}>
+                      {acceptingId === m.id ? 'Aceptando…' : 'Aceptar propuesta'}
+                    </button>
+                    <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
+                      <DialogTrigger asChild>
+                        <button className="text-xs text-primary">Responder</button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Responder a {m.fromName || m.fromId}</DialogTitle>
+                          <DialogDescription>Escribe tu respuesta y se enviará al jugador.</DialogDescription>
+                        </DialogHeader>
+                        <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={4} />
+                        <DialogFooter>
+                          <Button onClick={sendReply} disabled={sendingReply || !replyText.trim()}>
+                            {sendingReply ? 'Enviando…' : 'Enviar'}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-sm text-muted-foreground mb-1">
+                    {new Date(m.createdAt || Date.now()).toLocaleString()}
+                  </div>
+                  <div className="text-sm">{m.text}</div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </TabsContent>
 
@@ -192,10 +296,10 @@ export default function CoachDashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {coachPlayers.map((player) => (
-              <PlayerCard key={player.id} player={player} />
+            {players.map((player) => (
+              <PlayerCard key={player.id} player={player as any} />
             ))}
-            {coachPlayers.length === 0 && (
+            {players.length === 0 && (
               <div className="col-span-full py-8 text-center text-muted-foreground">
                 <Users className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No tienes jugadores</h3>
@@ -220,25 +324,17 @@ export default function CoachDashboardPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <MessageSquare className="h-5 w-5 text-primary" />
-                  Actividad de Solicitudes
+                  Actividad de Mensajes
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span>Total de solicitudes</span>
-                  <span className="font-semibold">{connectionRequests.length}</span>
+                  <span>Total de mensajes</span>
+                  <span className="font-semibold">{messages.length}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Solicitudes pendientes</span>
-                  <span className="font-semibold text-orange-600">{pendingRequests.length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Solicitudes aceptadas</span>
-                  <span className="font-semibold text-green-600">{acceptedRequests.length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Solicitudes rechazadas</span>
-                  <span className="font-semibold text-red-600">{rejectedRequests.length}</span>
+                  <span>No leídos</span>
+                  <span className="font-semibold text-orange-600">{unreadCount}</span>
                 </div>
               </CardContent>
             </Card>
@@ -253,7 +349,7 @@ export default function CoachDashboardPage() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span>Total de jugadores</span>
-                  <span className="font-semibold">{coachPlayers.length}</span>
+                  <span className="font-semibold">{players.length}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Análisis este mes</span>
@@ -268,6 +364,25 @@ export default function CoachDashboardPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Modal centrado para éxito de aceptación */}
+      <Dialog open={acceptDialogOpen} onOpenChange={setAcceptDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Jugador vinculado</DialogTitle>
+            <DialogDescription>
+              {acceptPlayerLabel ? `Ya podés trabajar con ${acceptPlayerLabel}.` : 'Ya podés trabajar con el jugador.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="text-sm text-muted-foreground">
+            Te llevo al último análisis del jugador (si existe); si no, a su perfil.
+          </div>
+          <DialogFooter>
+            <Button onClick={() => { if (acceptTargetUrl) window.location.href = acceptTargetUrl; }}>Ver ahora</Button>
+            <Button variant="outline" onClick={() => setAcceptDialogOpen(false)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

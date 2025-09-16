@@ -75,12 +75,26 @@ function CopyIcon(props: React.SVGProps<SVGSVGElement>) {
 
 export function ShareButtons({ url, text }: ShareButtonsProps) {
   const [currentUrl, setCurrentUrl] = useState<string>(url || "");
+  const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || "";
 
   useEffect(() => {
-    if (!url && typeof window !== "undefined") {
-      setCurrentUrl(window.location.href);
+    if (typeof window === "undefined") return;
+    // Si no se pasa url, construir una URL canónica usando NEXT_PUBLIC_APP_URL como base
+    if (!url) {
+      const { pathname, search, hash, protocol, host } = window.location;
+      const base = appBaseUrl || `${protocol}//${host}`;
+      try {
+        const canonical = new URL(`${pathname}${search}${hash}`, base).toString();
+        setCurrentUrl(canonical);
+      } catch {
+        // Fallback a la URL actual si algo falla al construir la canónica
+        setCurrentUrl(window.location.href);
+      }
+      return;
     }
-  }, [url]);
+    // Si se pasa url explícita, respetarla
+    setCurrentUrl(url);
+  }, [url, appBaseUrl]);
 
   const shareText = useMemo(
     () => text || "Mirá mi análisis de tiro en IaShot",

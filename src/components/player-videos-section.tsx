@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -122,7 +123,10 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
         
         {sortedAnalyses.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {sortedAnalyses.map((analysis) => (
+            {sortedAnalyses.map((analysis) => {
+              const strengths = Array.isArray(analysis.strengths) ? analysis.strengths : [];
+              const weaknesses = Array.isArray(analysis.weaknesses) ? analysis.weaknesses : [];
+              return (
               <Card 
                 key={analysis.id} 
                 className="hover:shadow-md transition-shadow cursor-pointer group"
@@ -133,7 +137,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                     <Badge variant="outline" className="text-xs">
                       {getShotTypeLabel(analysis.shotType)}
                     </Badge>
-                    {analysis.score && (
+                    {typeof analysis.score === 'number' && (
                       <Badge variant={getScoreBadgeVariant(analysis.score)}>
                         {analysis.score}
                       </Badge>
@@ -161,7 +165,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                       {analysis.analysisSummary}
                     </h4>
                     
-                    {analysis.score && (
+                    {typeof analysis.score === 'number' && (
                       <div className="space-y-1">
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-muted-foreground">Puntuación</span>
@@ -178,36 +182,36 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
 
                     {/* Fortalezas y Debilidades */}
                     <div className="space-y-2">
-                      {analysis.strengths.length > 0 && (
+                      {strengths.length > 0 && (
                         <div>
                           <p className="text-xs font-medium text-green-600 mb-1">Fortalezas</p>
                           <div className="flex flex-wrap gap-1">
-                            {analysis.strengths.slice(0, 2).map((strength, index) => (
+                            {strengths.slice(0, 2).map((strength, index) => (
                               <Badge key={index} variant="outline" className="text-xs">
                                 {strength}
                               </Badge>
                             ))}
-                            {analysis.strengths.length > 2 && (
+                            {strengths.length > 2 && (
                               <Badge variant="outline" className="text-xs">
-                                +{analysis.strengths.length - 2}
+                                +{strengths.length - 2}
                               </Badge>
                             )}
                           </div>
                         </div>
                       )}
 
-                      {analysis.weaknesses.length > 0 && (
+                      {weaknesses.length > 0 && (
                         <div>
                           <p className="text-xs font-medium text-orange-600 mb-1">Áreas de Mejora</p>
                           <div className="flex flex-wrap gap-1">
-                            {analysis.weaknesses.slice(0, 2).map((weakness, index) => (
+                            {weaknesses.slice(0, 2).map((weakness, index) => (
                               <Badge key={index} variant="outline" className="text-xs">
                                 {weakness}
                               </Badge>
                             ))}
-                            {analysis.weaknesses.length > 2 && (
+                            {weaknesses.length > 2 && (
                               <Badge variant="outline" className="text-xs">
-                                +{analysis.weaknesses.length - 2}
+                                +{weaknesses.length - 2}
                               </Badge>
                             )}
                           </div>
@@ -218,16 +222,19 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
 
                   {/* Botón de Acción */}
                   <Button 
+                    asChild
                     variant="outline" 
                     size="sm" 
                     className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
                   >
-                    <Play className="mr-2 h-4 w-4" />
-                    Ver Análisis Completo
+                    <Link href={`/analysis/${analysis.id}`}>
+                      <Play className="mr-2 h-4 w-4" />
+                      Ver Checklist (IA)
+                    </Link>
                   </Button>
                 </CardContent>
               </Card>
-            ))}
+            );})}
           </div>
         ) : (
           <div className="text-center py-12 text-muted-foreground">
@@ -277,7 +284,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                     </p>
                   </div>
                   
-                  {selectedAnalysis.score && (
+                  {typeof selectedAnalysis.score === 'number' && (
                     <div>
                       <h4 className="font-semibold mb-2">Puntuación</h4>
                       <div className="text-2xl font-bold text-primary">
@@ -292,7 +299,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                   <div>
                     <h4 className="font-semibold mb-2">Fortalezas</h4>
                     <ul className="space-y-1">
-                      {selectedAnalysis.strengths.map((strength, index) => (
+                      {(Array.isArray(selectedAnalysis.strengths) ? selectedAnalysis.strengths : []).map((strength, index) => (
                         <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
                           <div className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0" />
                           {strength}
@@ -304,7 +311,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                   <div>
                     <h4 className="font-semibold mb-2">Áreas de Mejora</h4>
                     <ul className="space-y-1">
-                      {selectedAnalysis.weaknesses.map((weakness, index) => (
+                      {(Array.isArray(selectedAnalysis.weaknesses) ? selectedAnalysis.weaknesses : []).map((weakness, index) => (
                         <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
                           <div className="w-1.5 h-1.5 bg-orange-600 rounded-full mt-2 flex-shrink-0" />
                           {weakness}
@@ -314,11 +321,11 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                   </div>
                 </div>
 
-                {selectedAnalysis.recommendations.length > 0 && (
+                {Array.isArray(selectedAnalysis.recommendations) && selectedAnalysis.recommendations.length > 0 && (
                   <div>
                     <h4 className="font-semibold mb-2">Recomendaciones</h4>
                     <ul className="space-y-1">
-                      {selectedAnalysis.recommendations.map((rec, index) => (
+                      {(Array.isArray(selectedAnalysis.recommendations) ? selectedAnalysis.recommendations : []).map((rec, index) => (
                         <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
                           <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-2 flex-shrink-0" />
                           {rec}

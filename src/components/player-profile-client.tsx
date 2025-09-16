@@ -82,6 +82,13 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
   const chartData = getChartData(analyses);
   const [filter, setFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("overview");
+  const latestAnalysisId = [...analyses].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]?.id;
+
+  useEffect(() => {
+    if (activeTab === 'checklist' && latestAnalysisId) {
+      window.location.href = `/analysis/${latestAnalysisId}`;
+    }
+  }, [activeTab, latestAnalysisId]);
 
   const filteredAnalyses = filter === 'all' 
     ? analyses 
@@ -137,9 +144,9 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
             <Star className="h-4 w-4" />
             Evaluaciones
           </TabsTrigger>
-          <TabsTrigger value="comments" className="flex items-center gap-2">
-            <MessageSquare className="h-4 w-4" />
-            Comentarios
+          <TabsTrigger value="checklist" className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            Checklist IA
           </TabsTrigger>
           <TabsTrigger value="progress" className="flex items-center gap-2">
             <BarChart className="h-4 w-4" />
@@ -290,14 +297,18 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
           </div>
         </TabsContent>
 
-        {/* Pestaña: Comentarios */}
-        <TabsContent value="comments" className="space-y-6">
-          <PlayerCommentsSection
-            comments={comments}
-            playerId={player.id}
-            coachId={mockCoachId}
-            coachName={mockCoachName}
-          />
+        {/* Pestaña: Checklist IA (redirige al último análisis) */}
+        <TabsContent value="checklist" className="space-y-6">
+          {!latestAnalysisId ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <h3 className="text-lg font-semibold mb-2">No hay análisis</h3>
+              <p>Este jugador aún no tiene análisis para mostrar el checklist.</p>
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              Abriendo checklist del último análisis...
+            </div>
+          )}
         </TabsContent>
 
         {/* Pestaña: Progreso */}

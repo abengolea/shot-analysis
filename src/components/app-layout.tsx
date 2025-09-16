@@ -27,6 +27,7 @@ import { Logo } from "@/components/logo";
 import Image from "next/image";
 import { SidebarMenuContents } from "./sidebar-menu-contents";
 import { UserMenu } from "./user-menu";
+import { NotificationsBell } from "./notifications-bell";
 import { useState, useEffect } from "react";
 
 
@@ -88,6 +89,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex-1">
             {/* Can add breadcrumbs or page title here */}
           </div>
+          <NotificationsBell />
           <UserMenu />
         </header>
         <main className="flex-1 p-4 md:p-6">{children}</main>

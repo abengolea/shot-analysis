@@ -325,9 +325,9 @@ export default function UploadPage() {
       {/* Selector de videos (unificado) */}
       <Card>
         <CardHeader>
-          <CardTitle>Subí tus videos</CardTitle>
+          <CardTitle>Videos para el análisis</CardTitle>
           <CardDescription>
-            Preferimos Trasera (hasta 40s). Si no la tenés, subí Frontal (hasta 30s). Laterales son opcionales.
+            Para un mejor análisis, usá los 4 ángulos: Trasera (obligatoria), Frontal, Lateral Izquierdo y Lateral Derecho. Te recomendamos grabarlos primero y luego subirlos. Si subís menos de 4, la precisión puede ser menor. Duraciones sugeridas: Trasera hasta 40s; Frontal y laterales hasta 30s.
           </CardDescription>
           {!shotType && (
             <div className="text-xs text-amber-600 mt-2">Seleccioná el tipo de lanzamiento arriba para habilitar la subida.</div>
@@ -413,7 +413,7 @@ export default function UploadPage() {
                   {rightVideo && (<><strong>Lateral Derecho:</strong> {rightVideo.name} — {(rightVideo.size / 1024 / 1024).toFixed(2)} MB<br/></>)}
                   {!backVideo && !selectedVideo && <>Aún no seleccionaste video principal</>}
                 </p>
-                <p className="text-xs text-blue-700 mt-2">Duración recomendada: 40s para Trasera; 30s para Frontal/Laterales. Subí con Wi‑Fi si es posible.</p>
+                <p className="text-xs text-blue-700 mt-2">Recordá: Trasera es obligatoria. Usar los 4 ángulos mejora la precisión. Duraciones sugeridas: Trasera 40s; Frontal/Laterales 30s. Subí con Wi‑Fi si es posible.</p>
               </div>
 
               <SubmitButton analyzing={analyzingOpen} />
@@ -432,8 +432,8 @@ export default function UploadPage() {
               <h3 className="font-semibold mb-2">Pasos para el Análisis</h3>
               <ol className="text-sm space-y-1 text-left max-w-md mx-auto">
                 <li>1. Seleccioná el tipo de lanzamiento.</li>
-                <li>2. Subí el video Trasero (preferido). Si no lo tenés, subí el Frontal.</li>
-                <li>3. Opcional: agregá Lateral Izquierdo y Lateral Derecho.</li>
+                <li>2. Grabá los 4 ángulos (recomendado) y luego subilos.</li>
+                <li>3. La cámara Trasera es obligatoria; Frontal y laterales son opcionales.</li>
                 <li>4. Envía para análisis.</li>
               </ol>
             </div>

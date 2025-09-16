@@ -8,6 +8,35 @@ service cloud.firestore {
     
     // Reglas específicas para producción (comentadas por ahora)
     /*
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/coaches/$(request.auth.uid)) && get(/databases/$(database)/documents/coaches/$(request.auth.uid)).data.role == 'admin') ||
+        (exists(/databases/$(database)/documents/players/$(request.auth.uid)) && get(/databases/$(database)/documents/players/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    // Tickets de soporte
+    match /tickets/{ticketId} {
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      // Sugerencia: bloquear escritura desde cliente y escribir solo vía Admin SDK (API)
+      allow create: if false; // Crear tickets solo desde servidor
+      allow update, delete: if false; // Actualizaciones solo desde servidor
+    }
+
+    // Subcolección de mensajes de tickets (lectura por dueño o admin)
+    match /tickets/{ticketId}/messages/{messageId} {
+      allow read: if isSignedIn() && (
+        get(/databases/$(database)/documents/tickets/$(ticketId)).data.userId == request.auth.uid || isAdmin()
+      );
+      allow create, update, delete: if false; // Escrituras por servidor
+    }
+
     // Reglas para usuarios autenticados
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
