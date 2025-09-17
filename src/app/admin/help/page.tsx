@@ -11,10 +11,11 @@ export default function AdminHelpPage() {
 			</p>
 
 			<Tabs defaultValue="operador" className="w-full">
-				<TabsList className="grid w-full grid-cols-3">
+				<TabsList className="grid w-full grid-cols-4">
 					<TabsTrigger value="operador">Manual de Operador</TabsTrigger>
 					<TabsTrigger value="etiquetado">Guía de Etiquetado</TabsTrigger>
 					<TabsTrigger value="tecnico">Manual Técnico</TabsTrigger>
+					<TabsTrigger value="alta-coaches">Alta de Entrenadores</TabsTrigger>
 				</TabsList>
 
 				<TabsContent value="operador" className="mt-4 space-y-4">
@@ -82,6 +83,17 @@ export default function AdminHelpPage() {
 					<p className="text-sm text-muted-foreground">
 						Ver detalles en el manual técnico si hace falta.
 					</p>
+				</TabsContent>
+
+				<TabsContent value="alta-coaches" className="mt-4 space-y-4">
+					<h2 className="text-lg font-medium">Alta de entrenadores (solo admin)</h2>
+					<ol className="list-decimal pl-6 space-y-1 text-sm">
+						<li>Desde <code>/coach-register</code> con sesión de admin, completa nombre, email, bio y foto (obligatoria).</li>
+						<li>Abre el detalle del coach en Admin → Coaches y revisa los datos.</li>
+						<li>Pulsa <strong>Dar alta + enviar contraseña</strong> para activarlo y enviar el email con el enlace de contraseña.</li>
+						<li>Confirmá que el coach ingresó y completó su perfil (opcionalmente ajusta visibilidad pública).</li>
+					</ol>
+					<p className="text-sm text-muted-foreground">Notas: si el email ya existe en Auth, se vincula. La visibilidad pública queda activa desde el alta.</p>
 				</TabsContent>
 			</Tabs>
 		</div>

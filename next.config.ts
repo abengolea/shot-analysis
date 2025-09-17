@@ -1,4 +1,5 @@
 import type {NextConfig} from 'next';
+import path from 'path';
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -7,6 +8,11 @@ const nextConfig: NextConfig = {
   },
   eslint: {
     ignoreDuringBuilds: true,
+  },
+  turbopack: {
+    resolveAlias: {
+      '@mediapipe/pose': path.resolve(__dirname, 'shims/mediapipe-pose-shim.js'),
+    },
   },
   experimental: {
     serverActions: {
@@ -39,6 +45,7 @@ const nextConfig: NextConfig = {
     config.resolve.alias = {
       ...config.resolve.alias,
       'canvas': false,
+      '@mediapipe/pose': path.resolve(__dirname, 'shims/mediapipe-pose-shim.js'),
     };
     
     return config;

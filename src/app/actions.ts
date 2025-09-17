@@ -423,6 +423,49 @@ export async function adminActivateCoachNow(_prev: any, formData: FormData) {
     }
 }
 
+// Activar y enviar link de contraseña en un solo paso
+export async function adminActivateCoachAndSendPassword(_prev: any, formData: FormData) {
+    try {
+        const userId = String(formData.get('userId') || '');
+        if (!userId) return { success: false, message: 'userId requerido' };
+        if (!adminDb || !adminAuth) return { success: false, message: 'Servidor sin Admin SDK' };
+
+        const nowIso = new Date().toISOString();
+        await adminDb.collection('coaches').doc(userId).set({ status: 'active', verified: true, publicVisible: true, updatedAt: nowIso }, { merge: true });
+
+        // Obtener email del coach
+        let email = '';
+        try {
+            const coachDoc = await adminDb.collection('coaches').doc(userId).get();
+            if (coachDoc.exists) email = String(coachDoc.data()?.email || '');
+        } catch {}
+        if (!email) {
+            try { const userRecord = await adminAuth.getUser(userId); email = userRecord.email || ''; } catch {}
+        }
+        if (!email) return { success: false, message: 'Email del coach no encontrado' };
+
+        // Generar link de restablecimiento y enviarlo por email
+        const link = await adminAuth.generatePasswordResetLink(email);
+        try {
+            await sendCustomEmail({
+                to: email,
+                subject: 'Tu acceso como entrenador',
+                html: `<p>Hola, tu cuenta de entrenador fue activada.</p><p>Creá tu contraseña desde este enlace: <a href="${link}">establecer contraseña</a>.</p><p>Luego ingresá a tu panel y completá tu perfil.</p>`
+            });
+        } catch (e) {
+            console.warn('No se pudo enviar email de contraseña; devolviendo el link de fallback.');
+            return { success: true, message: 'Coach activado. No se pudo enviar email; usa el link devuelto.', link };
+        }
+
+        revalidatePath('/admin');
+        revalidatePath(`/admin/coaches/${userId}`);
+        return { success: true, message: 'Coach activado y email enviado.' };
+    } catch (e) {
+        console.error('Error adminActivateCoachAndSendPassword:', e);
+        return { success: false, message: 'No se pudo activar/enviar contraseña' };
+    }
+}
+
 // Subir/actualizar foto del coach
 export async function adminUpdateCoachPhoto(_prev: any, formData: FormData) {
     try {

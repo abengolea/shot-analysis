@@ -2,7 +2,7 @@ import { adminDb } from "@/lib/firebase-admin";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { adminUpdateCoachStatus, adminUpdateCoachProfile, adminSendPasswordReset, adminActivateCoachNow, adminUpdateCoachPhoto } from "@/app/actions";
+import { adminUpdateCoachStatus, adminUpdateCoachProfile, adminSendPasswordReset, adminActivateCoachNow, adminUpdateCoachPhoto, adminActivateCoachAndSendPassword } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 
 export const dynamic = 'force-dynamic';
@@ -12,6 +12,7 @@ export async function actionUpdateCoachProfile(formData: FormData) { 'use server
 export async function actionSendPasswordReset(formData: FormData) { 'use server'; return await (adminSendPasswordReset as any)(undefined, formData); }
 export async function actionActivateCoachNow(formData: FormData) { 'use server'; return await (adminActivateCoachNow as any)(undefined, formData); }
 export async function actionUpdateCoachPhoto(formData: FormData) { 'use server'; return await (adminUpdateCoachPhoto as any)(undefined, formData); }
+export async function actionActivateAndInvite(formData: FormData) { 'use server'; return await (adminActivateCoachAndSendPassword as any)(undefined, formData); }
 
 async function getCoachData(userId: string) {
   if (!adminDb) return null;
@@ -158,6 +159,14 @@ export default async function AdminCoachDetailPage({ params }: { params: { id: s
                   <Button type="submit" size="sm">Subir</Button>
                 </form>
               </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <form action={actionActivateAndInvite}>
+                <input type="hidden" name="userId" value={data.id} />
+                <Button type="submit" size="sm" className="bg-green-600 hover:bg-green-700">Dar alta + enviar contraseña</Button>
+              </form>
+              <div className="text-xs text-muted-foreground">Activa y envía email de contraseña</div>
             </div>
 
             <div className="flex items-center justify-between gap-2">
