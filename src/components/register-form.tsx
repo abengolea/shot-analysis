@@ -1,18 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -47,7 +40,7 @@ const registerSchema = z.object({
   name: z.string().min(3, "El nombre debe tener al menos 3 caracteres."),
   email: z.string().email("Por favor, introduce un email válido."),
   password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
-  role: z.enum(['player', 'coach'], { required_error: "Por favor, selecciona un rol." }),
+  role: z.literal('player'),
   publicRankingOptIn: z.boolean().optional(),
 });
 
@@ -141,21 +134,7 @@ export function RegisterForm() {
                     )}
                 </div>
                 
-                <div className="space-y-2">
-                    <Label htmlFor="role">Tipo de Usuario</Label>
-                    <Select onValueChange={(value) => form.setValue("role", value as 'player' | 'coach')} defaultValue={form.getValues("role")}>
-                        <SelectTrigger id="role">
-                            <SelectValue placeholder="Selecciona tu rol" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="player">🏀 Jugador</SelectItem>
-                            <SelectItem value="coach">👨‍🏫 Entrenador</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    {form.formState.errors.role && (
-                        <p className="text-sm text-destructive">{form.formState.errors.role.message}</p>
-                    )}
-                </div>
+                
                  <div className="space-y-2">
                     <Label htmlFor="password">Contraseña</Label>
                     <div className="relative">

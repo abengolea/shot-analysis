@@ -1,7 +1,5 @@
 import Link from "next/link";
 import { RegisterForm } from "@/components/register-form";
-import Image from "next/image";
-import { TempRegisterButton } from "@/components/temp-register-button";
 import { Logo } from "@/components/logo";
 
 
@@ -20,7 +18,6 @@ export default function RegisterPage() {
         </p>
       </div>
       <RegisterForm />
-      <TempRegisterButton />
     </div>
   );
 }

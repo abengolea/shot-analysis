@@ -286,8 +286,8 @@ export default function AdminHome() {
 						<div className="flex items-center gap-2">
 							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Usuario" value={subsQuery} onChange={(e)=>setSubsQuery(e.target.value)} />
 							<button className="rounded border px-3 py-1 text-sm" onClick={() => {
-								const headers = ['userId','active','validUntil','credits','updatedAt'];
-								const rows = filteredSubs.map((w:any) => [w.userId||w.id, w.historyPlusActive?'SI':'NO', w.historyPlusValidUntil, w.credits, w.updatedAt]);
+                                const headers = ['userId','active','validUntil','credits','updatedAt'];
+                                const rows = filteredSubs.map((w:any) => [w.userId||w.id, w.historyPlusActive?'SI':'NO', typeof w.historyPlusValidUntil === 'string' ? w.historyPlusValidUntil : (w?.historyPlusValidUntil?.toDate?.() ? w.historyPlusValidUntil.toDate().toISOString() : (typeof w?.historyPlusValidUntil?._seconds === 'number' ? new Date(w.historyPlusValidUntil._seconds * 1000 + Math.round((w.historyPlusValidUntil._nanoseconds||0)/1e6)).toISOString() : '')), w.credits, typeof w.updatedAt === 'string' ? w.updatedAt : (w?.updatedAt?.toDate?.() ? w.updatedAt.toDate().toISOString() : (typeof w?.updatedAt?._seconds === 'number' ? new Date(w.updatedAt._seconds * 1000 + Math.round((w.updatedAt._nanoseconds||0)/1e6)).toISOString() : ''))]);
 								toCsvAndDownload('subscriptions.csv', headers, rows);
 							}}>Exportar CSV</button>
 						</div>
@@ -330,11 +330,11 @@ export default function AdminHome() {
 							<tbody>
 								{filteredSubs.map((w) => (
 									<tr key={w.id} className="border-t">
-										<td className="py-2 px-3">{w.userId || w.id}</td>
-										<td className="py-2 px-3">{w.historyPlusActive ? 'Sí' : 'No'}</td>
-										<td className="py-2 px-3">{w.historyPlusValidUntil || '-'}</td>
-										<td className="py-2 px-3">{typeof w.credits === 'number' ? w.credits : '-'}</td>
-										<td className="py-2 px-3">{w.updatedAt || '-'}</td>
+                                        <td className="py-2 px-3">{w.userId || w.id}</td>
+                                        <td className="py-2 px-3">{w.historyPlusActive ? 'Sí' : 'No'}</td>
+                                        <td className="py-2 px-3">{typeof w.historyPlusValidUntil === 'string' ? w.historyPlusValidUntil : (w?.historyPlusValidUntil?.toDate?.() ? w.historyPlusValidUntil.toDate().toISOString() : (typeof w?.historyPlusValidUntil?._seconds === 'number' ? new Date(w.historyPlusValidUntil._seconds * 1000 + Math.round((w.historyPlusValidUntil._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
+                                        <td className="py-2 px-3">{typeof w.credits === 'number' ? w.credits : '-'}</td>
+                                        <td className="py-2 px-3">{typeof w.updatedAt === 'string' ? w.updatedAt : (w?.updatedAt?.toDate?.() ? w.updatedAt.toDate().toISOString() : (typeof w?.updatedAt?._seconds === 'number' ? new Date(w.updatedAt._seconds * 1000 + Math.round((w.updatedAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
 									</tr>
 								))}
 								{!filteredSubs.length && (
@@ -395,8 +395,8 @@ export default function AdminHome() {
 							</select>
 							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Usuario/Producto" value={paymentsQuery} onChange={(e)=>setPaymentsQuery(e.target.value)} />
 							<button className="rounded border px-3 py-1 text-sm" onClick={() => {
-								const headers = ['id','userId','productId','status','amount','currency','createdAt'];
-								const rows = filteredPayments.map((p:any) => [p.id,p.userId,p.productId,p.status,p.amount,p.currency,p.createdAt]);
+                                const headers = ['id','userId','productId','status','amount','currency','createdAt'];
+                                const rows = filteredPayments.map((p:any) => [p.id,p.userId,p.productId,p.status,p.amount,p.currency, typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : ''))]);
 								toCsvAndDownload('payments.csv', headers, rows);
 							}}>Exportar CSV</button>
 							<button
@@ -440,7 +440,7 @@ export default function AdminHome() {
 								</tr>
 							</thead>
 							<tbody>
-								{filteredPayments.map((p:any) => (
+                                {filteredPayments.map((p:any) => (
 									<tr key={p.id} className="border-t">
 										<td className="py-2 px-3">{p.id}</td>
 										<td className="py-2 px-3">{p.userId || '-'}</td>
@@ -448,7 +448,7 @@ export default function AdminHome() {
 										<td className="py-2 px-3">{p.status || '-'}</td>
 										<td className="py-2 px-3">{typeof p.amount === 'number' ? p.amount.toLocaleString('es-AR') : '-'}</td>
 										<td className="py-2 px-3">{p.currency || '-'}</td>
-										<td className="py-2 px-3">{p.createdAt || '-'}</td>
+                                        <td className="py-2 px-3">{typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
 									</tr>
 								))}
 								{!filteredPayments.length && (
@@ -500,8 +500,8 @@ export default function AdminHome() {
 						<div className="flex items-center gap-2">
 							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Email/Nombre" value={playersQuery} onChange={(e)=>setPlayersQuery(e.target.value)} />
 							<button className="rounded border px-3 py-1 text-sm" onClick={() => {
-								const headers = ['id','name','email','playerLevel','status','createdAt'];
-								const rows = filteredPlayers.map((p:any) => [p.id,p.name,p.email,p.playerLevel,p.status,p.createdAt]);
+                                const headers = ['id','name','email','playerLevel','status','createdAt'];
+                                const rows = filteredPlayers.map((p:any) => [p.id,p.name,p.email,p.playerLevel,p.status, typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : ''))]);
 								toCsvAndDownload('players.csv', headers, rows);
 							}}>Exportar CSV</button>
 						</div>
@@ -543,14 +543,14 @@ export default function AdminHome() {
 								</tr>
 							</thead>
 							<tbody>
-								{filteredPlayers.map((p:any) => (
+                                {filteredPlayers.map((p:any) => (
 									<tr key={p.id} className="border-t">
 										<td className="py-2 px-3">{p.id}</td>
 										<td className="py-2 px-3">{p.name || '-'}</td>
 										<td className="py-2 px-3">{p.email || '-'}</td>
 										<td className="py-2 px-3">{p.playerLevel || '-'}</td>
 										<td className="py-2 px-3">{p.status || '-'}</td>
-										<td className="py-2 px-3">{p.createdAt || '-'}</td>
+                                        <td className="py-2 px-3">{typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
 									</tr>
 								))}
 								{!filteredPlayers.length && (
@@ -650,7 +650,7 @@ export default function AdminHome() {
 										<td className="py-2 px-3">{c.email || '-'}</td>
 										<td className="py-2 px-3">{c.status || '-'}</td>
 										<td className="py-2 px-3">{typeof c.ratePerAnalysis === 'number' ? c.ratePerAnalysis : '-'}</td>
-										<td className="py-2 px-3">{c.createdAt || '-'}</td>
+                                        <td className="py-2 px-3">{typeof c.createdAt === 'string' ? c.createdAt : (c?.createdAt?.toDate?.() ? c.createdAt.toDate().toISOString() : (typeof c?.createdAt?._seconds === 'number' ? new Date(c.createdAt._seconds * 1000 + Math.round((c.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
 									</tr>
 								))}
 								{!filteredCoaches.length && (

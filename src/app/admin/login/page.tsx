@@ -5,14 +5,17 @@ import { useAuth } from "@/hooks/use-auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Eye, EyeOff } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function AdminLoginPage() {
-  const { user, userProfile, signIn, loading, signOutUser } = useAuth();
+  const { user, userProfile, signIn, loading, signOutUser, resetPassword } = useAuth();
   const [email, setEmail] = useState(process.env.NODE_ENV !== 'production' ? "abengolea@hotmail.com" : "");
   const [password, setPassword] = useState(process.env.NODE_ENV !== 'production' ? "afdlue4333379832" : "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (loading) return;
@@ -70,6 +73,32 @@ export default function AdminLoginPage() {
                 {showPassword ? <EyeOff className="h-4 w-4 text-gray-500" /> : <Eye className="h-4 w-4 text-gray-500" />}
               </button>
             </div>
+          </div>
+          <div className="flex items-center justify-end -mt-1">
+            <button
+              type="button"
+              className="text-xs text-primary underline disabled:opacity-50"
+              onClick={async () => {
+                if (!email) {
+                  toast({ title: 'Ingresa tu email', description: 'Escribe tu email para enviarte el enlace de recuperación.', variant: 'destructive' });
+                  return;
+                }
+                setResetting(true);
+                try {
+                  const res = await resetPassword(email);
+                  if (res.success) {
+                    toast({ title: 'Revisa tu correo', description: 'Te enviamos un enlace para restablecer tu contraseña.' });
+                  } else {
+                    toast({ title: 'No se pudo enviar', description: res.message, variant: 'destructive' });
+                  }
+                } finally {
+                  setResetting(false);
+                }
+              }}
+              disabled={resetting}
+            >
+              {resetting ? 'Enviando…' : '¿Olvidaste tu contraseña?'}
+            </button>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <Button type="submit" className="w-full" disabled={submitting}>{submitting? 'Ingresando…' : 'Ingresar'}</Button>

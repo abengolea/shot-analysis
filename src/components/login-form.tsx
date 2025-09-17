@@ -53,10 +53,11 @@ interface RoleSpecificFormProps {
 }
 
 function RoleSpecificForm({ role }: RoleSpecificFormProps) {
-    const { signIn } = useAuth();
+    const { signIn, resetPassword } = useAuth();
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+    const [resetting, setResetting] = useState(false);
     
     const form = useForm<LoginFormValues>({
         resolver: zodResolver(loginSchema),
@@ -160,6 +161,37 @@ function RoleSpecificForm({ role }: RoleSpecificFormProps) {
                         </FormItem>
                     )}
                 />
+                <div className="flex items-center justify-end -mt-2">
+                    <button
+                        type="button"
+                        className="text-xs text-primary underline disabled:opacity-50"
+                        onClick={async () => {
+                            const emailValue = form.getValues("email");
+                            if (!emailValue) {
+                                toast({
+                                    title: "Ingresa tu email",
+                                    description: "Escribe tu email arriba para enviar el enlace de recuperación.",
+                                    variant: "destructive",
+                                });
+                                return;
+                            }
+                            setResetting(true);
+                            try {
+                                const res = await resetPassword(emailValue);
+                                if (res.success) {
+                                    toast({ title: "Revisa tu correo", description: "Te enviamos un enlace para restablecer tu contraseña." });
+                                } else {
+                                    toast({ title: "No se pudo enviar", description: res.message, variant: "destructive" });
+                                }
+                            } finally {
+                                setResetting(false);
+                            }
+                        }}
+                        disabled={resetting}
+                    >
+                        {resetting ? "Enviando…" : "¿Olvidaste tu contraseña?"}
+                    </button>
+                </div>
                 <CardFooter className="p-0 pt-2">
                     <SubmitButton loading={loading} />
                 </CardFooter>
