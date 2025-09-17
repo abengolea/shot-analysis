@@ -30,18 +30,6 @@ const features = [
       "Visualiza tu evolución con gráficos claros y mantén un historial de todos tus análisis.",
   },
   {
-    icon: <BarChart3 />,
-    title: "Herramientas de medición",
-    description:
-      "Medí ángulos, distancias y ritmo para entender tu mecánica con precisión.",
-  },
-  {
-    icon: <Video />,
-    title: "Comparar antes/después",
-    description:
-      "Poné dos clips lado a lado y comprobá tu mejora cuadro a cuadro.",
-  },
-  {
     icon: <BotMessageSquare />,
     title: "Compartir con tu entrenador",
     description:
@@ -209,9 +197,6 @@ export default function LandingPage() {
             <Button size="lg" asChild>
               <Link href="/register">Crear cuenta <ArrowRight className="ml-2" /></Link>
             </Button>
-            <Button size="lg" variant="outline" asChild>
-              <Link href="/coach-register">Entrenadores</Link>
-            </Button>
           </div>
           <div className="mt-10 rounded-xl border bg-background/60 p-6 text-left">
             <h3 className="font-headline text-2xl font-bold">¿Sos entrenador?</h3>
@@ -223,9 +208,6 @@ export default function LandingPage() {
             <div className="mt-4 flex gap-3">
               <Button asChild>
                 <Link href="/coach-register">Registrarme como entrenador</Link>
-              </Button>
-              <Button variant="outline" asChild>
-                <Link href="/admin/prompts">Ver herramientas</Link>
               </Button>
             </div>
           </div>
