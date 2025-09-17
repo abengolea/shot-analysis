@@ -20,6 +20,7 @@ import { useFormStatus } from "react-dom";
 import { Input } from "./ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 
 
 function ScoreForm({ analysisId, currentScore }: { analysisId: string, currentScore?: number }) {
@@ -32,7 +33,7 @@ function ScoreForm({ analysisId, currentScore }: { analysisId: string, currentSc
                     name="score" 
                     type="number" 
                     placeholder="Ej: 85" 
-                    value={typeof currentScore === 'number' ? Number(currentScore.toFixed(2)) : ''}
+                    value={typeof currentScore === 'number' ? Math.round(currentScore <= 10 ? currentScore * 10 : (currentScore <= 5 ? (currentScore/5)*100 : currentScore)) : ''}
                     readOnly
                 />
             </div>
@@ -109,9 +110,14 @@ function ChecklistItem({
   };
 
   return (
-    <div className="space-y-3 sm:space-y-4 rounded-lg border p-3 sm:p-4">
+    <div className={`space-y-3 sm:space-y-4 rounded-lg border p-3 sm:p-4 ${coachInline && typeof coachValue?.rating === 'number' ? 'bg-emerald-50 border-emerald-300' : ''}`}>
       <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-1">
-        <h4 className="font-semibold text-sm sm:text-base">{item.name}</h4>
+        <h4 className="font-semibold text-sm sm:text-base flex items-center gap-2">
+          {item.name}
+          {coachInline && typeof coachValue?.rating === 'number' && (
+            <Badge variant="secondary" className="text-[11px]">Visto</Badge>
+          )}
+        </h4>
         <div className="flex items-center gap-2">
           {isNA ? (
             <>

@@ -35,6 +35,11 @@ import { PlayerVideosSection } from "@/components/player-videos-section";
 
 // Helper to format chart data from analyses
 const getChartData = (analyses: ShotAnalysis[]) => {
+    const toPct = (score: number): number => {
+        if (score <= 10) return Math.round(score * 10);
+        if (score <= 5) return Math.round((score / 5) * 100);
+        return Math.round(score);
+    };
     const playerAnalyses = analyses
         .filter(a => a.score !== undefined)
         .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -48,7 +53,7 @@ const getChartData = (analyses: ShotAnalysis[]) => {
         if (!monthlyScores[month]) {
             monthlyScores[month] = [];
         }
-        monthlyScores[month].push(analysis.score!);
+        monthlyScores[month].push(toPct(analysis.score!));
     });
 
     return Object.entries(monthlyScores).map(([month, scores]) => ({
@@ -84,12 +89,6 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
   const [activeTab, setActiveTab] = useState("overview");
   const latestAnalysisId = [...analyses].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]?.id;
 
-  useEffect(() => {
-    if (activeTab === 'checklist' && latestAnalysisId) {
-      window.location.href = `/analysis/${latestAnalysisId}`;
-    }
-  }, [activeTab, latestAnalysisId]);
-
   const filteredAnalyses = filter === 'all' 
     ? analyses 
     : analyses.filter(a => a.shotType === filter);
@@ -121,7 +120,7 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
         <div className="text-right">
           <div className="text-2xl font-bold text-primary">
             {analyses.length > 0 
-              ? (analyses.reduce((sum, a) => sum + (a.score || 0), 0) / analyses.length).toFixed(1)
+              ? Math.round(analyses.reduce((sum, a) => sum + (a.score ? (a.score <= 10 ? a.score * 10 : (a.score <= 5 ? (a.score/5)*100 : a.score)) : 0), 0) / analyses.length)
               : 'N/A'
             }
           </div>
@@ -146,7 +145,7 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
           </TabsTrigger>
           <TabsTrigger value="checklist" className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
-            Checklist IA
+            Análisis de tiro
           </TabsTrigger>
           <TabsTrigger value="progress" className="flex items-center gap-2">
             <BarChart className="h-4 w-4" />
@@ -297,16 +296,74 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
           </div>
         </TabsContent>
 
-        {/* Pestaña: Checklist IA (redirige al último análisis) */}
-        <TabsContent value="checklist" className="space-y-6">
-          {!latestAnalysisId ? (
+        {/* Pestaña: Análisis de tiro (listado) */}
+        <TabsContent value="checklist" className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">Total: {analyses.length}</Badge>
+            <div className="ml-auto flex items-center gap-2">
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="h-9 rounded-md border bg-background px-3 text-sm"
+              >
+                <option value="all">Todos los tipos</option>
+                <option value="Tiro Libre">Tiro Libre</option>
+                <option value="Lanzamiento de Media Distancia (Jump Shot)">Media Distancia</option>
+                <option value="Lanzamiento de Tres">Tres Puntos</option>
+              </select>
+              {latestAnalysisId && (
+                <Link
+                  href={`/analysis/${latestAnalysisId}`}
+                  className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground"
+                >
+                  Ir al último análisis
+                </Link>
+              )}
+            </div>
+          </div>
+
+          {filteredAnalyses.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
-              <h3 className="text-lg font-semibold mb-2">No hay análisis</h3>
-              <p>Este jugador aún no tiene análisis para mostrar el checklist.</p>
+              <h3 className="text-lg font-semibold mb-2">Sin resultados</h3>
+              <p>No hay análisis para los filtros seleccionados.</p>
             </div>
           ) : (
-            <div className="text-center py-12 text-muted-foreground">
-              Abriendo checklist del último análisis...
+            <div className="rounded-md border overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 text-muted-foreground">
+                  <tr>
+                    <th className="text-left font-medium px-3 py-2">Fecha</th>
+                    <th className="text-left font-medium px-3 py-2">Tipo</th>
+                    <th className="text-left font-medium px-3 py-2">Score</th>
+                    <th className="text-left font-medium px-3 py-2">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAnalyses
+                    .slice()
+                    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                    .map((a) => {
+                      const score = a.score != null ? (a.score <= 10 ? Math.round(a.score * 10) : (a.score <= 5 ? Math.round((a.score/5)*100) : Math.round(a.score))) : '-';
+                      const isLatest = a.id === latestAnalysisId;
+                      return (
+                        <tr key={a.id} className={isLatest ? 'bg-primary/5' : ''}>
+                          <td className="px-3 py-2 whitespace-nowrap"><FormattedDate dateString={a.createdAt} /></td>
+                          <td className="px-3 py-2 whitespace-nowrap">{a.shotType}</td>
+                          <td className="px-3 py-2">{score}</td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Link href={`/analysis/${a.id}`} className="underline">Ver checklist</Link>
+                              {a.videoUrl && (
+                                <Link href={`/analysis/${a.id}`} className="text-muted-foreground underline">Ver video</Link>
+                              )}
+                              <a href={`/analysis/${a.id}`} target="_blank" rel="noopener noreferrer" className="text-muted-foreground underline">Abrir nueva pestaña</a>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
             </div>
           )}
         </TabsContent>

@@ -38,21 +38,36 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
     }
   };
 
-  const getScoreColor = (score: number) => {
-    if (score >= 8) return "text-green-600";
-    if (score >= 6) return "text-yellow-600";
+  // score 0..100 (compat: si viene 0..10 o 0..5, convertir a 0..100)
+  const toPct = (score: number): number => {
+    if (score <= 10) {
+      // Heurística: si es decimal con un dígito típico (7.2, 8.5) asumir escala 0..10
+      return Math.round(score * 10);
+    }
+    if (score <= 5) {
+      return Math.round((score / 5) * 100);
+    }
+    return Math.round(score);
+  };
+
+  const getScoreColor = (scoreRaw: number) => {
+    const score = toPct(scoreRaw);
+    if (score >= 80) return "text-green-600";
+    if (score >= 60) return "text-yellow-600";
     return "text-red-600";
   };
 
-  const getScoreBadgeVariant = (score: number) => {
-    if (score >= 8) return "default";
-    if (score >= 6) return "secondary";
+  const getScoreBadgeVariant = (scoreRaw: number) => {
+    const score = toPct(scoreRaw);
+    if (score >= 80) return "default";
+    if (score >= 60) return "secondary";
     return "destructive";
   };
 
-  const getProgressColor = (score: number) => {
-    if (score >= 8) return "bg-green-500";
-    if (score >= 6) return "bg-yellow-500";
+  const getProgressColor = (scoreRaw: number) => {
+    const score = toPct(scoreRaw);
+    if (score >= 80) return "bg-green-500";
+    if (score >= 60) return "bg-yellow-500";
     return "bg-red-500";
   };
 
@@ -66,11 +81,11 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
   );
 
   const averageScore = analyses.length > 0 
-    ? analyses.reduce((sum, a) => sum + (a.score || 0), 0) / analyses.length 
+    ? Math.round(analyses.reduce((sum, a) => sum + toPct(a.score || 0), 0) / analyses.length)
     : 0;
 
   const scoreTrend = analyses.length >= 2 ? 
-    (analyses[analyses.length - 1].score || 0) - (analyses[0].score || 0) : 0;
+    (toPct(analyses[analyses.length - 1].score || 0) - toPct(analyses[0].score || 0)) : 0;
 
   return (
     <div className="space-y-6">
@@ -93,7 +108,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold mb-2 flex items-center justify-center gap-2">
-                {averageScore.toFixed(1)}
+                {averageScore}
                 <Star className="h-5 w-5 text-yellow-500" />
               </div>
               <p className="text-sm text-muted-foreground">Puntuación Promedio</p>
@@ -139,7 +154,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                     </Badge>
                     {typeof analysis.score === 'number' && (
                       <Badge variant={getScoreBadgeVariant(analysis.score)}>
-                        {analysis.score}
+                        {toPct(analysis.score)}
                       </Badge>
                     )}
                   </div>
@@ -170,11 +185,11 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-muted-foreground">Puntuación</span>
                           <span className={`font-semibold ${getScoreColor(analysis.score)}`}>
-                            {analysis.score}/10
+                            {toPct(analysis.score)}/100
                           </span>
                         </div>
                         <Progress 
-                          value={analysis.score * 10} 
+                          value={toPct(analysis.score)} 
                           className={`h-2 ${getProgressColor(analysis.score)}`}
                         />
                       </div>
@@ -288,7 +303,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                     <div>
                       <h4 className="font-semibold mb-2">Puntuación</h4>
                       <div className="text-2xl font-bold text-primary">
-                        {selectedAnalysis.score}/10
+                        {toPct(selectedAnalysis.score)}/100
                       </div>
                     </div>
                   )}

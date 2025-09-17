@@ -39,6 +39,7 @@ export default function CoachRegisterPage() {
   const [bio, setBio] = useState<string>("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [submitted, setSubmitted] = useState<boolean>(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
@@ -67,16 +68,19 @@ export default function CoachRegisterPage() {
       }
       if (!email) { alert('Email es requerido'); return; }
       if (!name) { alert('Nombre es requerido'); return; }
-      if (!photoFile) { alert('Debes subir una foto'); return; }
+      // Foto ahora es opcional
 
       setSubmitting(true);
 
-      // Subir foto a Storage en una ruta interna
-      const safeName = (photoFile.name || 'photo').replace(/[^a-zA-Z0-9_.-]/g, '_');
-      const filePath = `profile-images/${user.uid}/${Date.now()}-${safeName}`;
-      const fileRef = ref(storage, filePath);
-      await uploadBytes(fileRef, photoFile, { contentType: photoFile.type });
-      const photoUrl = await getDownloadURL(fileRef);
+      // Subir foto si se proporcionó
+      let photoUrl: string | null = null;
+      if (photoFile) {
+        const safeName = (photoFile.name || 'photo').replace(/[^a-zA-Z0-9_.-]/g, '_');
+        const filePath = `profile-images/${user.uid}/${Date.now()}-${safeName}`;
+        const fileRef = ref(storage, filePath);
+        await uploadBytes(fileRef, photoFile, { contentType: photoFile.type });
+        photoUrl = await getDownloadURL(fileRef);
+      }
 
       // Llamar API para crear la solicitud
       const token = await user.getIdToken();
@@ -93,7 +97,7 @@ export default function CoachRegisterPage() {
         throw new Error(data?.error || 'Error al enviar la solicitud');
       }
 
-      alert('Solicitud enviada. Un administrador revisará tu alta como entrenador.');
+      setSubmitted(true);
       setBio('');
       setPhotoFile(null);
     } catch (err: any) {
@@ -135,27 +139,41 @@ export default function CoachRegisterPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <form className="space-y-4" onSubmit={handleSubmit}>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled />
+                {submitted ? (
+                  <div className="flex flex-col items-center text-center gap-4 py-6">
+                    <div className="rounded-full bg-green-100 p-3 text-green-700">
+                      <CheckCircle className="h-8 w-8" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-semibold">¡Solicitud enviada!</h3>
+                      <p className="mt-2 text-muted-foreground">
+                        Ya recibimos tu solicitud. A la brevedad te estaremos contactando para poder ser parte del staff.
+                      </p>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Nombre completo</Label>
-                    <Input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Tu nombre" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bio">Bio corta (opcional)</Label>
-                    <Textarea id="bio" value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Experiencia, enfoque, logros" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="photo">Foto de perfil (JPG/PNG/WEBP, máx 5MB)</Label>
-                    <Input id="photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFileChange} required />
-                  </div>
-                  <Button type="submit" className="w-full" disabled={submitting}>
-                    {submitting ? 'Enviando...' : 'Enviar solicitud'}
-                  </Button>
-                </form>
+                ) : (
+                  <form className="space-y-4" onSubmit={handleSubmit}>
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email</Label>
+                      <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Nombre completo</Label>
+                      <Input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Tu nombre" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bio">Bio corta (opcional)</Label>
+                      <Textarea id="bio" value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Experiencia, enfoque, logros" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="photo">Foto de perfil (opcional) — JPG/PNG/WEBP, máx 5MB</Label>
+                      <Input id="photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFileChange} />
+                    </div>
+                    <Button type="submit" className="w-full" disabled={submitting}>
+                      {submitting ? 'Enviando...' : 'Enviar solicitud'}
+                    </Button>
+                  </form>
+                )}
               </CardContent>
             </Card>
           )}

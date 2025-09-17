@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 
 interface Analysis {
   id: string;
@@ -159,37 +160,39 @@ export default function AnalysisPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="flex items-center gap-4 mb-8">
-        <Button variant="outline" size="icon" asChild>
-          <Link href="/dashboard">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        
-        <Avatar className="h-16 w-16">
-          <AvatarImage src={player.avatarUrl} alt={player.name} />
-          <AvatarFallback>{player.name.charAt(0)}</AvatarFallback>
-        </Avatar>
-        
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start gap-4 justify-between">
-            <div className="min-w-0">
-              <h1 className="text-3xl font-bold flex items-center gap-3">
-                Análisis de {analysis.shotType}
-                {Array.isArray((analysis as any).attempts) && ( (analysis as any).attempts.length > 0) && (
-                  <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 text-sm text-muted-foreground">
-                    Intentos: {(analysis as any).attempts.length}
-                  </span>
-                )}
-              </h1>
-              <p className="text-muted-foreground">
-                Jugador: {player.name} • {new Date(analysis.createdAt).toLocaleDateString('es-ES')}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Nivel: {player.playerLevel || 'Por definir'} • Grupo: {player.ageGroup || 'Por definir'}
-              </p>
+      <div className="mb-8 rounded-xl border bg-gradient-to-r from-primary/5 to-transparent p-4 md:p-6">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" asChild>
+            <Link href="/dashboard">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+
+          <Avatar className="h-20 w-20">
+            <AvatarImage src={player.avatarUrl} alt={player.name} />
+            <AvatarFallback>{player.name.charAt(0)}</AvatarFallback>
+          </Avatar>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start gap-4 justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge>{analysis.shotType}</Badge>
+                  <span className="text-sm text-muted-foreground">{new Date(analysis.createdAt).toLocaleDateString('es-ES')}</span>
+                  {Array.isArray((analysis as any).attempts) && ( (analysis as any).attempts.length > 0) && (
+                    <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                      Intentos: {(analysis as any).attempts.length}
+                    </span>
+                  )}
+                </div>
+                <h1 className="mt-1 text-3xl md:text-4xl font-bold leading-tight">{player.name}</h1>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Badge variant="secondary">{player.playerLevel || 'Nivel: Por definir'}</Badge>
+                  <Badge variant="secondary">{player.ageGroup || 'Grupo: Por definir'}</Badge>
+                </div>
+              </div>
+              {/* Botones de compartir movidos debajo del resumen */}
             </div>
-            {/* Botones de compartir movidos debajo del resumen */}
           </div>
         </div>
       </div>

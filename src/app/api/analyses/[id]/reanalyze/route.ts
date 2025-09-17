@@ -86,18 +86,19 @@ export async function POST(
       promptConfig,
     });
 
-    // Calcular score simple (promedio 1..5)
+    // Calcular score 0..100 a partir del promedio 1..5
     const allRatings: number[] = (aiResult.detailedChecklist || [])
       .flatMap((c: any) => c.items || [])
       .map((it: any) => (typeof it.rating === 'number' ? it.rating : null))
       .filter((v: any) => typeof v === 'number');
-    const score: number | null = allRatings.length > 0 ? Number((allRatings.reduce((a:number,b:number)=>a+b,0)/allRatings.length).toFixed(2)) : null;
+    const avgRating: number | null = allRatings.length > 0 ? (allRatings.reduce((a:number,b:number)=>a+b,0)/allRatings.length) : null;
+    const score: number | null = avgRating != null ? Math.round(Math.max(0, Math.min(100, (avgRating / 5) * 100))) : null;
 
     await adminDb.collection('analyses').doc(id).set({
       analysisResult: aiResult,
       detailedChecklist: aiResult.detailedChecklist || [],
       score,
-      scoreLabel: score != null ? (score>=4.5?'Excelente':score>=4?'Correcto':score>=3?'Mejorable':score>=2?'Incorrecto leve':'Incorrecto') : null,
+      scoreLabel: score != null ? (score>=90?'Excelente':score>=80?'Correcto':score>=60?'Mejorable':score>=40?'Incorrecto leve':'Incorrecto') : null,
       updatedAt: new Date().toISOString(),
     }, { merge: true });
 

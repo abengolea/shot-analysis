@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     if (!email) return NextResponse.json({ error: 'email requerido' }, { status: 400 });
     if (!name) return NextResponse.json({ error: 'nombre requerido' }, { status: 400 });
-    if (!photoUrl) return NextResponse.json({ error: 'photoUrl requerido' }, { status: 400 });
+    // Foto ahora es opcional
 
     const now = new Date();
     const data = {
@@ -58,13 +58,50 @@ export async function POST(request: NextRequest) {
 
     const ref = await adminDb.collection('coach_applications').add(data);
 
+    // Crear ticket para notificación del admin
+    try {
+      const nowIso = new Date().toISOString();
+      const subject = `Solicitud de alta de entrenador: ${name}`;
+      const description = `Nombre: ${name}\nEmail: ${who.email || email}\nBio: ${bio || '-'}\nFoto: ${photoUrl || '-'}`;
+      const ticketData = {
+        userId: who.uid,
+        userEmail: who.email || email,
+        subject,
+        category: 'coach_application',
+        description,
+        status: 'open' as const,
+        priority: 'normal' as const,
+        adminAssigneeId: null as string | null,
+        unreadForAdmin: 1,
+        unreadForUser: 0,
+        lastMessageAt: nowIso,
+        lastSenderRole: 'user' as const,
+        firstResponseAt: null as string | null,
+        resolutionAt: null as string | null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      const ticketRef = await adminDb.collection('tickets').add(ticketData);
+      const msg = {
+        ticketId: ticketRef.id,
+        senderId: who.uid,
+        senderRole: 'user' as const,
+        text: description,
+        attachments: [] as string[],
+        createdAt: nowIso,
+      };
+      await adminDb.collection('tickets').doc(ticketRef.id).collection('messages').add(msg);
+    } catch (e) {
+      console.warn('No se pudo crear el ticket para la solicitud de entrenador', e);
+    }
+
     // Notificación admin (placeholder via email-service)
     try {
       const { sendCustomEmail } = await import('@/lib/email-service');
       await sendCustomEmail({
         to: 'abengolea1@gmail.com',
         subject: `Nueva solicitud de entrenador: ${name}`,
-        html: `<p>Usuario: ${who.email || email}</p><p>Nombre: ${name}</p><p>Bio: ${bio || '-'}</p><p>Foto: ${photoUrl}</p><p>ID: ${ref.id}</p>`
+        html: `<p>Usuario: ${who.email || email}</p><p>Nombre: ${name}</p><p>Bio: ${bio || '-'}</p><p>Foto: ${photoUrl || '-'}</p><p>ID: ${ref.id}</p>`
       });
     } catch {}
 

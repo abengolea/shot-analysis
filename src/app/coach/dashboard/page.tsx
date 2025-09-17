@@ -82,6 +82,9 @@ export default function CoachDashboardPage() {
   const [acceptDialogOpen, setAcceptDialogOpen] = useState<boolean>(false);
   const [acceptTargetUrl, setAcceptTargetUrl] = useState<string>("");
   const [acceptPlayerLabel, setAcceptPlayerLabel] = useState<string>("");
+  const [rejectFor, setRejectFor] = useState<Message | null>(null);
+  const [rejectText, setRejectText] = useState<string>("");
+  const [rejecting, setRejecting] = useState<boolean>(false);
 
   const sendReply = async () => {
     if (!user || !replyFor || !replyText.trim()) return;
@@ -140,6 +143,34 @@ export default function CoachDashboardPage() {
       toast({ title: 'Error', description: 'No se pudo aceptar la propuesta.', variant: 'destructive' });
     } finally {
       setAcceptingId(null);
+    }
+  };
+
+  const sendReject = async () => {
+    if (!user || !rejectFor || !rejectText.trim()) return;
+    try {
+      setRejecting(true);
+      const colRef = collection(db as any, 'messages');
+      const payload = {
+        fromId: user.uid,
+        fromName: user.displayName || 'Entrenador',
+        toId: rejectFor.fromId,
+        toName: rejectFor.fromName || rejectFor.fromId,
+        text: rejectText.trim(),
+        createdAt: serverTimestamp(),
+        read: false,
+      } as any;
+      await addDoc(colRef, payload);
+      // Marcar el mensaje original como leído
+      try { await updateDoc(doc(db as any, 'messages', rejectFor.id), { read: true, readAt: new Date().toISOString() }); } catch {}
+      setRejectFor(null);
+      setRejectText("");
+      toast({ title: 'Rechazado', description: 'Se envió tu respuesta al jugador.' });
+    } catch (e) {
+      console.error('Error enviando rechazo:', e);
+      toast({ title: 'Error', description: 'No se pudo enviar el rechazo.', variant: 'destructive' });
+    } finally {
+      setRejecting(false);
     }
   };
 
@@ -257,6 +288,23 @@ export default function CoachDashboardPage() {
                     <button className="text-xs text-green-600 disabled:opacity-50" disabled={acceptingId === m.id} onClick={() => acceptPlayer(m)}>
                       {acceptingId === m.id ? 'Aceptando…' : 'Aceptar propuesta'}
                     </button>
+                    <Dialog open={rejectFor?.id === m.id} onOpenChange={(open) => { if (open) { setRejectFor(m); setRejectText(`Lamentablemente no puedo ayudarte en este momento. ¡Gracias por contactarme!\n\n— ${user?.displayName || 'Entrenador'}`); } else { setRejectFor(null); setRejectText(""); } }}>
+                      <DialogTrigger asChild>
+                        <button className="text-xs text-red-600">Rechazar</button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Rechazar solicitud de {m.fromName || m.fromId}</DialogTitle>
+                          <DialogDescription>Envía un mensaje opcional para explicar el rechazo.</DialogDescription>
+                        </DialogHeader>
+                        <Textarea value={rejectText} onChange={(e) => setRejectText(e.target.value)} rows={4} />
+                        <DialogFooter>
+                          <Button onClick={sendReject} disabled={rejecting || !rejectText.trim()} variant="destructive">
+                            {rejecting ? 'Enviando…' : 'Enviar rechazo'}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
                     <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
                       <DialogTrigger asChild>
                         <button className="text-xs text-primary">Responder</button>

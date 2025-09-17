@@ -318,11 +318,17 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     : (recommendationsFromChecklist.length > 0 ? recommendationsFromChecklist : (analysisResult.recommendations || []));
   const derivedKeyframeAnalysis: string | null = (analysis as any).keyframeAnalysis || analysisResult.keyframeAnalysis || null;
 
+  const toPct = (score: number): number => {
+    if (score <= 10) return Math.round(score * 10);
+    if (score <= 5) return Math.round((score / 5) * 100);
+    return Math.round(score);
+  };
+
   const safeAnalysis = {
     ...analysis,
     keyframes: safeKeyframes,
     detailedChecklist: analysis.detailedChecklist || [],
-    score: analysis.score || 0,
+    score: typeof analysis.score === 'number' ? toPct(analysis.score) : 0,
     strengths: derivedStrengths,
     weaknesses: derivedWeaknesses,
     recommendations: derivedRecommendations,
@@ -740,20 +746,16 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     );
   };
 
-  const defaultTab = isCoach ? 'coach-feedback' : 'ai-analysis';
+  const defaultTab = 'ai-analysis';
   return (
     <>
       <Tabs defaultValue={defaultTab} className="w-full">
-        <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap md:grid md:grid-cols-5">
+        <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap md:grid md:grid-cols-4">
           <TabsTrigger value="ai-analysis" className="min-w-[140px] md:min-w-0 whitespace-nowrap flex-shrink-0">
             <Bot className="mr-2" /> Análisis IA
           </TabsTrigger>
           <TabsTrigger value="checklist" className="min-w-[120px] md:min-w-0 whitespace-nowrap flex-shrink-0">
               <ListChecks className="mr-2" /> Checklist IA
-          </TabsTrigger>
-        
-          <TabsTrigger value="coach-feedback" className="min-w-[160px] md:min-w-0 whitespace-nowrap flex-shrink-0">
-            <FilePenLine className="mr-2" /> Entrenador
           </TabsTrigger>
           <TabsTrigger value="coach-checklist" className="min-w-[200px] md:min-w-0 whitespace-nowrap flex-shrink-0">
             <ListChecks className="mr-2" /> Checklist Entrenador
@@ -926,7 +928,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 <p className="text-muted-foreground">{safeAnalysis.analysisSummary}</p>
                 {avgRating != null && (
                   <div className="mt-3 flex items-center gap-3">
-                    <Badge>{avgRating} / 5</Badge>
+                    <Badge>{Math.round((avgRating/5)*100)} / 100</Badge>
                     <span className="text-sm text-muted-foreground">Evaluación final: {scoreLabel(avgRating)}</span>
                   </div>
                 )}
@@ -1152,11 +1154,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             </Card>
           </div>
         </TabsContent>
-        <TabsContent value="coach-feedback" className="mt-6">
-          <div className="flex flex-col gap-8">
-            {/* Se dejaron solo elementos propios del entrenador abajo (si agregás otro contenido) */}
-          </div>
-        </TabsContent>
+        
         {isCoach && (
           <TabsContent value="coach-checklist" className="mt-6">
             <Card>

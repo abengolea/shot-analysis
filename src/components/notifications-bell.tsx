@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Bell, Check } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query, updateDoc, where, doc } from "firebase/firestore";
@@ -18,14 +19,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export function NotificationsBell() {
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [ticketsUnread, setTicketsUnread] = useState<number>(0);
   const unread = messages.filter(m => !m.read);
   const totalUnread = (unread?.length || 0) + (ticketsUnread || 0);
+  const isAdmin = (userProfile as any)?.role === 'admin';
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || isAdmin) return; // Admin no ve mensajes directos
     try {
       const q1 = query(
         collection(db as any, 'messages'),
@@ -51,7 +54,7 @@ export function NotificationsBell() {
     } catch (e) {
       console.error('Error cargando mensajes:', e);
     }
-  }, [user]);
+  }, [user, isAdmin]);
 
   // Contador de tickets no leídos (para user o admin)
   useEffect(() => {
@@ -77,11 +80,23 @@ export function NotificationsBell() {
 
   const markAllAsRead = async () => {
     try {
-      const toMark = messages.filter(m => !m.read);
-      await Promise.all(toMark.map(async (m) => {
-        const ref = doc(db as any, 'messages', m.id);
-        await updateDoc(ref, { read: true, readAt: new Date().toISOString() });
-      }));
+      if (!isAdmin) {
+        const toMark = messages.filter(m => !m.read);
+        await Promise.all(toMark.map(async (m) => {
+          const ref = doc(db as any, 'messages', m.id);
+          await updateDoc(ref, { read: true, readAt: new Date().toISOString() });
+        }));
+      }
+      // Marcar tickets como leídos en backend
+      try {
+        const auth = getAuth();
+        const cu = auth.currentUser;
+        if (cu) {
+          const token = await getIdToken(cu, true);
+          await fetch('/api/tickets/mark-read', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+          setTicketsUnread(0);
+        }
+      } catch {}
     } catch (e) {
       console.error('Error marcando como leído:', e);
     }
@@ -102,7 +117,7 @@ export function NotificationsBell() {
       <DropdownMenuContent className="w-80" align="end" forceMount>
         <DropdownMenuLabel className="flex items-center justify-between">
           <span>Novedades</span>
-          {unread.length > 0 && (
+          {((!isAdmin && unread.length > 0) || (isAdmin && ticketsUnread > 0)) && (
             <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={markAllAsRead}>
               <Check className="h-3 w-3 mr-1" /> Marcar leídas
             </Button>
@@ -110,11 +125,11 @@ export function NotificationsBell() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <div className="px-3 py-2 text-xs text-muted-foreground">Tickets sin leer: {ticketsUnread}</div>
-        {messages.length === 0 && (
+        {!isAdmin && messages.length === 0 && (
           <div className="p-3 text-sm text-muted-foreground">Sin mensajes</div>
         )}
-        {messages.slice(0, 10).map((m) => (
-          <DropdownMenuItem key={m.id} className="flex flex-col items-start gap-1 py-3">
+        {!isAdmin && messages.slice(0, 10).map((m) => (
+          <DropdownMenuItem key={m.id} className="flex flex-col items-start gap-1 py-3" onClick={() => { try { router.push('/support'); } catch {} }}>
             <div className="text-xs text-muted-foreground">{new Date(m.createdAt || Date.now()).toLocaleString()}</div>
             <div className="text-sm">{m.text}</div>
           </DropdownMenuItem>

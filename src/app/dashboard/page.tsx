@@ -46,6 +46,7 @@ export default function DashboardPage() {
   const [userAnalyses, setUserAnalyses] = useState<any[]>([]);
   const [analysesLoading, setAnalysesLoading] = useState(true);
   const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
+  const [coachFeedbackByAnalysis, setCoachFeedbackByAnalysis] = useState<Record<string, boolean>>({});
 
   // Controles de filtro/rango
   const [range, setRange] = useState<string>("12m"); // 3m,6m,12m,5y,all
@@ -78,7 +79,52 @@ export default function DashboardPage() {
     }
   }, [user?.uid]);
 
-  // Si está cargando, mostrar loading
+  // Cargar disponibilidad de feedback de entrenador para cada análisis listado
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        if (!user || !userAnalyses.length) return;
+        const token = await user.getIdToken();
+        const toCheck = userAnalyses.slice(0, 30); // limitar por rendimiento
+        const results = await Promise.all(toCheck.map(async (a) => {
+          try {
+            const res = await fetch(`/api/analyses/${a.id}/coach-feedback`, { headers: { Authorization: `Bearer ${token}` } });
+            if (!res.ok) return [a.id, false] as const;
+            const data = await res.json();
+            return [a.id, Boolean(data?.feedback)] as const;
+          } catch {
+            return [a.id, false] as const;
+          }
+        }));
+        if (cancelled) return;
+        const map: Record<string, boolean> = {};
+        for (const [id, has] of results) map[id] = has;
+        setCoachFeedbackByAnalysis(map);
+      } catch {}
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [user, userAnalyses]);
+
+  // Redirecciones fuera del render para evitar actualizar durante render
+  useEffect(() => {
+    if (loading) return;
+    if (!user || !userProfile) {
+      router.replace('/login');
+      return;
+    }
+    if ((userProfile as any).role === 'admin') {
+      router.replace('/admin');
+    }
+  }, [loading, user, userProfile, router]);
+
+  // Evitar render mientras se decide o se redirige
+  if (!user || !userProfile || (userProfile as any).role === 'admin') {
+    return null;
+  }
+
+  // Mostrar loader cuando aún está cargando
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -88,18 +134,6 @@ export default function DashboardPage() {
         </div>
       </div>
     );
-  }
-
-  // Si no hay usuario, redirigir al login
-  if (!user || !userProfile) {
-    router.push('/login');
-    return null;
-  }
-
-  // Si es admin, redirigir al panel de admin
-  if ((userProfile as any).role === 'admin') {
-    router.push('/admin');
-    return null;
   }
 
   // Helpers: derivar score desde checklist si falta
@@ -112,23 +146,31 @@ export default function DashboardPage() {
     if (s === 'Excelente') return 5;
     return null;
   };
+  // Convertir scores legacy a 0..100
+  const toPct = (score: number): number => {
+    if (score <= 10) return Math.round(score * 10);
+    if (score <= 5) return Math.round((score / 5) * 100);
+    return Math.round(score);
+  };
+
   const getDerivedScore = (a: any): number | null => {
     if (!a) return null;
-    if (typeof a.score === 'number') return Number(a.score);
+    if (typeof a.score === 'number') return toPct(Number(a.score));
     const cats = Array.isArray(a.detailedChecklist) ? a.detailedChecklist : (a.analysisResult && Array.isArray(a.analysisResult.detailedChecklist) ? a.analysisResult.detailedChecklist : []);
     if (!cats.length) return null;
     const vals = cats.flatMap((c: any) => c.items || [])
       .map((it: any) => (typeof it.rating === 'number' ? it.rating : mapStatusToRating(it.status)))
       .filter((v: any) => typeof v === 'number');
     if (!vals.length) return null;
-    return Number((vals.reduce((s: number, v: number) => s + v, 0) / vals.length).toFixed(2));
+    const avg1to5 = vals.reduce((s: number, v: number) => s + v, 0) / vals.length;
+    return Math.round((avg1to5 / 5) * 100);
   };
 
   // Obtener el último análisis (ya viene ordenado por fecha desc)
   const lastAnalysis = userAnalyses.length > 0 ? userAnalyses[0] : null;
   const lastScore = getDerivedScore(lastAnalysis);
 
-  // Promedios por tipo (1..5) y como porcentaje
+  // Promedios por tipo en 0..100
   const avgScore = (type: string) => {
     const vals = userAnalyses
       .filter((a) => a.status === 'analyzed' && a.shotType === type)
@@ -136,9 +178,9 @@ export default function DashboardPage() {
       .filter((v): v is number => typeof v === 'number');
     if (!vals.length) return null;
     const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
-    return Number(avg.toFixed(2));
+    return Math.round(avg);
   };
-  const pct = (score: number | null) => (score == null ? 'N/A' : `${Math.round((score / 5) * 100)}%`);
+  const pct = (score: number | null) => (score == null ? 'N/A' : `${Math.round(score)} / 100`);
   const avgThree = avgScore('Lanzamiento de Tres');
   const avgJump = avgScore('Lanzamiento de Media Distancia (Jump Shot)');
   const avgFree = avgScore('Tiro Libre');
@@ -259,7 +301,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {lastScore != null ? `${lastScore} / 5` : (userProfile.role === 'player' && userProfile.playerLevel ? userProfile.playerLevel : 'N/A')}
+              {lastScore != null ? `${Math.round(lastScore)} / 100` : (userProfile.role === 'player' && userProfile.playerLevel ? userProfile.playerLevel : 'N/A')}
             </div>
             <p className="text-xs text-muted-foreground mb-2">
               {lastScore != null
@@ -347,7 +389,7 @@ export default function DashboardPage() {
                         <FormattedDate dateString={analysis.createdAt} />
                         {getStatusBadge(analysis.status)}
                       </div>
-                      {analysis.status === 'analyzed' && (
+                      {analysis.status === 'analyzed' && coachFeedbackByAnalysis[analysis.id] && (
                         <div className="mt-1 text-xs text-green-700">
                           Feedback del entrenador disponible si tu entrenador lo agregó.
                         </div>

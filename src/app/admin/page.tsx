@@ -185,6 +185,53 @@ export default function AdminHome() {
 								<div className="rounded border p-4"><div className="text-xs text-gray-500">Análisis totales</div><div className="text-2xl font-semibold">{metrics.analysesCount}</div></div>
 							</div>
 
+							{/* Acciones de mantenimiento */}
+							<div className="mt-4 rounded border p-4 space-y-3">
+								<h2 className="text-lg font-medium">Mantenimiento</h2>
+								<p className="text-sm text-gray-600">Recalcular puntajes históricos a escala 0–100.</p>
+								<div className="flex flex-wrap gap-2">
+									<button
+										className="rounded border px-3 py-1 text-sm"
+										onClick={async () => {
+											try {
+												const auth = getAuth();
+												const cu = auth.currentUser;
+												if (!cu) throw new Error('Usuario no autenticado');
+												const token = await getIdToken(cu, true);
+												const res = await fetch('/api/admin/recalculate-scores', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+												const data = await res.json();
+												alert(res.ok ? `Recalculados: ${data.updated}` : `Error: ${data.error || res.status}`);
+											} catch (e: any) {
+												alert(e?.message || 'Error ejecutando recálculo');
+											}
+										}}
+									>
+										Recalcular puntajes (todos)
+									</button>
+									<button
+										className="rounded border px-3 py-1 text-sm"
+										onClick={async () => {
+											try {
+												const auth = getAuth();
+												const cu = auth.currentUser;
+												if (!cu) throw new Error('Usuario no autenticado');
+												const token = await getIdToken(cu, true);
+												const shotType = prompt('Filtrar por tipo (tres/media/libre). Dejar vacío para todos:') || '';
+												const url = new URL('/api/admin/recalculate-scores', window.location.origin);
+												if (shotType) url.searchParams.set('shotType', shotType);
+												const res = await fetch(url.toString(), { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+												const data = await res.json();
+												alert(res.ok ? `Recalculados: ${data.updated}` : `Error: ${data.error || res.status}`);
+											} catch (e: any) {
+												alert(e?.message || 'Error ejecutando recálculo');
+											}
+										}}
+									>
+										Recalcular por tipo
+									</button>
+								</div>
+							</div>
+
 							{/* Series semanales */}
 							<div className="mt-4 rounded border p-4">
 								<h2 className="text-lg font-medium">Últimas 8 semanas</h2>
