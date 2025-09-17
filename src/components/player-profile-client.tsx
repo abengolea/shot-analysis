@@ -32,14 +32,15 @@ import { PlayerCommentsSection } from "@/components/player-comments-section";
 import { Button } from "@/components/ui/button";
 import { PlayerVideosSection } from "@/components/player-videos-section";
 
+// Normaliza cualquier escala a 0..100 con 1 decimal (prioriza 1..5, luego 1..10)
+const toPct = (score: number): number => {
+    if (score <= 5) return Number(((score / 5) * 100).toFixed(1));
+    if (score <= 10) return Number(((score) * 10).toFixed(1));
+    return Number((Number(score)).toFixed(1));
+};
 
 // Helper to format chart data from analyses
 const getChartData = (analyses: ShotAnalysis[]) => {
-    const toPct = (score: number): number => {
-        if (score <= 10) return Math.round(score * 10);
-        if (score <= 5) return Math.round((score / 5) * 100);
-        return Math.round(score);
-    };
     const playerAnalyses = analyses
         .filter(a => a.score !== undefined)
         .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -58,7 +59,7 @@ const getChartData = (analyses: ShotAnalysis[]) => {
 
     return Object.entries(monthlyScores).map(([month, scores]) => ({
         month: month.split(' ')[0].charAt(0).toUpperCase() + month.split(' ')[0].slice(1), // just month name, capitalized
-        score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
+        score: Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)),
     }));
 };
 
@@ -101,26 +102,35 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
     <div className="flex flex-col gap-8">
       {/* Header del Jugador */}
       <header className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-        <Avatar className="h-24 w-24 border-4 border-primary/20">
+        <Avatar className="h-16 w-16 sm:h-24 sm:w-24 border-4 border-primary/20">
           <AvatarImage src={player.avatarUrl} alt={player.name} />
-          <AvatarFallback className="text-3xl">
+          <AvatarFallback className="text-2xl sm:text-3xl">
             {player.name.charAt(0)}
           </AvatarFallback>
         </Avatar>
         <div className="flex-1">
-          <h1 className="font-headline text-4xl font-bold tracking-tight">
+          <h1 className="font-headline text-2xl sm:text-4xl font-bold tracking-tight">
             {player.name}
           </h1>
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-1 sm:mt-2 flex flex-wrap gap-2">
             <Badge variant="secondary">{player.ageGroup}</Badge>
             <Badge variant="secondary">{player.playerLevel}</Badge>
             {player.position && <Badge variant="outline">{player.position}</Badge>}
           </div>
         </div>
-        <div className="text-right">
-          <div className="text-2xl font-bold text-primary">
+        <div className="text-right self-start sm:self-auto">
+          <div className="text-xl sm:text-2xl font-bold text-primary">
             {analyses.length > 0 
-              ? Math.round(analyses.reduce((sum, a) => sum + (a.score ? (a.score <= 10 ? a.score * 10 : (a.score <= 5 ? (a.score/5)*100 : a.score)) : 0), 0) / analyses.length)
+              ? (
+                (() => {
+                  const vals = analyses
+                    .map(a => (typeof a.score === 'number' ? toPct(a.score as number) : null))
+                    .filter((v): v is number => typeof v === 'number');
+                  if (!vals.length) return 'N/A';
+                  const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+                  return `${avg.toFixed(1)}`;
+                })()
+              )
               : 'N/A'
             }
           </div>
@@ -130,24 +140,24 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
 
       {/* Sistema de Pestañas */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="overview" className="flex items-center gap-2">
+        <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap sm:grid sm:grid-cols-5">
+          <TabsTrigger value="overview" className="flex items-center gap-2 whitespace-nowrap flex-shrink-0">
             <User className="h-4 w-4" />
             Perfil
           </TabsTrigger>
-          <TabsTrigger value="videos" className="flex items-center gap-2">
+          <TabsTrigger value="videos" className="flex items-center gap-2 whitespace-nowrap flex-shrink-0">
             <Video className="h-4 w-4" />
             Videos
           </TabsTrigger>
-          <TabsTrigger value="evaluations" className="flex items-center gap-2">
+          <TabsTrigger value="evaluations" className="flex items-center gap-2 whitespace-nowrap flex-shrink-0">
             <Star className="h-4 w-4" />
             Evaluaciones
           </TabsTrigger>
-          <TabsTrigger value="checklist" className="flex items-center gap-2">
+          <TabsTrigger value="checklist" className="flex items-center gap-2 whitespace-nowrap flex-shrink-0">
             <FileText className="h-4 w-4" />
             Análisis de tiro
           </TabsTrigger>
-          <TabsTrigger value="progress" className="flex items-center gap-2">
+          <TabsTrigger value="progress" className="flex items-center gap-2 whitespace-nowrap flex-shrink-0">
             <BarChart className="h-4 w-4" />
             Progreso
           </TabsTrigger>
@@ -343,7 +353,7 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
                     .slice()
                     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                     .map((a) => {
-                      const score = a.score != null ? (a.score <= 10 ? Math.round(a.score * 10) : (a.score <= 5 ? Math.round((a.score/5)*100) : Math.round(a.score))) : '-';
+                      const score = typeof a.score === 'number' ? toPct(a.score as number).toFixed(1) : '-';
                       const isLatest = a.id === latestAnalysisId;
                       return (
                         <tr key={a.id} className={isLatest ? 'bg-primary/5' : ''}>

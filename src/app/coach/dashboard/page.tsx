@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, BarChart2, Video, MessageSquare } from "lucide-react";
+import { Users, Video, MessageSquare } from "lucide-react";
 import type { Message, Player } from "@/lib/types";
 import { useAuth } from "@/hooks/use-auth";
 import { db } from "@/lib/firebase";
@@ -22,12 +22,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function CoachDashboardPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [players, setPlayers] = useState<Player[]>([] as any);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [analyses, setAnalyses] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<string>("messages");
+  const [unreadOnly, setUnreadOnly] = useState<boolean>(false);
+  const [playersSearch, setPlayersSearch] = useState<string>("");
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<'all'|'pending'|'analyzed'>("all");
 
   useEffect(() => {
     if (!user) return;
@@ -42,6 +51,56 @@ export default function CoachDashboardPage() {
       console.error('Error cargando jugadores del coach:', e);
     }
   }, [user]);
+
+  // Cargar análisis de todos los jugadores del coach (en tiempo real, chunked por 10 ids)
+  useEffect(() => {
+    if (!user) return;
+    let unsubs: Array<() => void> = [];
+    const chunkMap: Record<string, any[]> = {};
+    try {
+      const ids = players.map((p) => p.id).filter(Boolean);
+      // Limpiar si no hay jugadores
+      if (ids.length === 0) {
+        setAnalyses([]);
+        return;
+      }
+      // Partir en chunks de 10 para 'in'
+      for (let i = 0; i < ids.length; i += 10) {
+        const chunk = ids.slice(i, i + 10);
+        const key = chunk.join(',');
+        const q = query(collection(db as any, 'analyses'), where('playerId', 'in', chunk));
+        const u = onSnapshot(q, (snap) => {
+          const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+          chunkMap[key] = list;
+          const merged = Object.values(chunkMap).flat();
+          // Ordenar por fecha descendente
+          merged.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          setAnalyses(merged as any[]);
+        }, (err) => {
+          console.error('Error cargando análisis (chunk):', err);
+        });
+        unsubs.push(u);
+      }
+    } catch (e) {
+      console.error('Error cargando análisis:', e);
+    }
+    return () => { unsubs.forEach((u) => u()); };
+  }, [user, players]);
+
+  // Sincronizar pestaña con hash (#messages | #players | #analyses)
+  useEffect(() => {
+    const allowed = new Set(["messages", "players", "analyses"]);
+    const applyFromHash = () => {
+      try {
+        const h = (window.location.hash || '').replace('#', '');
+        if (allowed.has(h)) setActiveTab(h);
+      } catch {}
+    };
+    applyFromHash();
+    const onHash = () => applyFromHash();
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -65,6 +124,22 @@ export default function CoachDashboardPage() {
   }, [user]);
 
   const unreadCount = useMemo(() => messages.filter(m => !m.read).length, [messages]);
+  const analyzedCount = useMemo(() => analyses.filter((a: any) => String(a.status) === 'analyzed' && a.coachCompleted === true).length, [analyses]);
+  const pendingCount = useMemo(() => analyses.filter((a: any) => String(a.status) !== 'analyzed' || a.coachCompleted !== true).length, [analyses]);
+  const visibleMessages = useMemo(() => unreadOnly ? messages.filter(m => !m.read) : messages, [messages, unreadOnly]);
+  const playerOptions = useMemo(() => [{ id: 'all', name: 'Todos' }, ...players.map(p => ({ id: p.id, name: p.name }))], [players]);
+  const filteredAnalyses = useMemo(() => {
+    let arr = analyses;
+    if (selectedPlayerId !== 'all') arr = arr.filter((a: any) => a.playerId === selectedPlayerId);
+    if (statusFilter === 'analyzed') arr = arr.filter((a: any) => String(a.status) === 'analyzed');
+    if (statusFilter === 'pending') arr = arr.filter((a: any) => String(a.status) !== 'analyzed');
+    return arr;
+  }, [analyses, selectedPlayerId, statusFilter]);
+  const filteredPlayers = useMemo(() => {
+    const term = playersSearch.trim().toLowerCase();
+    if (!term) return players;
+    return players.filter(p => p.name?.toLowerCase().includes(term));
+  }, [players, playersSearch]);
   const markAsRead = async (m: Message) => {
     try {
       if (!m.read) {
@@ -185,8 +260,8 @@ export default function CoachDashboardPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="cursor-pointer hover:shadow-md" onClick={() => { window.location.href = '/coach/dashboard#players'; }}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               Total de Jugadores
@@ -200,7 +275,7 @@ export default function CoachDashboardPage() {
             </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="cursor-pointer hover:shadow-md" onClick={() => { window.location.href = '/coach/dashboard#analyses'; }}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               Análisis Realizados
@@ -208,13 +283,13 @@ export default function CoachDashboardPage() {
             <Video className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">12</div>
+            <div className="text-2xl font-bold">{analyzedCount}</div>
             <p className="text-xs text-muted-foreground">
-              este mes
+              {pendingCount > 0 ? `${pendingCount} pendientes` : 'sin pendientes'}
             </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="cursor-pointer hover:shadow-md" onClick={() => { window.location.href = '/coach/dashboard#messages'; }}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               Mensajes no leídos
@@ -228,53 +303,43 @@ export default function CoachDashboardPage() {
             </p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Progreso General
-            </CardTitle>
-            <BarChart2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">+8%</div>
-            <p className="text-xs text-muted-foreground">
-              mejora promedio este mes
-            </p>
-          </CardContent>
-        </Card>
       </div>
 
-      <Tabs defaultValue="messages" className="w-full">
+      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); try { if ((window.location.hash || '').replace('#','') !== v) window.location.hash = v; } catch {} }} className="w-full">
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="messages" className="flex items-center gap-2">
+          <TabsTrigger id="messages" value="messages" className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4" />
             Mensajes
             {unreadCount > 0 && (
               <Badge variant="secondary" className="ml-1">{unreadCount}</Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="players" className="flex items-center gap-2">
+          <TabsTrigger id="players" value="players" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
             Mis Jugadores
           </TabsTrigger>
-          <TabsTrigger value="overview" className="flex items-center gap-2">
-            <BarChart2 className="h-4 w-4" />
-            Resumen
+          <TabsTrigger id="analyses" value="analyses" className="flex items-center gap-2">
+            <Video className="h-4 w-4" />
+            Analisis
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="messages" className="space-y-6">
+        <TabsContent id="messages" value="messages" className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold">Mensajes</h2>
               <p className="text-muted-foreground">Mensajes recibidos de jugadores.</p>
             </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} />
+              Solo no leídos
+            </label>
           </div>
           <div className="grid gap-4">
-            {messages.length === 0 && (
+            {visibleMessages.length === 0 && (
               <div className="py-8 text-center text-muted-foreground">Sin mensajes</div>
             )}
-            {messages.map((m) => (
+            {visibleMessages.map((m) => (
               <Card key={m.id} className="hover:shadow-sm">
                 <CardHeader className="pb-2 flex flex-row items-center justify-between">
                   <CardTitle className="text-base">
@@ -335,12 +400,36 @@ export default function CoachDashboardPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="players" className="space-y-6">
+        <TabsContent id="players" value="players" className="space-y-6">
           <div>
             <h2 className="text-2xl font-bold">Mis Jugadores</h2>
             <p className="text-muted-foreground">
               Selecciona un jugador para ver su perfil detallado y su historial de análisis.
             </p>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Input placeholder="Buscar jugador..." value={playersSearch} onChange={(e) => setPlayersSearch(e.target.value)} />
+            </div>
+            <div className="divide-y rounded-md border">
+              {filteredPlayers.length === 0 && (
+                <div className="py-6 text-center text-sm text-muted-foreground">No hay jugadores</div>
+              )}
+              {filteredPlayers.map((p) => (
+                <Link key={p.id} href={`/players/${p.id}`} className="flex items-center gap-3 p-3 hover:bg-muted/40">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={p.avatarUrl} alt={p.name} />
+                    <AvatarFallback>{p.name?.charAt(0)}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{p.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{p.playerLevel || 'Nivel'} · {p.ageGroup || 'Grupo'}</div>
+                  </div>
+                  <span className="text-xs text-primary">Ver</span>
+                </Link>
+              ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -359,54 +448,81 @@ export default function CoachDashboardPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="overview" className="space-y-6">
+        <TabsContent id="analyses" value="analyses" className="space-y-6">
           <div>
-            <h2 className="text-2xl font-bold">Resumen General</h2>
-            <p className="text-muted-foreground">
-              Vista general de tu actividad como entrenador.
-            </p>
+            <h2 className="text-2xl font-bold">Analisis</h2>
+            <p className="text-muted-foreground">Lista de análisis realizados y pendientes.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="w-full sm:w-56">
+              <Select value={selectedPlayerId} onValueChange={(v) => setSelectedPlayerId(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Jugador" />
+                </SelectTrigger>
+                <SelectContent>
+                  {playerOptions.map((o) => (
+                    <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-full sm:w-56">
+              <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="pending">Pendientes</SelectItem>
+                  <SelectItem value="analyzed">Realizados</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5 text-primary" />
-                  Actividad de Mensajes
-                </CardTitle>
+                <CardTitle>Pendientes ({filteredAnalyses.filter((a: any) => String(a.status) !== 'analyzed').length})</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span>Total de mensajes</span>
-                  <span className="font-semibold">{messages.length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>No leídos</span>
-                  <span className="font-semibold text-orange-600">{unreadCount}</span>
-                </div>
+              <CardContent className="space-y-3">
+                {filteredAnalyses.filter((a: any) => String(a.status) !== 'analyzed').length === 0 && (
+                  <div className="text-sm text-muted-foreground">No hay análisis pendientes.</div>
+                )}
+                {filteredAnalyses.filter((a: any) => String(a.status) !== 'analyzed').map((a: any) => {
+                  const p = players.find((pl) => pl.id === a.playerId);
+                  return (
+                    <div key={a.id} className="flex items-center justify-between gap-3 border rounded-md p-3">
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{p?.name || a.playerId}</div>
+                        <div className="text-xs text-muted-foreground truncate">{new Date(a.createdAt || Date.now()).toLocaleString()}</div>
+                      </div>
+                      <Link href={`/analysis/${a.id}`} className="text-xs text-primary shrink-0">Ver</Link>
+                    </div>
+                  );
+                })}
               </CardContent>
             </Card>
-
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="h-5 w-5 text-primary" />
-                  Estadísticas de Jugadores
-                </CardTitle>
+                <CardTitle>Realizados ({filteredAnalyses.filter((a: any) => String(a.status) === 'analyzed').length})</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span>Total de jugadores</span>
-                  <span className="font-semibold">{players.length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Análisis este mes</span>
-                  <span className="font-semibold">12</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Progreso promedio</span>
-                  <span className="font-semibold text-green-600">+8%</span>
-                </div>
+              <CardContent className="space-y-3">
+                {filteredAnalyses.filter((a: any) => String(a.status) === 'analyzed').length === 0 && (
+                  <div className="text-sm text-muted-foreground">Aún no hay análisis realizados.</div>
+                )}
+                {filteredAnalyses.filter((a: any) => String(a.status) === 'analyzed').map((a: any) => {
+                  const p = players.find((pl) => pl.id === a.playerId);
+                  return (
+                    <div key={a.id} className="flex items-center justify-between gap-3 border rounded-md p-3">
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{p?.name || a.playerId}</div>
+                        <div className="text-xs text-muted-foreground truncate">{new Date(a.createdAt || Date.now()).toLocaleString()}</div>
+                      </div>
+                      <Link href={`/analysis/${a.id}`} className="text-xs text-primary shrink-0">Abrir</Link>
+                    </div>
+                  );
+                })}
               </CardContent>
             </Card>
           </div>

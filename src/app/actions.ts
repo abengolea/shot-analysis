@@ -89,6 +89,126 @@ export async function addCoach(prevState: AddCoachState, formData: FormData): Pr
         return { success: false, message: 'No se pudo agregar el entrenador.' };
     }
 }
+
+// Crear entrenador desde el panel admin (alta solo-admin)
+type AdminCreateCoachState = {
+    success: boolean;
+    message: string;
+    errors?: Record<string, string[]>;
+    userId?: string;
+};
+
+export async function adminCreateCoach(prevState: AdminCreateCoachState, formData: FormData): Promise<AdminCreateCoachState> {
+    try {
+        if (!adminDb || !adminAuth) {
+            return { success: false, message: 'Servidor sin Admin SDK' };
+        }
+
+        const name = String(formData.get('name') || '').trim();
+        const email = String(formData.get('email') || '').trim().toLowerCase();
+        const bio = String(formData.get('experience') || '').trim();
+        const file = formData.get('avatarFile') as File | null;
+
+        const fieldErrors: Record<string, string[]> = {};
+        if (!name || name.length < 2) fieldErrors.name = ['Nombre demasiado corto'];
+        if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fieldErrors.email = ['Email inválido'];
+        if (!file || file.size === 0) fieldErrors.avatarFile = ['La foto es obligatoria'];
+        if (Object.keys(fieldErrors).length) {
+            return { success: false, message: 'Revisa los campos del formulario.', errors: fieldErrors };
+        }
+
+        // Validación de la imagen
+        const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+        const maxBytes = 5 * 1024 * 1024; // 5MB
+        if (!allowed.includes(file!.type)) {
+            return { success: false, message: 'Tipo de imagen no permitido', errors: { avatarFile: ['Usa JPG, PNG o WEBP'] } };
+        }
+        if (file!.size > maxBytes) {
+            return { success: false, message: 'Imagen muy pesada (máx 5MB)', errors: { avatarFile: ['Máx 5MB'] } };
+        }
+
+        // Crear o recuperar usuario en Auth por email
+        let userId: string;
+        try {
+            const existing = await adminAuth.getUserByEmail(email);
+            userId = existing.uid;
+        } catch {
+            const created = await adminAuth.createUser({ email, displayName: name });
+            userId = created.uid;
+        }
+
+        // Subir foto al Storage
+        if (!adminStorage) return { success: false, message: 'Storage no inicializado' };
+        const bucket = adminStorage.bucket();
+        const buffer = Buffer.from(await file!.arrayBuffer());
+        const safeName = (file!.name || 'photo').replace(/[^a-zA-Z0-9_.-]/g, '_');
+        const path = `profile-images/coaches/${userId}/${Date.now()}-${safeName}`;
+        const gcsFile = bucket.file(path);
+        await gcsFile.save(buffer, { metadata: { contentType: file!.type } });
+        await gcsFile.makePublic();
+        const photoUrl = `https://storage.googleapis.com/${bucket.name}/${path}`;
+
+        // Crear/actualizar documento del coach
+        const nowIso = new Date().toISOString();
+        const coachData = {
+            userId,
+            name,
+            email,
+            bio,
+            photoUrl,
+            role: 'coach' as const,
+            status: 'pending' as const,
+            verified: true, // verificación automática al tener foto
+            publicVisible: true, // visible al crear
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            // Auditoría básica (sin sesión del admin en server action)
+            createdByAdminId: null as string | null,
+        };
+        await adminDb.collection('coaches').doc(userId).set(coachData, { merge: true });
+
+        // Ticket interno de notificación
+        try {
+            const subject = `Alta de entrenador creada por admin: ${name}`;
+            const description = `Nombre: ${name}\nEmail: ${email}\nBio: ${bio || '-'}\nFoto: ${photoUrl}`;
+            const ticketNow = new Date().toISOString();
+            const ticketData = {
+                userId,
+                userEmail: email,
+                subject,
+                category: 'coach_admin_create',
+                description,
+                status: 'open' as const,
+                priority: 'normal' as const,
+                adminAssigneeId: null as string | null,
+                unreadForAdmin: 1,
+                unreadForUser: 0,
+                lastMessageAt: ticketNow,
+                lastSenderRole: 'admin' as const,
+                firstResponseAt: null as string | null,
+                resolutionAt: null as string | null,
+                createdAt: ticketNow,
+                updatedAt: ticketNow,
+            };
+            const ticketRef = await adminDb.collection('tickets').add(ticketData as any);
+            await adminDb.collection('tickets').doc(ticketRef.id).collection('messages').add({
+                ticketId: ticketRef.id,
+                senderId: userId,
+                senderRole: 'admin' as const,
+                text: description,
+                attachments: [] as string[],
+                createdAt: ticketNow,
+            } as any);
+        } catch (e) {
+            console.warn('No se pudo crear ticket de alta de coach', e);
+        }
+
+        return { success: true, message: 'Entrenador creado correctamente.', userId };
+    } catch (e: any) {
+        console.error('Error adminCreateCoach:', e);
+        return { success: false, message: e?.message || 'No se pudo crear el entrenador.' };
+    }
+}
 // Regalar créditos (análisis) a un jugador desde el panel admin
 export async function giftAnalyses(_prevState: any, formData: FormData) {
     try {
@@ -140,6 +260,25 @@ export async function adminUpdatePlayerStatus(_prev: any, formData: FormData) {
         return { success: true };
     } catch (e) {
         console.error('Error actualizando estado:', e);
+        return { success: false };
+    }
+}
+
+// Actualizar estado del coach (active | pending | suspended)
+export async function adminUpdateCoachStatus(_prev: any, formData: FormData) {
+    try {
+        const userId = String(formData.get('userId') || '');
+        const status = String(formData.get('status') || '');
+        if (!userId || !['active','pending','suspended'].includes(status)) {
+            return { success: false, message: 'Parámetros inválidos' };
+        }
+        if (!adminDb) return { success: false, message: 'Servidor sin Admin SDK' };
+        await adminDb.collection('coaches').doc(userId).set({ status, updatedAt: new Date().toISOString() }, { merge: true });
+        revalidatePath('/admin');
+        revalidatePath(`/admin/coaches/${userId}`);
+        return { success: true };
+    } catch (e) {
+        console.error('Error actualizando estado de coach:', e);
         return { success: false };
     }
 }
@@ -197,14 +336,127 @@ export async function adminSendPasswordReset(_prev: any, formData: FormData) {
         const userId = String(formData.get('userId') || '');
         if (!userId) return { success: false };
         if (!adminDb || !adminAuth) return { success: false };
+        let email = '';
+        // Buscar email en players o coaches; fallback a Auth
         const playerDoc = await adminDb.collection('players').doc(userId).get();
-        const email = playerDoc.exists ? String(playerDoc.data()?.email || '') : '';
+        if (playerDoc.exists) {
+            email = String(playerDoc.data()?.email || '');
+        }
+        if (!email) {
+            const coachDoc = await adminDb.collection('coaches').doc(userId).get();
+            if (coachDoc.exists) email = String(coachDoc.data()?.email || '');
+        }
+        if (!email) {
+            try {
+                const userRecord = await adminAuth.getUser(userId);
+                email = userRecord.email || '';
+            } catch {}
+        }
         if (!email) return { success: false, message: 'Email no encontrado' };
         const link = await adminAuth.generatePasswordResetLink(email);
         console.log(`🔗 Password reset link for ${email}: ${link}`);
         return { success: true, link };
     } catch (e) {
         console.error('Error enviando reset password:', e);
+        return { success: false };
+    }
+}
+
+// Actualizar perfil del coach: nombre, bio, tarifa, email de pagos, verificado
+export async function adminUpdateCoachProfile(_prev: any, formData: FormData) {
+    try {
+        const userId = String(formData.get('userId') || '');
+        if (!userId) return { success: false, message: 'userId requerido' };
+        if (!adminDb) return { success: false, message: 'Servidor sin Admin SDK' };
+        const name = String(formData.get('name') || '').trim();
+        const bio = String(formData.get('bio') || '').trim();
+        const payoutEmail = String(formData.get('payoutEmail') || '').trim();
+        const ratePerAnalysisRaw = String(formData.get('ratePerAnalysis') || '').trim();
+        const verified = formData.get('verified') != null;
+        const publicVisible = formData.get('publicVisible') != null;
+        const phone = String(formData.get('phone') || '').trim();
+        const website = String(formData.get('website') || '').trim();
+        const twitter = String(formData.get('twitter') || '').trim();
+        const instagram = String(formData.get('instagram') || '').trim();
+        const youtube = String(formData.get('youtube') || '').trim();
+        const update: any = { updatedAt: new Date().toISOString() };
+        if (name) update.name = name;
+        if (bio || bio === '') update.bio = bio;
+        if (payoutEmail || payoutEmail === '') update.payoutEmail = payoutEmail;
+        if (ratePerAnalysisRaw !== '') {
+            const r = Number(ratePerAnalysisRaw);
+            if (!Number.isNaN(r) && r >= 0) update.ratePerAnalysis = r;
+        }
+        update.verified = verified;
+        update.publicVisible = publicVisible;
+        if (phone || phone === '') update.phone = phone;
+        update.links = {
+            ...(website ? { website } : {}),
+            ...(twitter ? { twitter } : {}),
+            ...(instagram ? { instagram } : {}),
+            ...(youtube ? { youtube } : {}),
+        };
+        await adminDb.collection('coaches').doc(userId).set(update, { merge: true });
+        revalidatePath('/admin');
+        revalidatePath(`/admin/coaches/${userId}`);
+        return { success: true };
+    } catch (e) {
+        console.error('Error actualizando perfil de coach:', e);
+        return { success: false };
+    }
+}
+
+// Activar ya (status=active, verified=true, publicVisible=true)
+export async function adminActivateCoachNow(_prev: any, formData: FormData) {
+    try {
+        const userId = String(formData.get('userId') || '');
+        if (!userId) return { success: false };
+        if (!adminDb) return { success: false };
+        const nowIso = new Date().toISOString();
+        await adminDb.collection('coaches').doc(userId).set({ status: 'active', verified: true, publicVisible: true, updatedAt: nowIso }, { merge: true });
+        revalidatePath('/admin');
+        revalidatePath(`/admin/coaches/${userId}`);
+        return { success: true };
+    } catch (e) {
+        console.error('Error activando coach:', e);
+        return { success: false };
+    }
+}
+
+// Subir/actualizar foto del coach
+export async function adminUpdateCoachPhoto(_prev: any, formData: FormData) {
+    try {
+        const userId = String(formData.get('userId') || '');
+        const file = formData.get('avatarFile') as File | null;
+        if (!userId || !file || file.size === 0) {
+            return { success: false, message: 'Archivo requerido' };
+        }
+        if (!adminDb || !adminStorage) {
+            return { success: false, message: 'Servidor sin Admin SDK/Storage' };
+        }
+        const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+        const maxBytes = 5 * 1024 * 1024; // 5MB
+        if (!allowed.includes(file.type)) {
+            return { success: false, message: 'Tipo de imagen no permitido' };
+        }
+        if (file.size > maxBytes) {
+            return { success: false, message: 'Imagen muy pesada (máx 5MB)' };
+        }
+        const bucket = adminStorage.bucket();
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const safeName = (file.name || 'photo').replace(/[^a-zA-Z0-9_.-]/g, '_');
+        const path = `profile-images/coaches/${userId}/${Date.now()}-${safeName}`;
+        const gcsFile = bucket.file(path);
+        await gcsFile.save(buffer, { metadata: { contentType: file.type } });
+        await gcsFile.makePublic();
+        const photoUrl = `https://storage.googleapis.com/${bucket.name}/${path}`;
+
+        await adminDb.collection('coaches').doc(userId).set({ photoUrl, updatedAt: new Date().toISOString() }, { merge: true });
+        revalidatePath('/admin');
+        revalidatePath(`/admin/coaches/${userId}`);
+        return { success: true, photoUrl };
+    } catch (e) {
+        console.error('Error subiendo foto de coach:', e);
         return { success: false };
     }
 }
@@ -277,17 +529,26 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         console.log("  - GEMINI_API_KEY:", process.env.GEMINI_API_KEY ? "✅ Configurado" : "❌ No configurado");
 
         const userId = formData.get('userId') as string;
+        const coachId = (formData.get('coachId') as string | null) || null;
         if (!userId) return { message: "ID de usuario requerido.", error: true };
         const shotType = formData.get('shotType') as string;
         if (!shotType) return { message: "Tipo de lanzamiento requerido.", error: true };
 
+        // Nuevo flujo: aceptar URLs ya subidas por el cliente (Firebase Storage)
+        const uploadedBackUrl = (formData.get('uploadedBackUrl') as string | null) || null;
+        const uploadedFrontUrl = (formData.get('uploadedFrontUrl') as string | null) || null;
+        const uploadedLeftUrl = (formData.get('uploadedLeftUrl') as string | null) || null;
+        const uploadedRightUrl = (formData.get('uploadedRightUrl') as string | null) || null;
+
+        // Flujo legacy: archivos directos
         const formBack = formData.get('video-back') as File | null;
         const formFront = formData.get('video-front') as File | null;
         const videoLeft = formData.get('video-left') as File | null;
         const videoRight = formData.get('video-right') as File | null;
         const primaryFile: File | null = (formBack && formBack.size > 0) ? formBack : (formFront && formFront.size > 0 ? formFront : null);
         const primaryIsBack = !!(formBack && formBack.size > 0);
-        if (!primaryFile) {
+        const hasUploadedUrls = Boolean(uploadedBackUrl || uploadedFrontUrl || uploadedLeftUrl || uploadedRightUrl);
+        if (!primaryFile && !hasUploadedUrls) {
             return { message: "Video trasero es obligatorio (si no tenés, subí el frontal).", error: true };
         }
 
@@ -300,6 +561,14 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         const playerDoc = await db.collection('players').doc(userId).get();
         const currentUser = playerDoc.exists ? { id: userId, ...(playerDoc.data() as any) } : null;
         if (!currentUser) return { message: "Usuario no autenticado.", error: true };
+
+        // Validación de relación coach-jugador si se envía coachId
+        if (coachId) {
+            const assignedCoachId = (currentUser as any).coachId || null;
+            if (!assignedCoachId || String(assignedCoachId) !== String(coachId)) {
+                return { message: 'No estás autorizado para iniciar análisis de este jugador.', error: true };
+            }
+        }
 
         // Validación de perfil completo (antes de tocar créditos)
         const isNonEmptyString = (v: any) => typeof v === 'string' && v.trim().length > 0;
@@ -384,7 +653,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         }
         const billing = billingInfo as { type: 'free' | 'credit'; year: number };
 
-        // Helper para estandarizar y subir a Storage
+        // Helper para estandarizar y subir a Storage (solo cuando recibimos archivos binarios)
         const uploadVideoToStorage = async (file: File, userId: string, options: { maxSeconds?: number } = {}): Promise<string> => {
             const bucket = adminStorage!.bucket();
             const arrayBuffer = await file.arrayBuffer();
@@ -417,24 +686,41 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             return `https://storage.googleapis.com/${bucket.name}/${filePath}`;
         };
 
-        // Subidas
-        const primaryMaxSeconds = primaryIsBack ? 40 : 30;
-        const videoPath = await uploadVideoToStorage(primaryFile, currentUser.id, { maxSeconds: primaryMaxSeconds });
-        let videoFrontUrl: string | null = primaryIsBack ? null : videoPath;
-        let videoBackUrl: string | null = primaryIsBack ? videoPath : null;
+        let videoPath: string = '';
+        let videoFrontUrl: string | null = null;
+        let videoBackUrl: string | null = null;
         let videoLeftUrl: string | null = null;
         let videoRightUrl: string | null = null;
-        if (videoLeft && videoLeft.size > 0) {
-            videoLeftUrl = await uploadVideoToStorage(videoLeft, currentUser.id, { maxSeconds: 30 });
-        }
-        if (videoRight && videoRight.size > 0) {
-            videoRightUrl = await uploadVideoToStorage(videoRight, currentUser.id, { maxSeconds: 30 });
-        }
-        if (primaryIsBack === false && formBack && formBack.size > 0) {
-            videoBackUrl = await uploadVideoToStorage(formBack, currentUser.id, { maxSeconds: 40 });
-        }
-        if (primaryIsBack === true && formFront && formFront.size > 0) {
-            videoFrontUrl = await uploadVideoToStorage(formFront, currentUser.id, { maxSeconds: 30 });
+
+        if (hasUploadedUrls) {
+            // Usar URLs ya subidas por el cliente (resumable upload)
+            videoBackUrl = uploadedBackUrl || null;
+            videoFrontUrl = uploadedFrontUrl || null;
+            videoLeftUrl = uploadedLeftUrl || null;
+            videoRightUrl = uploadedRightUrl || null;
+            videoPath = videoBackUrl || videoFrontUrl || videoLeftUrl || videoRightUrl || '';
+            if (!videoPath) {
+                return { message: 'No se recibió ninguna URL de video válida.', error: true };
+            }
+        } else {
+            // Subida server-side (legacy)
+            const primaryMaxSeconds = primaryIsBack ? 40 : 30;
+            const uploadedPrimaryUrl = await uploadVideoToStorage(primaryFile!, currentUser.id, { maxSeconds: primaryMaxSeconds });
+            videoFrontUrl = primaryIsBack ? null : uploadedPrimaryUrl;
+            videoBackUrl = primaryIsBack ? uploadedPrimaryUrl : null;
+            if (videoLeft && videoLeft.size > 0) {
+                videoLeftUrl = await uploadVideoToStorage(videoLeft, currentUser.id, { maxSeconds: 30 });
+            }
+            if (videoRight && videoRight.size > 0) {
+                videoRightUrl = await uploadVideoToStorage(videoRight, currentUser.id, { maxSeconds: 30 });
+            }
+            if (primaryIsBack === false && formBack && formBack.size > 0) {
+                videoBackUrl = await uploadVideoToStorage(formBack, currentUser.id, { maxSeconds: 40 });
+            }
+            if (primaryIsBack === true && formFront && formFront.size > 0) {
+                videoFrontUrl = await uploadVideoToStorage(formFront, currentUser.id, { maxSeconds: 30 });
+            }
+            videoPath = uploadedPrimaryUrl;
         }
 
         // Guardar análisis
@@ -447,12 +733,14 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             videoRightUrl: videoRightUrl,
             videoBackUrl: videoBackUrl,
             status: 'uploaded',
+            coachCompleted: false,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             playerName: currentUser.name || 'Usuario',
             playerLevel: currentUser.playerLevel || 'Por definir',
             ageGroup: currentUser.ageGroup || 'Por definir',
             billing: { type: billing.type, year: billing.year },
+            coachId: coachId || (currentUser as any).coachId || null,
         };
         const analysisRef = await db.collection('analyses').add(analysisData);
 
@@ -501,6 +789,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             analysisResult,
             detailedChecklist: analysisResult.detailedChecklist || [],
             keyframes: { front: [], back: [], left: [], right: [] },
+            coachCompleted: false,
             updatedAt: new Date().toISOString(),
         });
 

@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
-import { addCoach } from "@/app/actions";
+import { adminCreateCoach, adminSendPasswordReset } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,17 +25,17 @@ function SubmitButton() {
       {pending ? (
         <>
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Enviando solicitud...
+          Creando entrenador...
         </>
       ) : (
-        "Enviar solicitud de alta"
+        "Crear entrenador"
       )}
     </Button>
   );
 }
 
 export function CoachAdminForm() {
-  const [state, formAction] = useActionState(addCoach, { success: false, message: "" });
+  const [state, formAction] = useActionState(adminCreateCoach as any, { success: false, message: "" } as any);
   const { toast } = useToast();
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -60,11 +60,11 @@ export function CoachAdminForm() {
           Completa el formulario para añadir un nuevo entrenador a la plataforma.
         </CardDescription>
       </CardHeader>
-      <form ref={formRef} action={formAction}>
+      <form ref={formRef} action={formAction} encType="multipart/form-data">
         <CardContent className="grid gap-4">
           <div className="space-y-2">
             <Label htmlFor="name">Nombre Completo</Label>
-            <Input id="name" name="name" placeholder="" />
+            <Input id="name" name="name" placeholder="" required />
             {state.errors?.name && <p className="text-sm text-destructive">{state.errors.name[0]}</p>}
           </div>
           
@@ -75,13 +75,13 @@ export function CoachAdminForm() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" name="email" type="email" placeholder="ejemplo@correo.com" />
+            <Input id="email" name="email" type="email" placeholder="ejemplo@correo.com" required />
             {state.errors?.email && <p className="text-sm text-destructive">{state.errors.email[0]}</p>}
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="avatarFile">Foto (JPG/PNG/WEBP, máx 5MB)</Label>
-            <Input id="avatarFile" name="avatarFile" type="file" accept="image/jpeg,image/png,image/webp" />
+            <Input id="avatarFile" name="avatarFile" type="file" accept="image/jpeg,image/png,image/webp" required />
             {state.errors?.avatarFile && <p className="text-sm text-destructive">{state.errors.avatarFile[0]}</p>}
           </div>
         </CardContent>
@@ -89,6 +89,17 @@ export function CoachAdminForm() {
           <SubmitButton />
         </CardFooter>
       </form>
+      {state.success && (state as any).userId && (
+        <CardContent>
+          <div className="mt-2 grid gap-2">
+            <div className="text-sm text-muted-foreground">Entrenador creado: {(state as any).userId}</div>
+            <form action={adminSendPasswordReset as any} className="flex items-center gap-2">
+              <input type="hidden" name="userId" value={(state as any).userId} />
+              <Button type="submit" size="sm" variant="outline">Enviar link para establecer contraseña</Button>
+            </form>
+          </div>
+        </CardContent>
+      )}
     </Card>
   );
 }

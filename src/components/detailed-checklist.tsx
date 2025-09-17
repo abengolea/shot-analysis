@@ -76,6 +76,10 @@ function ChecklistItem({
   const [coachComment, setCoachComment] = useState(item.coachComment || "");
   const [showCoachMobile, setShowCoachMobile] = useState(false);
   const [showReview, setShowReview] = useState(false);
+  const isReviewed = Boolean(
+    (typeof coachValue?.rating === 'number') ||
+    (String(coachValue?.comment || '').trim() !== '')
+  );
 
   useEffect(() => {
     // Si está marcado como N/A, forzar rating neutro pero UI y backend deberán ignorarlo en el cálculo
@@ -187,7 +191,7 @@ function ChecklistItem({
               De acuerdo con la IA ({rating})
             </Button>
             <Button size="sm" variant="outline" disabled={!coachIsEditable} onClick={() => setShowReview((s)=>!s)}>
-              {showReview ? 'Cerrar revisión' : 'Revisar'}
+              {showReview ? 'Cerrar revisión' : (isReviewed ? 'Revisado' : 'Revisar')}
             </Button>
           </div>
           {showReview && (
@@ -214,6 +218,19 @@ function ChecklistItem({
                 className="text-xs"
                 disabled={!coachIsEditable}
               />
+            </div>
+          )}
+          {!showReview && isReviewed && (
+            <div className="rounded-md border p-2 bg-emerald-50/50">
+              <div className="flex items-center gap-2 text-xs mb-1">
+                <span className="font-medium">Revisado</span>
+                {typeof coachValue?.rating === 'number' && (
+                  <Badge variant="secondary">Calificación: {coachValue.rating}</Badge>
+                )}
+              </div>
+              {String(coachValue?.comment || '').trim() !== '' && (
+                <div className="text-xs text-muted-foreground whitespace-pre-line">{coachValue?.comment}</div>
+              )}
             </div>
           )}
         </div>

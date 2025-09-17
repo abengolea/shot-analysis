@@ -68,36 +68,37 @@ export function PoseDetection({
   const poseDetectorRef = useRef<any>(null);
   const animationFrameRef = useRef<number>();
 
-  // Inicializar MediaPipe Pose
+  // Inicializar detector real (TensorFlow MoveNet)
   useEffect(() => {
-    console.log('🔄 useEffect ejecutándose...');
-    console.log('Video src:', videoSrc);
-    console.log('Width:', width, 'Height:', height);
-    
-    const initializePoseDetection = async () => {
+    const initializeDetector = async () => {
       try {
-        console.log('🚀 Iniciando carga de MediaPipe...');
         setError('Cargando modelo...');
-        
-        // Simular carga exitosa por ahora
-        setTimeout(() => {
-          console.log('✅ Simulando modelo cargado');
-          setIsModelLoaded(true);
-          setError(null);
-        }, 2000);
-        
-        // TODO: Implementar MediaPipe real
-        console.log('⚠️ MediaPipe temporalmente deshabilitado para pruebas');
-        
+        // Cargar librerías dinámicamente en el cliente
+        const [posedetection, tf] = await Promise.all([
+          import('@tensorflow-models/pose-detection'),
+          import('@tensorflow/tfjs')
+        ]);
+        // Backend WebGL para performance
+        try { await tf.setBackend('webgl'); } catch {}
+        await tf.ready();
+        // Crear detector MoveNet (Lightning)
+        const detector = await posedetection.createDetector(
+          posedetection.SupportedModels.MoveNet,
+          { modelType: 'Lightning' as any }
+        );
+        poseDetectorRef.current = detector;
+        setIsModelLoaded(true);
+        setError(null);
       } catch (err) {
-        console.error('❌ Error loading MediaPipe:', err);
+        console.error('❌ Error cargando el detector:', err);
         const msg = err instanceof Error ? err.message : String(err);
         setError(`Error al cargar el modelo: ${msg}`);
+        setIsModelLoaded(false);
       }
     };
-
-    initializePoseDetection();
-  }, [videoSrc, width, height]);
+    initializeDetector();
+    // No depende de width/height; solo una vez por montaje
+  }, []);
 
   // Procesar resultados de detección de pose
   const processPoseResults = useCallback((landmarks: any[]) => {
@@ -229,73 +230,92 @@ export function PoseDetection({
     return Math.acos(cos) * 180 / Math.PI;
   };
 
-  // Iniciar detección automática
+  // Iniciar detección usando TFJS Pose Detection
   const startDetection = useCallback(async () => {
-    console.log('🎯 startDetection ejecutándose...');
-    console.log('Video ref:', videoRef.current);
-    console.log('Video src:', videoSrc);
-    
     if (!videoRef.current) {
-      console.log('❌ No hay video ref');
       setError('No hay video disponible');
+      return;
+    }
+    if (!poseDetectorRef.current) {
+      setError('Modelo no cargado');
       return;
     }
 
     setIsDetecting(true);
-    setDetectionProgress(0);
     setPoseData([]);
     setBiomechanicalMetrics([]);
     setError(null);
 
     const video = videoRef.current;
-    console.log('📹 Video duration:', video.duration);
-    
-         // Simular detección por ahora - analizar múltiples frames
-     let progress = 0;
-     let frameCount = 0;
-     const totalFramesToAnalyze = 30; // Analizar 30 frames
-     setTotalFrames(totalFramesToAnalyze);
-     
-     const interval = setInterval(() => {
-       progress += 3.33; // 100% / 30 frames
-       frameCount++;
-       
-       setDetectionProgress(progress);
-       setCurrentFrame(frameCount);
-       
-       // Simular datos de pose para cada frame
-       const mockPoseData = {
-         keypoints: {
-           right_shoulder: { x: 100 + frameCount * 2, y: 50 + frameCount, confidence: 0.9 },
-           right_elbow: { x: 120 + frameCount * 2, y: 80 + frameCount, confidence: 0.8 },
-           right_wrist: { x: 140 + frameCount * 2, y: 110 + frameCount, confidence: 0.7 },
-           left_shoulder: { x: 80 + frameCount * 2, y: 50 + frameCount, confidence: 0.9 },
-           left_elbow: { x: 60 + frameCount * 2, y: 80 + frameCount, confidence: 0.8 },
-           left_wrist: { x: 40 + frameCount * 2, y: 110 + frameCount, confidence: 0.7 },
-           right_hip: { x: 100 + frameCount * 2, y: 120 + frameCount, confidence: 0.9 },
-           right_knee: { x: 120 + frameCount * 2, y: 150 + frameCount, confidence: 0.8 },
-           right_ankle: { x: 140 + frameCount * 2, y: 180 + frameCount, confidence: 0.7 }
-         },
-         timestamp: Date.now() + frameCount * 100,
-         frame: frameCount
-       };
-       
-       setPoseData(prev => [...prev, mockPoseData]);
-       onPoseDataChange([...poseData, mockPoseData]);
-       
-       // Calcular métricas biomecánicas para este frame
-       const metrics = calculateBiomechanicalMetrics(mockPoseData.keypoints);
-       setBiomechanicalMetrics(prev => [...prev, metrics]);
-       onMetricsChange([...biomechanicalMetrics, metrics]);
-       
-       if (frameCount >= totalFramesToAnalyze) {
-         clearInterval(interval);
-         setIsDetecting(false);
-         console.log('✅ Simulación de detección completada - 30 frames analizados');
-       }
-     }, 100); // Más rápido para mejor experiencia
-    
-  }, [videoSrc, onPoseDataChange]);
+    // Asegurar reproducción
+    try { await video.play(); } catch {}
+
+    const duration = isFinite(video.duration) ? video.duration : 0;
+    const targetFps = 10; // muestrear a 10 FPS
+    const sampleMs = 1000 / targetFps;
+    let lastTs = 0;
+    let frameCount = 0;
+    setTotalFrames(duration > 0 ? Math.ceil(duration * targetFps) : 0);
+
+    const loop = async (ts: number) => {
+      if (!poseDetectorRef.current || !isDetecting) return;
+      if (!lastTs || ts - lastTs >= sampleMs) {
+        lastTs = ts;
+        try {
+          const est = await poseDetectorRef.current.estimatePoses(video, { flipHorizontal: false });
+          const pose = est && est[0];
+          if (pose && Array.isArray(pose.keypoints)) {
+            const vw = video.videoWidth || width;
+            const vh = video.videoHeight || height;
+            const kpArray = pose.keypoints as Array<any>;
+            // Construir mapa de keypoints que usamos para métricas
+            const pick = (name: string) => kpArray.find((k) => (k.name || k.part) === name);
+            const keys = ['right_shoulder','right_elbow','right_wrist','left_shoulder','left_elbow','left_wrist','right_hip','right_knee','right_ankle','left_hip'];
+            const keypoints: { [key: string]: PosePoint } = {};
+            // Fallback: map por índice MoveNet si no existe name
+            const movenetNames = ['nose','left_eye','right_eye','left_ear','right_ear','left_shoulder','right_shoulder','left_elbow','right_elbow','left_wrist','right_wrist','left_hip','right_hip','left_knee','right_knee','left_ankle','right_ankle'];
+            const getByName = (n: string) => {
+              const byName = pick(n);
+              if (byName) return byName;
+              const idx = movenetNames.indexOf(n);
+              return idx >= 0 ? kpArray[idx] : null;
+            };
+            keys.forEach((n) => {
+              const k = getByName(n);
+              if (k && typeof k.x === 'number' && typeof k.y === 'number') {
+                keypoints[n] = { x: (k.x / (vw || 1)) * width, y: (k.y / (vh || 1)) * height, confidence: k.score ?? 0 };
+              }
+            });
+
+            const newPose: PoseData = { keypoints, timestamp: Date.now(), frame: frameCount };
+            setPoseData((prev) => {
+              const next = [...prev, newPose];
+              onPoseDataChange(next);
+              return next;
+            });
+            const metrics = calculateBiomechanicalMetrics(keypoints);
+            setBiomechanicalMetrics((prev) => {
+              const next = [...prev, metrics];
+              onMetricsChange(next);
+              return next;
+            });
+          }
+        } catch (err) {
+          console.warn('Estimación fallida:', err);
+        }
+        frameCount += 1;
+        if (duration > 0) {
+          const progress = Math.min(100, (video.currentTime / duration) * 100);
+          setDetectionProgress(progress);
+          setCurrentFrame(Math.floor(video.currentTime * targetFps));
+        } else {
+          setCurrentFrame(frameCount);
+        }
+      }
+      animationFrameRef.current = requestAnimationFrame(loop);
+    };
+    animationFrameRef.current = requestAnimationFrame(loop);
+  }, [width, height, onPoseDataChange, onMetricsChange, isDetecting]);
 
   // Detener detección
   const stopDetection = () => {

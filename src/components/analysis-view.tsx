@@ -367,6 +367,22 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const canEdit = userProfile?.role === 'coach' && userProfile.id === (player.coachId || '');
+  const [completing, setCompleting] = useState(false);
+  const markCompleted = async () => {
+    if (!canEdit) return;
+    try {
+      setCompleting(true);
+      const auth = getAuth(); const cu = auth.currentUser; if (!cu) return;
+      const token = await getIdToken(cu, true);
+      const res = await fetch(`/api/analyses/${safeAnalysis.id}/complete`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error('No se pudo marcar como terminado');
+      toast({ title: 'Análisis marcado como terminado', description: 'El jugador será notificado.' });
+    } catch (e) {
+      toast({ title: 'Error', description: 'No se pudo marcar como terminado', variant: 'destructive' });
+    } finally {
+      setCompleting(false);
+    }
+  };
   const [rebuilding, setRebuilding] = useState(false);
   const [uploadingFromClient, setUploadingFromClient] = useState(false);
 
@@ -750,17 +766,20 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   return (
     <>
       <Tabs defaultValue={defaultTab} className="w-full">
-        <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap md:grid md:grid-cols-4">
+        <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap md:grid md:grid-cols-5">
           <TabsTrigger value="ai-analysis" className="min-w-[140px] md:min-w-0 whitespace-nowrap flex-shrink-0">
             <Bot className="mr-2" /> Análisis IA
+          </TabsTrigger>
+          <TabsTrigger value="videos" className="min-w-[180px] md:min-w-0 whitespace-nowrap flex-shrink-0">
+            <Camera className="mr-2" /> Videos y fotogramas
           </TabsTrigger>
           <TabsTrigger value="checklist" className="min-w-[120px] md:min-w-0 whitespace-nowrap flex-shrink-0">
               <ListChecks className="mr-2" /> Checklist IA
           </TabsTrigger>
-          <TabsTrigger value="coach-checklist" className="min-w-[200px] md:min-w-0 whitespace-nowrap flex-shrink-0">
+          <TabsTrigger value="coach-checklist" className="min-w-[180px] md:min-w-0 whitespace-nowrap flex-shrink-0">
             <ListChecks className="mr-2" /> Checklist Entrenador
           </TabsTrigger>
-          <TabsTrigger value="improvement-plan" className="min-w-[160px] md:min-w-0 whitespace-nowrap flex-shrink-0">
+          <TabsTrigger value="improvement-plan" className="min-w-[150px] md:min-w-0 whitespace-nowrap flex-shrink-0">
             <Dumbbell className="mr-2" /> Plan de Mejora
           </TabsTrigger>
         </TabsList>
@@ -1007,156 +1026,157 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="font-headline flex items-center gap-2">
-                  <Camera /> Video y Fotogramas
-                </CardTitle>
-                <CardDescription>
-                  Haz clic en un fotograma para ampliarlo, dibujar y comentar.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {/* Oculto temporalmente el aviso de selección de keyframes por IA */}
-
-                {/* Videos disponibles (frente/espalda/izquierda/derecha) */}
-                <div className="grid gap-6 md:grid-cols-2">
-                  {((safeAnalysis as any).videoFrontUrl || (safeAnalysis as any).videoUrl) && (
-                    <div>
-                      <h4 className="font-medium mb-2">Frente</h4>
-                      <video
-                        controls
-                        className="w-full rounded-lg shadow-lg max-h-[360px]"
-                        src={(safeAnalysis as any).videoFrontUrl || (safeAnalysis as any).videoUrl}
-                      >
-                        Tu navegador no soporta el elemento video.
-                      </video>
-                    </div>
-                  )}
-                  {(safeAnalysis as any).videoBackUrl && (
-                    <div>
-                      <h4 className="font-medium mb-2">Espalda</h4>
-                      <video
-                        controls
-                        className="w-full rounded-lg shadow-lg max-h-[360px]"
-                        src={(safeAnalysis as any).videoBackUrl}
-                      >
-                        Tu navegador no soporta el elemento video.
-                      </video>
-                    </div>
-                  )}
-                  {(safeAnalysis as any).videoLeftUrl && (
-                    <div>
-                      <h4 className="font-medium mb-2">Izquierda</h4>
-                      <video
-                        controls
-                        className="w-full rounded-lg shadow-lg max-h-[360px]"
-                        src={(safeAnalysis as any).videoLeftUrl}
-                      >
-                        Tu navegador no soporta el elemento video.
-                      </video>
-                    </div>
-                  )}
-                  {(safeAnalysis as any).videoRightUrl && (
-                    <div>
-                      <h4 className="font-medium mb-2">Derecha</h4>
-                      <video
-                        controls
-                        className="w-full rounded-lg shadow-lg max-h-[360px]"
-                        src={(safeAnalysis as any).videoRightUrl}
-                      >
-                        Tu navegador no soporta el elemento video.
-                      </video>
-                    </div>
-                  )}
-                </div>
-
-                {/* Botón dev para generar si no hay nada */}
-                {availableAngles.length === 0 && (
-                  <div className="flex items-center justify-center mb-6">
-                    <div className="flex gap-2">
-                      <Button
-                        variant="secondary"
-                        disabled={rebuilding}
-                        onClick={async () => {
-                          try {
-                            setRebuilding(true);
-                            const res = await fetch(`/api/analyses/${safeAnalysis.id}/rebuild-keyframes/dev`, { method: 'POST' });
-                            const data = await res.json();
-                            if (res.ok && data?.keyframes) {
-                              setLocalKeyframes(data.keyframes);
-                            }
-                          } finally {
-                            setRebuilding(false);
-                          }
-                        }}
-                      >
-                        {rebuilding ? 'Generando (server)…' : 'Generar (server, dev)'}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        disabled={uploadingFromClient}
-                        onClick={async () => {
-                          try {
-                            setUploadingFromClient(true);
-                            // Intentar extraer 12 frames desde el video visible del DOM
-                            const v = document.querySelector('video');
-                            if (!v) return;
-                            const videoEl = v as HTMLVideoElement;
-                            const canvas = document.createElement('canvas');
-                            const ctx = canvas.getContext('2d');
-                            if (!ctx) return;
-                            await new Promise<void>((r)=>{ if (videoEl.readyState>=2) r(); else videoEl.addEventListener('loadedmetadata', ()=>r(), { once: true }); });
-                            const count = 12; const urls: Array<{ dataUrl: string; timestamp: number }> = [];
-                            canvas.width = Math.max(160, videoEl.videoWidth/4|0); canvas.height = Math.max(160, (videoEl.videoHeight/videoEl.videoWidth*canvas.width)|0);
-                            const interval = Math.max(0.1, Math.min( (videoEl.duration||6)/(count+1), 2 ));
-                            for (let i=1;i<=count;i++){
-                              const t = Math.min(videoEl.duration-0.001, i*interval);
-                              videoEl.pause(); videoEl.currentTime = t;
-                              await new Promise<void>((r)=>{ const onS=()=>{videoEl.removeEventListener('seeked', onS); r();}; videoEl.addEventListener('seeked', onS); });
-                              ctx.drawImage(videoEl, 0,0, canvas.width, canvas.height);
-                              const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-                              urls.push({ dataUrl, timestamp: t });
-                            }
-                            const res = await fetch(`/api/analyses/${safeAnalysis.id}/keyframes/upload`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ angle:'front', frames: urls }) });
-                            const data = await res.json();
-                            if (res.ok && data?.keyframes) setLocalKeyframes(data.keyframes);
-                          } finally { setUploadingFromClient(false); }
-                        }}
-                      >
-                        {uploadingFromClient ? 'Generando (cliente)…' : 'Generar (desde este video)'}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Keyframes por ángulo (solo si existen) */}
-                {(['front','back','left','right'] as const).some((k) => Array.isArray((localKeyframes as any)[k]) && (localKeyframes as any)[k].length > 0) && (
-                  <div className="space-y-8">
-                    {([
-                      { key: 'front' as const, label: 'Frente', labelAdj: 'frontal' },
-                      { key: 'back' as const, label: 'Espalda', labelAdj: 'espalda' },
-                      { key: 'left' as const, label: 'Izquierda', labelAdj: 'izquierdo' },
-                      { key: 'right' as const, label: 'Derecha', labelAdj: 'derecho' },
-                    ]).map(({ key, label, labelAdj }) => {
-                      const arr = (localKeyframes as any)[key] as string[] | undefined;
-                      if (!Array.isArray(arr) || arr.length === 0) return null;
-                      return (
-                        <div key={key}>
-                          <h4 className="font-medium mb-2">{label}</h4>
-                          {renderKeyframes(arr, labelAdj, key)}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            {/* (Videos y Fotogramas) fue movido a la pestaña "videos" */}
           </div>
         </TabsContent>
+        <TabsContent value="videos" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-headline flex items-center gap-2">
+                <Camera /> Video y Fotogramas
+              </CardTitle>
+              <CardDescription>
+                Haz clic en un fotograma para ampliarlo, dibujar y comentar.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* Videos disponibles (frente/espalda/izquierda/derecha) */}
+              <div className="grid gap-6 md:grid-cols-2">
+                {((safeAnalysis as any).videoFrontUrl || (safeAnalysis as any).videoUrl) && (
+                  <div>
+                    <h4 className="font-medium mb-2">Frente</h4>
+                    <video
+                      controls
+                      className="w-full rounded-lg shadow-lg max-h-[360px]"
+                      src={(safeAnalysis as any).videoFrontUrl || (safeAnalysis as any).videoUrl}
+                    >
+                      Tu navegador no soporta el elemento video.
+                    </video>
+                  </div>
+                )}
+                {(safeAnalysis as any).videoBackUrl && (
+                  <div>
+                    <h4 className="font-medium mb-2">Espalda</h4>
+                    <video
+                      controls
+                      className="w-full rounded-lg shadow-lg max-h-[360px]"
+                      src={(safeAnalysis as any).videoBackUrl}
+                    >
+                      Tu navegador no soporta el elemento video.
+                    </video>
+                  </div>
+                )}
+                {(safeAnalysis as any).videoLeftUrl && (
+                  <div>
+                    <h4 className="font-medium mb-2">Izquierda</h4>
+                    <video
+                      controls
+                      className="w-full rounded-lg shadow-lg max-h-[360px]"
+                      src={(safeAnalysis as any).videoLeftUrl}
+                    >
+                      Tu navegador no soporta el elemento video.
+                    </video>
+                  </div>
+                )}
+                {(safeAnalysis as any).videoRightUrl && (
+                  <div>
+                    <h4 className="font-medium mb-2">Derecha</h4>
+                    <video
+                      controls
+                      className="w-full rounded-lg shadow-lg max-h-[360px]"
+                      src={(safeAnalysis as any).videoRightUrl}
+                    >
+                      Tu navegador no soporta el elemento video.
+                    </video>
+                  </div>
+                )}
+              </div>
+
+              {/* Botón dev para generar si no hay nada */}
+              {availableAngles.length === 0 && (
+                <div className="flex items-center justify-center mb-6">
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      disabled={rebuilding}
+                      onClick={async () => {
+                        try {
+                          setRebuilding(true);
+                          const res = await fetch(`/api/analyses/${safeAnalysis.id}/rebuild-keyframes/dev`, { method: 'POST' });
+                          const data = await res.json();
+                          if (res.ok && data?.keyframes) {
+                            setLocalKeyframes(data.keyframes);
+                          }
+                        } finally {
+                          setRebuilding(false);
+                        }
+                      }}
+                    >
+                      {rebuilding ? 'Generando (server)…' : 'Generar (server, dev)'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={uploadingFromClient}
+                      onClick={async () => {
+                        try {
+                          setUploadingFromClient(true);
+                          // Intentar extraer 12 frames desde el video visible del DOM
+                          const v = document.querySelector('video');
+                          if (!v) return;
+                          const videoEl = v as HTMLVideoElement;
+                          const canvas = document.createElement('canvas');
+                          const ctx = canvas.getContext('2d');
+                          if (!ctx) return;
+                          await new Promise<void>((r)=>{ if (videoEl.readyState>=2) r(); else videoEl.addEventListener('loadedmetadata', ()=>r(), { once: true }); });
+                          const count = 12; const urls: Array<{ dataUrl: string; timestamp: number }> = [];
+                          canvas.width = Math.max(160, videoEl.videoWidth/4|0); canvas.height = Math.max(160, (videoEl.videoHeight/videoEl.videoWidth*canvas.width)|0);
+                          const interval = Math.max(0.1, Math.min( (videoEl.duration||6)/(count+1), 2 ));
+                          for (let i=1;i<=count;i++){
+                            const t = Math.min(videoEl.duration-0.001, i*interval);
+                            videoEl.pause(); videoEl.currentTime = t;
+                            await new Promise<void>((r)=>{ const onS=()=>{videoEl.removeEventListener('seeked', onS); r();}; videoEl.addEventListener('seeked', onS); });
+                            ctx.drawImage(videoEl, 0,0, canvas.width, canvas.height);
+                            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                            urls.push({ dataUrl, timestamp: t });
+                          }
+                          const res = await fetch(`/api/analyses/${safeAnalysis.id}/keyframes/upload`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ angle:'front', frames: urls }) });
+                          const data = await res.json();
+                          if (res.ok && data?.keyframes) setLocalKeyframes(data.keyframes);
+                        } finally { setUploadingFromClient(false); }
+                      }}
+                    >
+                      {uploadingFromClient ? 'Generando (cliente)…' : 'Generar (desde este video)'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Keyframes por ángulo (solo si existen) */}
+              {(['front','back','left','right'] as const).some((k) => Array.isArray((localKeyframes as any)[k]) && (localKeyframes as any)[k].length > 0) && (
+                <div className="space-y-8">
+                  {([
+                    { key: 'front' as const, label: 'Frente', labelAdj: 'frontal' },
+                    { key: 'back' as const, label: 'Espalda', labelAdj: 'espalda' },
+                    { key: 'left' as const, label: 'Izquierda', labelAdj: 'izquierdo' },
+                    { key: 'right' as const, label: 'Derecha', labelAdj: 'derecho' },
+                  ]).map(({ key, label, labelAdj }) => {
+                    const arr = (localKeyframes as any)[key] as string[] | undefined;
+                    if (!Array.isArray(arr) || arr.length === 0) return null;
+                    return (
+                      <div key={key}>
+                        <h4 className="font-medium mb-2">{label}</h4>
+                        {renderKeyframes(arr, labelAdj, key)}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
         
-        {isCoach && (
-          <TabsContent value="coach-checklist" className="mt-6">
+        <TabsContent value="coach-checklist" className="mt-6">
+          {isCoach ? (
             <Card>
               <CardHeader>
                 <CardTitle className="font-headline flex items-center gap-2">
@@ -1194,8 +1214,31 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-        )}
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                  <ListChecks /> Checklist del Entrenador
+                </CardTitle>
+                <CardDescription>
+                  Estado pendiente de revisión por un entrenador.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-muted p-8 text-center">
+                  <ShieldAlert className="h-12 w-12 text-muted-foreground" />
+                  <h3 className="font-semibold">Aún no hay revisión de entrenador</h3>
+                  <p className="text-sm text-muted-foreground max-w-prose">
+                    Hasta que no contactes a un entrenador y realice la revisión, este apartado permanecerá vacío.
+                  </p>
+                  <Button asChild>
+                    <a href="/coaches">Buscar Entrenador</a>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
         <TabsContent value="checklist" className="mt-6">
           <DetailedChecklist
             categories={checklistState}
@@ -1251,6 +1294,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   </div>
                   <div>
                     <Button onClick={saveCoachFeedback}>Guardar revisión</Button>
+                    <Button className="ml-2" variant="secondary" onClick={markCompleted} disabled={completing}>
+                      {completing ? 'Marcando…' : 'Terminado'}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

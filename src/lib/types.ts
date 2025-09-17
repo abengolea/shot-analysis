@@ -168,6 +168,9 @@ export type Message = {
   createdAt: string; // ISO
   read: boolean;
   readAt?: string; // ISO
+  // Archivado por el coach (ocultar en su panel)
+  archivedForCoach?: boolean;
+  archivedAt?: string; // ISO
 };
 
 export type PlayerEvaluation = {

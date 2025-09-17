@@ -117,64 +117,27 @@ export default function CoachRegisterPage() {
           <BasketballIcon className="h-16 w-16 text-primary" />
         </div>
         <h1 className="font-headline text-4xl font-bold tracking-tight mb-4">
-          Únete como Entrenador
+          Entrenadores: Solo por invitación
         </h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Conecta con jugadores, comparte tu experiencia y construye tu negocio 
-          en la plataforma líder de análisis de baloncesto con IA.
+          Si te interesa formar parte, escribinos. El alta se realiza desde el panel de administración.
         </p>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-2">
-        {/* Formulario de Registro */}
+        {/* Formulario de Registro / Admin-only */}
         <div>
           {isAdmin ? (
             <CoachAdminForm />
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle>Registro Rápido</CardTitle>
+                <CardTitle>Postulación cerrada</CardTitle>
                 <CardDescription>
-                  Completa tus datos y envía la solicitud. Un administrador aprobará tu alta.
+                  Solo aceptamos entrenadores por invitación. Contacto: abengolea1@gmail.com
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                {submitted ? (
-                  <div className="flex flex-col items-center text-center gap-4 py-6">
-                    <div className="rounded-full bg-green-100 p-3 text-green-700">
-                      <CheckCircle className="h-8 w-8" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-semibold">¡Solicitud enviada!</h3>
-                      <p className="mt-2 text-muted-foreground">
-                        Ya recibimos tu solicitud. A la brevedad te estaremos contactando para poder ser parte del staff.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <form className="space-y-4" onSubmit={handleSubmit}>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Nombre completo</Label>
-                      <Input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Tu nombre" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="bio">Bio corta (opcional)</Label>
-                      <Textarea id="bio" value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Experiencia, enfoque, logros" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="photo">Foto de perfil (opcional) — JPG/PNG/WEBP, máx 5MB</Label>
-                      <Input id="photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFileChange} />
-                    </div>
-                    <Button type="submit" className="w-full" disabled={submitting}>
-                      {submitting ? 'Enviando...' : 'Enviar solicitud'}
-                    </Button>
-                  </form>
-                )}
-              </CardContent>
+              <CardContent></CardContent>
             </Card>
           )}
         </div>

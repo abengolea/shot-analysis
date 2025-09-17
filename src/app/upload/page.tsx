@@ -36,6 +36,8 @@ import {
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { storage } from "@/lib/firebase";
+import { getDownloadURL, ref as storageRef, uploadBytesResumable, UploadTask } from "firebase/storage";
 
 interface VideoFrame {
   dataUrl: string;
@@ -102,6 +104,8 @@ export default function UploadPage() {
   const leftInputRef = useRef<HTMLInputElement>(null);
   const rightInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
 
   const isPlayerProfileComplete = (p: any | null | undefined): boolean => {
     if (!p) return false;
@@ -117,6 +121,17 @@ export default function UploadPage() {
   };
 
   const handleSubmit = async (formData: FormData) => {
+    // Chequeos de conectividad previos
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      toast({ title: 'Sin conexión', description: 'Estás sin Internet. Conéctate a Wi‑Fi o datos y vuelve a intentar.', variant: 'destructive' });
+      return;
+    }
+    try {
+      const anyConn: any = (navigator as any).connection;
+      if (anyConn && (anyConn.saveData || anyConn.effectiveType === 'slow-2g' || anyConn.effectiveType === '2g')) {
+        toast({ title: 'Conexión lenta detectada', description: 'La subida puede demorar o fallar. Te recomendamos usar Wi‑Fi.', variant: 'default' });
+      }
+    } catch {}
     if (!isPlayerProfileComplete(userProfile)) {
       setProfileIncompleteOpen(true);
       return;
@@ -155,15 +170,91 @@ export default function UploadPage() {
     // Asegurar tipo de lanzamiento en el FormData
     formData.set('shotType', shotType);
 
-    // Agregar el video principal y ángulos al FormData (preferir back)
-    if (backVideo) {
-      formData.append('video-back', backVideo);
-      if (selectedVideo) formData.append('video-front', selectedVideo);
-    } else if (selectedVideo) {
-      formData.append('video-front', selectedVideo);
+    // Subir primero los archivos a Firebase Storage con carga reanudable
+    const uploads: Array<{ label: string; file: File | null; path: string }> = [
+      { label: 'back', file: backVideo, path: `videos/${user!.uid}/back-${Date.now()}.mp4` },
+      { label: 'front', file: selectedVideo, path: `videos/${user!.uid}/front-${Date.now()}.mp4` },
+      { label: 'left', file: leftVideo, path: `videos/${user!.uid}/left-${Date.now()}.mp4` },
+      { label: 'right', file: rightVideo, path: `videos/${user!.uid}/right-${Date.now()}.mp4` },
+    ];
+
+    const urlByLabel: Record<string, string> = {};
+
+    async function uploadWithRetry(label: string, file: File, path: string, maxRetries = 2): Promise<string> {
+      let attempt = 0;
+      let lastError: any = null;
+      while (attempt <= maxRetries) {
+        try {
+          const url = await new Promise<string>((resolve, reject) => {
+            const ref = storageRef(storage as any, path);
+            const task: UploadTask = uploadBytesResumable(ref, file, { contentType: file.type || 'video/mp4' });
+
+            let idleTimer: number | null = null;
+            const resetIdle = () => {
+              if (idleTimer) window.clearTimeout(idleTimer);
+              idleTimer = window.setTimeout(() => {
+                task.cancel();
+                reject(new Error('timeout'));
+              }, 90_000); // 90s sin progreso
+            };
+            resetIdle();
+
+            task.on('state_changed', (snap) => {
+              const pct = Math.round((snap.bytesTransferred / Math.max(1, snap.totalBytes)) * 100);
+              setUploadProgress((p) => ({ ...p, [label]: pct }));
+              resetIdle();
+            }, (err) => {
+              if (idleTimer) window.clearTimeout(idleTimer);
+              reject(err);
+            }, async () => {
+              if (idleTimer) window.clearTimeout(idleTimer);
+              try {
+                const url = await getDownloadURL(task.snapshot.ref);
+                resolve(url);
+              } catch (e) {
+                reject(e);
+              }
+            });
+          });
+          return url;
+        } catch (e) {
+          lastError = e;
+          attempt++;
+          if (attempt > maxRetries) break;
+          const backoffMs = 1000 * Math.pow(2, attempt - 1);
+          await new Promise((r) => setTimeout(r, backoffMs));
+        }
+      }
+      throw lastError || new Error('upload failed');
     }
-    if (leftVideo) formData.append('video-left', leftVideo);
-    if (rightVideo) formData.append('video-right', rightVideo);
+
+    try {
+      setUploading(true);
+      setUploadProgress({});
+      for (const u of uploads) {
+        if (!u.file) continue;
+        // Aviso previo si la red es mala
+        try {
+          const anyConn: any = (navigator as any).connection;
+          if (anyConn && anyConn.downlink && anyConn.downlink < 1.0) {
+            toast({ title: `Subiendo ${u.label}…`, description: 'Conexión lenta, puede tardar más de lo normal.', variant: 'default' });
+          }
+        } catch {}
+        const url = await uploadWithRetry(u.label, u.file, u.path, 2);
+        urlByLabel[u.label] = url;
+      }
+    } catch (e: any) {
+      setUploading(false);
+      toast({ title: 'Error al subir', description: 'No pudimos subir el video. Revisa tu Internet o usa Wi‑Fi e intenta de nuevo.', variant: 'destructive' });
+      return;
+    }
+    setUploading(false);
+
+    // Adjuntar URLs en el FormData y NO adjuntar archivos binarios
+    if (urlByLabel['back']) formData.set('uploadedBackUrl', urlByLabel['back']);
+    if (urlByLabel['front']) formData.set('uploadedFrontUrl', urlByLabel['front']);
+    if (urlByLabel['left']) formData.set('uploadedLeftUrl', urlByLabel['left']);
+    if (urlByLabel['right']) formData.set('uploadedRightUrl', urlByLabel['right']);
 
     // Mostrar modal de análisis en curso
     setAnalyzingOpen(true);
@@ -418,6 +509,20 @@ export default function UploadPage() {
 
               <SubmitButton analyzing={analyzingOpen} />
               <PendingNotice />
+              {uploading && (
+                <div className="text-sm text-muted-foreground">
+                  <div className="mt-2">Subiendo a la nube…</div>
+                  {(['back','front','left','right'] as const).map((k) => (
+                    <div key={k} className="mt-1">
+                      <span className="mr-2 capitalize">{k}:</span>
+                      <span>{(uploadProgress[k] ?? 0)}%</span>
+                      <div className="h-1 bg-muted rounded mt-1">
+                        <div className="h-1 bg-primary rounded" style={{ width: `${uploadProgress[k] ?? 0}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </form>
           </CardContent>
         </Card>

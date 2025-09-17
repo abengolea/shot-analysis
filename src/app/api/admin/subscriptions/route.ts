@@ -27,15 +27,52 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(Math.max(limitParam, 1), 300);
     const startAfterVal = searchParams.get('startAfter') || undefined;
 
-    let q = adminDb.collection('wallets').where('historyPlusActive', '==', true).orderBy('updatedAt', 'desc').limit(limit);
-    if (startAfterVal) q = q.startAfter(startAfterVal);
+    let q: FirebaseFirestore.Query = adminDb.collection('wallets').where('historyPlusActive', '==', true).orderBy('updatedAt', 'desc').limit(limit) as any;
+    if (startAfterVal) {
+      try {
+        const docSnap = await adminDb.collection('wallets').doc(startAfterVal).get();
+        if (docSnap.exists) {
+          q = (q as FirebaseFirestore.Query).startAfter(docSnap);
+        } else {
+          q = (q as FirebaseFirestore.Query).startAfter(startAfterVal);
+        }
+      } catch {
+        q = (q as FirebaseFirestore.Query).startAfter(startAfterVal);
+      }
+    }
 
     const snap = await q.get();
     const now = new Date();
+    const serializeDate = (v: any): string | undefined => {
+      try {
+        if (!v) return undefined;
+        if (typeof v === 'string') return v;
+        if (typeof v === 'number') return new Date(v).toISOString();
+        if (typeof v.toDate === 'function') return v.toDate().toISOString();
+        if (typeof v._seconds === 'number') {
+          const ms = v._seconds * 1000 + Math.round((v._nanoseconds || 0) / 1e6);
+          return new Date(ms).toISOString();
+        }
+        return String(v);
+      } catch {
+        return undefined;
+      }
+    };
     const items = snap.docs
-      .map((d) => ({ id: d.id, ...(d.data() as any) }))
-      .filter((w) => !w.historyPlusValidUntil || new Date(w.historyPlusValidUntil) > now);
-    const nextCursor = items.length ? items[items.length - 1]?.updatedAt : undefined;
+      .map((d) => {
+        const data = d.data() as any;
+        const validUntilIso = serializeDate(data?.historyPlusValidUntil);
+        return {
+          id: d.id,
+          ...data,
+          historyPlusValidUntil: validUntilIso,
+          updatedAt: serializeDate(data?.updatedAt),
+          createdAt: serializeDate(data?.createdAt),
+        };
+      })
+      .filter((w: any) => !w.historyPlusValidUntil || new Date(w.historyPlusValidUntil) > now);
+    const lastDoc = snap.docs[snap.docs.length - 1];
+    const nextCursor = lastDoc ? lastDoc.id : undefined;
     return NextResponse.json({ items, nextCursor });
   } catch (e: any) {
     console.error('admin subscriptions list error', e);

@@ -146,11 +146,11 @@ export default function DashboardPage() {
     if (s === 'Excelente') return 5;
     return null;
   };
-  // Convertir scores legacy a 0..100
+  // Convertir scores legacy a 0..100 con 1 decimal (primero escala 1..5, luego 1..10)
   const toPct = (score: number): number => {
-    if (score <= 10) return Math.round(score * 10);
-    if (score <= 5) return Math.round((score / 5) * 100);
-    return Math.round(score);
+    if (score <= 5) return Number(((score / 5) * 100).toFixed(1));
+    if (score <= 10) return Number((score * 10).toFixed(1));
+    return Number(Number(score).toFixed(1));
   };
 
   const getDerivedScore = (a: any): number | null => {
@@ -163,27 +163,22 @@ export default function DashboardPage() {
       .filter((v: any) => typeof v === 'number');
     if (!vals.length) return null;
     const avg1to5 = vals.reduce((s: number, v: number) => s + v, 0) / vals.length;
-    return Math.round((avg1to5 / 5) * 100);
+    return Number(((avg1to5 / 5) * 100).toFixed(1));
   };
 
   // Obtener el último análisis (ya viene ordenado por fecha desc)
   const lastAnalysis = userAnalyses.length > 0 ? userAnalyses[0] : null;
   const lastScore = getDerivedScore(lastAnalysis);
 
-  // Promedios por tipo en 0..100
-  const avgScore = (type: string) => {
-    const vals = userAnalyses
-      .filter((a) => a.status === 'analyzed' && a.shotType === type)
-      .map((a) => getDerivedScore(a))
-      .filter((v): v is number => typeof v === 'number');
-    if (!vals.length) return null;
-    const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
-    return Math.round(avg);
+  // Último score por tipo en 0..100
+  const lastScoreByType = (type: string) => {
+    const found = userAnalyses.find((a) => a.status === 'analyzed' && a.shotType === type);
+    return found ? getDerivedScore(found) : null;
   };
-  const pct = (score: number | null) => (score == null ? 'N/A' : `${Math.round(score)} / 100`);
-  const avgThree = avgScore('Lanzamiento de Tres');
-  const avgJump = avgScore('Lanzamiento de Media Distancia (Jump Shot)');
-  const avgFree = avgScore('Tiro Libre');
+  const pct = (score: number | null) => (score == null ? 'N/A' : `${Number(score).toFixed(1)} / 100`);
+  const lastThree = lastScoreByType('Lanzamiento de Tres');
+  const lastJump = lastScoreByType('Lanzamiento de Media Distancia (Jump Shot)');
+  const lastFree = lastScoreByType('Tiro Libre');
 
   // Función para obtener el color del badge según el status
   const getStatusBadge = (status: string) => {
@@ -301,7 +296,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {lastScore != null ? `${Math.round(lastScore)} / 100` : (userProfile.role === 'player' && userProfile.playerLevel ? userProfile.playerLevel : 'N/A')}
+              {lastScore != null ? `${Number(lastScore).toFixed(1)} / 100` : (userProfile.role === 'player' && userProfile.playerLevel ? userProfile.playerLevel : 'N/A')}
             </div>
             <p className="text-xs text-muted-foreground mb-2">
               {lastScore != null
@@ -311,15 +306,15 @@ export default function DashboardPage() {
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div className="p-2 rounded border">
                 <div className="text-muted-foreground">Tres</div>
-                <div className="font-semibold">{pct(avgThree)}</div>
+                <div className="font-semibold">{pct(lastThree)}</div>
               </div>
               <div className="p-2 rounded border">
                 <div className="text-muted-foreground">Jump</div>
-                <div className="font-semibold">{pct(avgJump)}</div>
+                <div className="font-semibold">{pct(lastJump)}</div>
               </div>
               <div className="p-2 rounded border">
                 <div className="text-muted-foreground">Libres</div>
-                <div className="font-semibold">{pct(avgFree)}</div>
+                <div className="font-semibold">{pct(lastFree)}</div>
               </div>
             </div>
             <div className="mt-3">

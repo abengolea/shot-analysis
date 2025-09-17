@@ -31,11 +31,46 @@ export async function GET(req: NextRequest) {
     let q: FirebaseFirestore.Query = adminDb.collection('payments') as any;
     if (status) q = q.where('status', '==', status);
     q = q.orderBy('createdAt', 'desc').limit(limit);
-    if (startAfterVal) q = q.startAfter(startAfterVal);
+    if (startAfterVal) {
+      try {
+        const docSnap = await adminDb.collection('payments').doc(startAfterVal).get();
+        if (docSnap.exists) {
+          q = (q as FirebaseFirestore.Query).startAfter(docSnap);
+        } else {
+          q = (q as FirebaseFirestore.Query).startAfter(startAfterVal);
+        }
+      } catch {
+        q = (q as FirebaseFirestore.Query).startAfter(startAfterVal);
+      }
+    }
 
     const snap = await q.get();
-    const items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-    const nextCursor = items.length ? items[items.length - 1]?.createdAt : undefined;
+    const serializeDate = (v: any): string | undefined => {
+      try {
+        if (!v) return undefined;
+        if (typeof v === 'string') return v;
+        if (typeof v === 'number') return new Date(v).toISOString();
+        if (typeof v.toDate === 'function') return v.toDate().toISOString();
+        if (typeof v._seconds === 'number') {
+          const ms = v._seconds * 1000 + Math.round((v._nanoseconds || 0) / 1e6);
+          return new Date(ms).toISOString();
+        }
+        return String(v);
+      } catch {
+        return undefined;
+      }
+    };
+    const items = snap.docs.map((d) => {
+      const data = d.data() as any;
+      return {
+        id: d.id,
+        ...data,
+        createdAt: serializeDate(data?.createdAt),
+        updatedAt: serializeDate(data?.updatedAt),
+      };
+    });
+    const lastDoc = snap.docs[snap.docs.length - 1];
+    const nextCursor = lastDoc ? lastDoc.id : undefined;
     return NextResponse.json({ items, nextCursor });
   } catch (e: any) {
     console.error('admin payments list error', e);

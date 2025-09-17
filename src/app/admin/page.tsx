@@ -643,16 +643,20 @@ export default function AdminHome() {
 								</tr>
 							</thead>
 							<tbody>
-								{filteredCoaches.map((c:any) => (
-									<tr key={c.id} className="border-t">
-										<td className="py-2 px-3">{c.id}</td>
-										<td className="py-2 px-3">{c.name || '-'}</td>
-										<td className="py-2 px-3">{c.email || '-'}</td>
-										<td className="py-2 px-3">{c.status || '-'}</td>
-										<td className="py-2 px-3">{typeof c.ratePerAnalysis === 'number' ? c.ratePerAnalysis : '-'}</td>
+                                {filteredCoaches.map((c:any) => (
+                                    <tr key={c.id} className="border-t">
+                                        <td className="py-2 px-3">
+                                            <Link href={`/admin/coaches/${c.id}`} className="underline">
+                                                {c.id}
+                                            </Link>
+                                        </td>
+                                        <td className="py-2 px-3">{c.name || '-'}</td>
+                                        <td className="py-2 px-3">{c.email || '-'}</td>
+                                        <td className="py-2 px-3">{c.status || '-'}</td>
+                                        <td className="py-2 px-3">{typeof c.ratePerAnalysis === 'number' ? c.ratePerAnalysis : '-'}</td>
                                         <td className="py-2 px-3">{typeof c.createdAt === 'string' ? c.createdAt : (c?.createdAt?.toDate?.() ? c.createdAt.toDate().toISOString() : (typeof c?.createdAt?._seconds === 'number' ? new Date(c.createdAt._seconds * 1000 + Math.round((c.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
-									</tr>
-								))}
+                                    </tr>
+                                ))}
 								{!filteredCoaches.length && (
 									<tr>
 										<td className="py-6 px-3 text-gray-500" colSpan={6}>{coachesLoading ? 'Cargando…' : 'Sin datos'}</td>

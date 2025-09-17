@@ -79,21 +79,9 @@ function RoleSpecificForm({ role }: RoleSpecificFormProps) {
                     description: result.message,
                 });
                 
-                // Redirigir según existencia de perfil coach
+                // Redirigir por rol sin chequear doc (el layout decide)
                 if (role === 'coach') {
-                    try {
-                        const { db } = await import('@/lib/firebase');
-                        const { doc, getDoc } = await import('firebase/firestore');
-                        const userId = (await import('firebase/auth')).getAuth().currentUser?.uid;
-                        if (userId) {
-                            const snap = await getDoc(doc(db as any, 'coaches', userId));
-                            if (snap.exists()) {
-                                window.location.href = '/coach/dashboard';
-                                return;
-                            }
-                        }
-                    } catch {}
-                    window.location.href = '/coach-register';
+                    window.location.href = '/coach/dashboard';
                 } else {
                     window.location.href = '/dashboard';
                 }
