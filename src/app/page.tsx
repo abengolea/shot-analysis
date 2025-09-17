@@ -72,7 +72,7 @@ export default function LandingPage() {
               Subí tu video. Bajá tus errores.
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">
-              Nuestra IA analiza tu mecánica y te da ejercicios personalizados para mejorar hoy.
+              IA que detecta tu técnica y te da feedback accionable en segundos.
             </p>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
               <Button size="lg" asChild>
