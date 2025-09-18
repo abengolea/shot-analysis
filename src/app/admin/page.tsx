@@ -544,15 +544,19 @@ export default function AdminHome() {
 							</thead>
 							<tbody>
                                 {filteredPlayers.map((p:any) => (
-									<tr key={p.id} className="border-t">
-										<td className="py-2 px-3">{p.id}</td>
-										<td className="py-2 px-3">{p.name || '-'}</td>
-										<td className="py-2 px-3">{p.email || '-'}</td>
-										<td className="py-2 px-3">{p.playerLevel || '-'}</td>
-										<td className="py-2 px-3">{p.status || '-'}</td>
+                                    <tr key={p.id} className="border-t">
+                                        <td className="py-2 px-3">
+                                            <Link href={`/admin/players/${p.id}`} className="underline">
+                                                {p.id}
+                                            </Link>
+                                        </td>
+                                        <td className="py-2 px-3">{p.name || '-'}</td>
+                                        <td className="py-2 px-3">{p.email || '-'}</td>
+                                        <td className="py-2 px-3">{p.playerLevel || '-'}</td>
+                                        <td className="py-2 px-3">{p.status || '-'}</td>
                                         <td className="py-2 px-3">{typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
-									</tr>
-								))}
+                                    </tr>
+                                ))}
 								{!filteredPlayers.length && (
 									<tr>
 										<td className="py-6 px-3 text-gray-500" colSpan={6}>{playersLoading ? 'Cargando…' : 'Sin datos'}</td>

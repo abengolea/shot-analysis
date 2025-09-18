@@ -18,12 +18,21 @@ async function getPlayerData(userId: string) {
   const playerSnap = await adminDb.collection('players').doc(userId).get();
   if (!playerSnap.exists) return null;
   const walletSnap = await adminDb.collection('wallets').doc(userId).get();
-  const analysesSnap = await adminDb.collection('analyses').where('playerId', '==', userId).get();
+  const analysesSnap = await adminDb.collection('analyses').where('playerId', '==', userId).orderBy('createdAt','desc').limit(10).get();
+  const paymentsSnap = await adminDb.collection('payments').where('userId', '==', userId).orderBy('createdAt','desc').limit(10).get();
+  const ticketsSnap = await adminDb.collection('tickets').where('userId', '==', userId).orderBy('updatedAt','desc').limit(10).get();
+  const playerData = playerSnap.data() as any;
+  const coachId = playerData?.coachId || null;
+  const coachSnap = coachId ? await adminDb.collection('coaches').doc(String(coachId)).get() : null;
   return {
     id: userId,
-    player: playerSnap.data(),
+    player: playerData,
     wallet: walletSnap.exists ? walletSnap.data() : null,
-    analysesCount: analysesSnap.size,
+    analysesCount: (await adminDb.collection('analyses').where('playerId', '==', userId).get()).size,
+    latestAnalyses: analysesSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
+    latestPayments: paymentsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
+    latestTickets: ticketsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
+    coach: coachSnap && coachSnap.exists ? { id: coachSnap.id, ...(coachSnap.data() as any) } : null,
   };
 }
 
@@ -38,7 +47,7 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
     );
   }
 
-  const { player, wallet, analysesCount } = data as any;
+  const { player, wallet, analysesCount, latestAnalyses, latestPayments, latestTickets, coach } = data as any;
 
   const statusVariant = player.status === 'active' ? 'default' : player.status === 'pending' ? 'secondary' : 'destructive';
 
@@ -147,6 +156,208 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
             </div>
 
             <Link href="/admin?tab=players" className="inline-block underline">Volver al listado</Link>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Perfil</CardTitle>
+                <CardDescription>Datos del jugador</CardDescription>
+              </div>
+              {coach?.id && (
+                <Link href={`/admin/coaches/${coach.id}`} className="text-sm underline">Ver coach</Link>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <div className="text-muted-foreground">Nivel</div>
+              <div className="font-medium">{player.playerLevel || '-'}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Categoría de edad</div>
+              <div className="font-medium">{player.ageGroup || '-'}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Posición</div>
+              <div className="font-medium">{player.position || '-'}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">País</div>
+              <div className="font-medium">{player.country || '-'}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Altura (cm)</div>
+              <div className="font-medium">{player.height || '-'}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Envergadura (cm)</div>
+              <div className="font-medium">{player.wingspan || '-'}</div>
+            </div>
+            <div className="col-span-2">
+              <div className="text-muted-foreground">Coach asignado</div>
+              <div className="font-medium">{coach?.name ? `${coach.name} (${coach.id})` : (player.coachId || '-')}</div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Suscripción</CardTitle>
+                <CardDescription>History+ y créditos</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="text-sm space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-muted-foreground">History+ activo</div>
+              <div className="font-medium">{wallet?.historyPlusActive ? 'Sí' : 'No'}</div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="text-muted-foreground">Vence</div>
+              <div className="font-medium">{wallet?.historyPlusValidUntil ? new Date(wallet.historyPlusValidUntil).toLocaleDateString() : '-'}</div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="text-muted-foreground">Créditos</div>
+              <div className="font-medium">{wallet?.credits ?? 0}</div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="text-muted-foreground">Gratis usados (año)</div>
+              <div className="font-medium">{wallet?.freeAnalysesUsed ?? 0}</div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Análisis recientes</CardTitle>
+                <CardDescription>Últimos análisis cargados por este jugador</CardDescription>
+              </div>
+              <Link href="/admin/revision-ia" className="text-sm underline">Ver todos</Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded border overflow-x-auto">
+              <table className="min-w-[700px] text-sm">
+                <thead>
+                  <tr className="text-left">
+                    <th className="py-2 px-3">ID</th>
+                    <th className="py-2 px-3">Tipo</th>
+                    <th className="py-2 px-3">Score</th>
+                    <th className="py-2 px-3">Estado</th>
+                    <th className="py-2 px-3">Creado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(latestAnalyses || []).map((a: any) => (
+                    <tr key={a.id} className="border-t">
+                      <td className="py-2 px-3"><Link href={`/admin/revision-ia/${a.id}`} className="underline">{a.id}</Link></td>
+                      <td className="py-2 px-3">{a.shotType || '-'}</td>
+                      <td className="py-2 px-3">{typeof a.score === 'number' ? a.score : '-'}</td>
+                      <td className="py-2 px-3">{a.status || '-'}</td>
+                      <td className="py-2 px-3">{typeof a.createdAt === 'string' ? a.createdAt : (a?.createdAt?.toDate?.() ? a.createdAt.toDate().toISOString() : (typeof a?.createdAt?._seconds === 'number' ? new Date(a.createdAt._seconds * 1000 + Math.round((a.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
+                    </tr>
+                  ))}
+                  {!(latestAnalyses || []).length && (
+                    <tr><td className="py-3 px-3 text-muted-foreground" colSpan={5}>Sin análisis recientes</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Pagos recientes</CardTitle>
+                <CardDescription>Últimos pagos de este usuario</CardDescription>
+              </div>
+              <Link href="/admin?tab=payments" className="text-sm underline">Ver todos</Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded border overflow-x-auto">
+              <table className="min-w-[600px] text-sm">
+                <thead>
+                  <tr className="text-left">
+                    <th className="py-2 px-3">ID</th>
+                    <th className="py-2 px-3">Producto</th>
+                    <th className="py-2 px-3">Estado</th>
+                    <th className="py-2 px-3">Importe</th>
+                    <th className="py-2 px-3">Creado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(latestPayments || []).map((p: any) => (
+                    <tr key={p.id} className="border-t">
+                      <td className="py-2 px-3">{p.id}</td>
+                      <td className="py-2 px-3">{p.productId || '-'}</td>
+                      <td className="py-2 px-3">{p.status || '-'}</td>
+                      <td className="py-2 px-3">{typeof p.amount === 'number' ? `${p.amount.toLocaleString('es-AR')} ${p.currency || ''}` : '-'}</td>
+                      <td className="py-2 px-3">{typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
+                    </tr>
+                  ))}
+                  {!(latestPayments || []).length && (
+                    <tr><td className="py-3 px-3 text-muted-foreground" colSpan={5}>Sin pagos recientes</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Tickets recientes</CardTitle>
+                <CardDescription>Últimos tickets de soporte del usuario</CardDescription>
+              </div>
+              <Link href="/admin/tickets" className="text-sm underline">Ver todos</Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded border overflow-x-auto">
+              <table className="min-w-[800px] text-sm">
+                <thead>
+                  <tr className="text-left">
+                    <th className="py-2 px-3">ID</th>
+                    <th className="py-2 px-3">Asunto</th>
+                    <th className="py-2 px-3">Estado</th>
+                    <th className="py-2 px-3">Prioridad</th>
+                    <th className="py-2 px-3">Actualizado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(latestTickets || []).map((t: any) => (
+                    <tr key={t.id} className="border-t">
+                      <td className="py-2 px-3"><Link href={`/admin/tickets/${t.id}`} className="underline">{t.id}</Link></td>
+                      <td className="py-2 px-3">{t.subject || '-'}</td>
+                      <td className="py-2 px-3">{t.status || '-'}</td>
+                      <td className="py-2 px-3">{t.priority || '-'}</td>
+                      <td className="py-2 px-3">{typeof t.updatedAt === 'string' ? t.updatedAt : (t?.updatedAt?.toDate?.() ? t.updatedAt.toDate().toISOString() : (typeof t?.updatedAt?._seconds === 'number' ? new Date(t.updatedAt._seconds * 1000 + Math.round((t.updatedAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
+                    </tr>
+                  ))}
+                  {!(latestTickets || []).length && (
+                    <tr><td className="py-3 px-3 text-muted-foreground" colSpan={5}>Sin tickets recientes</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </CardContent>
         </Card>
       </div>

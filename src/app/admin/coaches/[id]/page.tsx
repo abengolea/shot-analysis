@@ -153,7 +153,7 @@ export default async function AdminCoachDetailPage({ params }: { params: { id: s
                 ) : (
                   <div className="h-16 w-16 rounded-full border flex items-center justify-center text-xs text-muted-foreground">Sin foto</div>
                 )}
-                <form action={actionUpdateCoachPhoto} className="flex items-center gap-2" encType="multipart/form-data">
+                <form action={actionUpdateCoachPhoto} className="flex items-center gap-2">
                   <input type="hidden" name="userId" value={data.id} />
                   <input name="avatarFile" type="file" accept="image/jpeg,image/png,image/webp" className="text-sm" />
                   <Button type="submit" size="sm">Subir</Button>
