@@ -1,18 +1,9 @@
 "use client";
 
-import { CoachAdminForm } from "@/components/coach-admin-form";
 import { BasketballIcon } from "@/components/icons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, Star, Users, Award } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { useAuth } from "@/hooks/use-auth";
-import { storage } from "@/lib/firebase";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { useState } from "react";
 
 const benefits = [
   {
@@ -33,83 +24,6 @@ const benefits = [
 ];
 
 export default function CoachRegisterPage() {
-  const { user, userProfile } = useAuth();
-  const [name, setName] = useState<string>(user?.displayName || (userProfile as any)?.name || "");
-  const [email, setEmail] = useState<string>(user?.email || "");
-  const [bio, setBio] = useState<string>("");
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [submitting, setSubmitting] = useState<boolean>(false);
-  const [submitted, setSubmitted] = useState<boolean>(false);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
-    if (!file) { setPhotoFile(null); return; }
-    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-    const maxBytes = 5 * 1024 * 1024; // 5MB
-    if (!allowed.includes(file.type)) {
-      alert('Tipo de archivo no permitido. Usa JPG, PNG o WEBP.');
-      e.currentTarget.value = '';
-      return;
-    }
-    if (file.size > maxBytes) {
-      alert('La imagen supera 5MB. Reduce el tamaño e intenta de nuevo.');
-      e.currentTarget.value = '';
-      return;
-    }
-    setPhotoFile(file);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      if (!user) {
-        window.location.href = '/login';
-        return;
-      }
-      if (!email) { alert('Email es requerido'); return; }
-      if (!name) { alert('Nombre es requerido'); return; }
-      // Foto ahora es opcional
-
-      setSubmitting(true);
-
-      // Subir foto si se proporcionó
-      let photoUrl: string | null = null;
-      if (photoFile) {
-        const safeName = (photoFile.name || 'photo').replace(/[^a-zA-Z0-9_.-]/g, '_');
-        const filePath = `profile-images/${user.uid}/${Date.now()}-${safeName}`;
-        const fileRef = ref(storage, filePath);
-        await uploadBytes(fileRef, photoFile, { contentType: photoFile.type });
-        photoUrl = await getDownloadURL(fileRef);
-      }
-
-      // Llamar API para crear la solicitud
-      const token = await user.getIdToken();
-      const res = await fetch('/api/coach-applications', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ name, email, bio, photoUrl }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Error al enviar la solicitud');
-      }
-
-      setSubmitted(true);
-      setBio('');
-      setPhotoFile(null);
-    } catch (err: any) {
-      console.error('Error enviando solicitud de entrenador:', err);
-      alert(err?.message || 'No se pudo enviar la solicitud');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const isAdmin = (userProfile as any)?.role === 'admin';
-
   return (
     <div className="container mx-auto max-w-4xl py-8">
       <div className="text-center mb-12">
@@ -124,26 +38,9 @@ export default function CoachRegisterPage() {
         </p>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-2">
-        {/* Formulario de Registro / Admin-only */}
-        <div>
-          {isAdmin ? (
-            <CoachAdminForm />
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>Postulación cerrada</CardTitle>
-                <CardDescription>
-                  Solo aceptamos entrenadores por invitación. Contacto: abengolea1@gmail.com
-                </CardDescription>
-              </CardHeader>
-              <CardContent></CardContent>
-            </Card>
-          )}
-        </div>
-
+      <div className="grid gap-8 place-items-center">
         {/* Beneficios y Información */}
-        <div className="space-y-6">
+        <div className="space-y-6 w-full max-w-2xl mx-auto">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">

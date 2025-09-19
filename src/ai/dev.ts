@@ -23,7 +23,7 @@ export { processUploadedVideo as processUploadedVideoFlowEntry } from '@/ai/flow
 // You can edit this file to add or remove flows.
 export const processuploadedvideo = onObjectFinalized(
   {
-    bucket: 'shotanalisys.appspot.com',
+    bucket: 'shotanalisys.firebasestorage.app',
     cpu: 2,
     memory: '4GiB',
     timeoutSeconds: 540,

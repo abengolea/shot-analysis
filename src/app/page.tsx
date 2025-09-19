@@ -207,7 +207,7 @@ export default function LandingPage() {
             </ul>
             <div className="mt-4 flex gap-3">
               <Button asChild>
-                <Link href="/coach-register">Registrarme como entrenador</Link>
+              <Link href="/coach-register">Postúlate como entrenador en la app</Link>
               </Button>
             </div>
           </div>

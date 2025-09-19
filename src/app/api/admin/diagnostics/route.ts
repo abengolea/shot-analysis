@@ -48,33 +48,69 @@ export async function GET(req: NextRequest) {
       storageInfo = { ok: false, error: e?.message || String(e) };
     }
 
-    // Probar consulta de Firestore para detectar falta de índice o permisos
-    let firestoreProbe: { ok: boolean; count?: number; needsIndex?: boolean; indexHint?: string; error?: string } = { ok: false };
-    try {
-      if (!adminDb) throw new Error('adminDb no inicializado');
-      const q = await adminDb
-        .collection('analyses')
-        .where('playerId', '==', '__diagnostic_user__')
-        .orderBy('createdAt', 'desc')
-        .limit(1)
-        .get();
-      firestoreProbe = { ok: true, count: q.size };
-    } catch (e: any) {
-      const msg = e?.message || String(e);
-      const needsIndex = /index/i.test(msg) && /create/i.test(msg);
-      firestoreProbe = {
-        ok: false,
-        needsIndex,
-        indexHint: needsIndex ? 'Crear índice en collection analyses: playerId ASC, createdAt DESC' : undefined,
-        error: msg,
-      };
-    }
+    // Probar varias consultas de Firestore para detectar falta de índices o permisos
+    type ProbeResult = { ok: boolean; count?: number; needsIndex?: boolean; indexHint?: string; error?: string };
+    const runProbe = async (fn: () => Promise<FirebaseFirestore.QuerySnapshot>, indexHint: string): Promise<ProbeResult> => {
+      try {
+        const snap = await fn();
+        return { ok: true, count: snap.size };
+      } catch (e: any) {
+        const msg = e?.message || String(e);
+        const needsIndex = /index/i.test(msg) && /create/i.test(msg);
+        return { ok: false, needsIndex, indexHint: needsIndex ? indexHint : undefined, error: msg };
+      }
+    };
+
+    const probes: Record<string, ProbeResult> = {};
+    if (!adminDb) throw new Error('adminDb no inicializado');
+
+    // 1) analyses por playerId + createdAt desc
+    probes.analysesByPlayer = await runProbe(
+      () => adminDb.collection('analyses').where('playerId', '==', '__diagnostic_user__').orderBy('createdAt', 'desc').limit(1).get(),
+      'analyses: playerId ASC, createdAt DESC'
+    );
+
+    // 2) analyses por coachId + createdAt desc
+    probes.analysesByCoach = await runProbe(
+      () => adminDb.collection('analyses').where('coachId', '==', '__diagnostic_coach__').orderBy('createdAt', 'desc').limit(1).get(),
+      'analyses: coachId ASC, createdAt DESC'
+    );
+
+    // 3) payments por coachId + createdAt desc
+    probes.paymentsByCoach = await runProbe(
+      () => adminDb.collection('payments').where('coachId', '==', '__diagnostic_coach__').orderBy('createdAt', 'desc').limit(1).get(),
+      'payments: coachId ASC, createdAt DESC'
+    );
+
+    // 4) payments por status + createdAt desc
+    probes.paymentsByStatus = await runProbe(
+      () => adminDb.collection('payments').where('status', '==', '__diagnostic_status__').orderBy('createdAt', 'desc').limit(1).get(),
+      'payments: status ASC, createdAt DESC'
+    );
+
+    // 4b) payments por userId + createdAt desc
+    probes.paymentsByUser = await runProbe(
+      () => adminDb.collection('payments').where('userId', '==', '__diagnostic_user__').orderBy('createdAt', 'desc').limit(1).get(),
+      'payments: userId ASC, createdAt DESC'
+    );
+
+    // 5) keyframeComments por keyframeUrl + createdAt desc (subcolección)
+    probes.keyframeCommentsByUrl = await runProbe(
+      () => adminDb.collection('analyses').doc('__diagnostic__').collection('keyframeComments').where('keyframeUrl', '==', '__url__').orderBy('createdAt', 'desc').limit(1).get(),
+      'keyframeComments: keyframeUrl ASC, createdAt DESC'
+    );
+
+    // 6) keyframeAnnotations por keyframeUrl + createdAt desc (subcolección)
+    probes.keyframeAnnotationsByUrl = await runProbe(
+      () => adminDb.collection('analyses').doc('__diagnostic__').collection('keyframeAnnotations').where('keyframeUrl', '==', '__url__').orderBy('createdAt', 'desc').limit(1).get(),
+      'keyframeAnnotations: keyframeUrl ASC, createdAt DESC'
+    );
 
     return NextResponse.json({
       adminInitialized,
       env,
       storageInfo,
-      firestoreProbe,
+      probes,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Error desconocido' }, { status: 500 });

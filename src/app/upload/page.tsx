@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState, startTransition } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import { startAnalysis } from "@/app/actions";
@@ -38,11 +38,26 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { storage } from "@/lib/firebase";
 import { getDownloadURL, ref as storageRef, uploadBytesResumable, UploadTask } from "firebase/storage";
+import { Switch } from "@/components/ui/switch";
 
 interface VideoFrame {
   dataUrl: string;
   timestamp: number;
   description: string;
+}
+
+// ffmpeg.wasm singleton (cargado bajo demanda en cliente)
+let _ffmpeg: any | null = null;
+async function getFfmpegInstance() {
+  if (_ffmpeg) return _ffmpeg;
+  const { createFFmpeg } = await import('@ffmpeg/ffmpeg');
+  const ffmpeg = createFFmpeg({
+    log: false,
+    corePath: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.js',
+  });
+  await ffmpeg.load();
+  _ffmpeg = ffmpeg;
+  return ffmpeg;
 }
 
 function SubmitButton({ analyzing }: { analyzing: boolean }) {
@@ -106,6 +121,9 @@ export default function UploadPage() {
   const backInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [compressEnabled, setCompressEnabled] = useState(true);
+  const [compressing, setCompressing] = useState(false);
+  const [compressionProgress, setCompressionProgress] = useState<Record<string, number>>({});
 
   const isPlayerProfileComplete = (p: any | null | undefined): boolean => {
     if (!p) return false;
@@ -133,8 +151,11 @@ export default function UploadPage() {
       }
     } catch {}
     if (!isPlayerProfileComplete(userProfile)) {
-      setProfileIncompleteOpen(true);
-      return;
+      toast({
+        title: 'Perfil incompleto',
+        description: 'Te recomendamos completar nombre, fecha de nacimiento, país, grupo de edad, nivel, posición, altura y envergadura para mejorar el análisis. Igual vamos a continuar.',
+        variant: 'default',
+      });
     }
     if (!shotType) {
       toast({
@@ -153,24 +174,60 @@ export default function UploadPage() {
       return;
     }
 
-    // Control de tamaño total (dejar margen bajo 100 MB server action)
-    const totalBytes = [selectedVideo, backVideo, leftVideo, rightVideo]
-      .filter((f): f is File => !!f)
-      .reduce((sum, f) => sum + f.size, 0);
-    const maxBytes = 90 * 1024 * 1024; // 90 MB
-    if (totalBytes > maxBytes) {
-      toast({
-        title: "Archivo demasiado grande",
-        description: "El tamaño total supera 90 MB. Reduce la calidad/duración o sube menos ángulos.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     // Asegurar tipo de lanzamiento en el FormData
     formData.set('shotType', shotType);
 
-    // Subir primero los archivos a Firebase Storage con carga reanudable
+    // Parámetros de límites
+    const PER_FILE_LIMIT = 90 * 1024 * 1024; // 90 MB por archivo
+    const TOTAL_LIMIT = 250 * 1024 * 1024; // 250 MB total
+
+    // Compresión en cliente (si está habilitada)
+    async function compressIfNeeded(label: string, file: File): Promise<File> {
+      try {
+        // Heurística: si ya es pequeño, evitar recomprimir
+        if (!compressEnabled || file.size < 20 * 1024 * 1024) return file;
+        setCompressing(true);
+        setCompressionProgress((p) => ({ ...p, [label]: 0 }));
+        const ffmpeg = await getFfmpegInstance();
+        try { ffmpeg.setProgress(({ ratio }: any) => { setCompressionProgress((p) => ({ ...p, [label]: Math.min(99, Math.round((ratio || 0) * 100)) })); }); } catch {}
+        const inName = `${label}_in.mp4`;
+        const outName = `${label}_out.mp4`;
+        const { fetchFile } = await import('@ffmpeg/ffmpeg');
+        ffmpeg.FS('writeFile', inName, await fetchFile(file));
+        try {
+          await ffmpeg.run(
+            '-y',
+            '-i', inName,
+            '-vf', 'scale=-2:720,fps=24',
+            '-c:v', 'libx264',
+            '-preset', 'veryfast',
+            '-crf', '28',
+            '-c:a', 'aac',
+            '-b:a', '96k',
+            '-movflags', '+faststart',
+            outName
+          );
+        } catch (e) {
+          console.warn('[ffmpeg] Falla al usar libx264; devolviendo original.', e);
+          try { ffmpeg.FS('unlink', inName); } catch {}
+          return file;
+        }
+        const data = ffmpeg.FS('readFile', outName);
+        const blob = new Blob([data.buffer], { type: 'video/mp4' });
+        const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '') + '-compressed.mp4', { type: 'video/mp4' });
+        try { ffmpeg.FS('unlink', inName); } catch {}
+        try { ffmpeg.FS('unlink', outName); } catch {}
+        setCompressionProgress((p) => ({ ...p, [label]: 100 }));
+        return compressed.size > 0 ? compressed : file;
+      } catch (e) {
+        console.warn('[ffmpeg] Compresión falló; usando original.', e);
+        return file;
+      } finally {
+        // estado visual se cierra más abajo
+      }
+    }
+
+    // Preparar lista de cargas
     const uploads: Array<{ label: string; file: File | null; path: string }> = [
       { label: 'back', file: backVideo, path: `videos/${user!.uid}/back-${Date.now()}.mp4` },
       { label: 'front', file: selectedVideo, path: `videos/${user!.uid}/front-${Date.now()}.mp4` },
@@ -178,9 +235,40 @@ export default function UploadPage() {
       { label: 'right', file: rightVideo, path: `videos/${user!.uid}/right-${Date.now()}.mp4` },
     ];
 
+    // Ejecutar compresión secuencial por archivo (si corresponde)
+    const fileByLabel: Record<string, File> = {};
+    try {
+      for (const u of uploads) {
+        if (!u.file) continue;
+        const f = await compressIfNeeded(u.label, u.file);
+        fileByLabel[u.label] = f;
+      }
+    } finally {
+      setCompressing(false);
+    }
+
+    // Validaciones post-compresión
+    const presentLabels = Object.keys(fileByLabel);
+    if (presentLabels.length === 0) {
+      toast({ title: 'Error', description: 'No se encontró ningún video válido para subir.', variant: 'destructive' });
+      return;
+    }
+    for (const lbl of presentLabels) {
+      const f = fileByLabel[lbl];
+      if (f.size > PER_FILE_LIMIT) {
+        toast({ title: 'Archivo muy grande', description: `El video "${lbl}" supera 90 MB tras comprimir. Recórtalo o baja la calidad.`, variant: 'destructive' });
+        return;
+      }
+    }
+    const totalAfter = presentLabels.reduce((sum, k) => sum + fileByLabel[k].size, 0);
+    if (totalAfter > TOTAL_LIMIT) {
+      toast({ title: 'Tamaño total excedido', description: 'La suma de los videos supera 250 MB. Subí menos ángulos o recorta la duración.', variant: 'destructive' });
+      return;
+    }
+
     const urlByLabel: Record<string, string> = {};
 
-    async function uploadWithRetry(label: string, file: File, path: string, maxRetries = 2): Promise<string> {
+    async function uploadWithRetry(label: string, file: File, path: string, maxRetries = 3): Promise<string> {
       let attempt = 0;
       let lastError: any = null;
       while (attempt <= maxRetries) {
@@ -190,26 +278,46 @@ export default function UploadPage() {
             const task: UploadTask = uploadBytesResumable(ref, file, { contentType: file.type || 'video/mp4' });
 
             let idleTimer: number | null = null;
+            const startedAt = Date.now();
+            let lastLoggedPct = -10;
+            let lastBytes = 0;
+            let lastTime = startedAt;
             const resetIdle = () => {
               if (idleTimer) window.clearTimeout(idleTimer);
               idleTimer = window.setTimeout(() => {
                 task.cancel();
                 reject(new Error('timeout'));
-              }, 90_000); // 90s sin progreso
+              }, 180_000); // 180s sin progreso
             };
             resetIdle();
 
             task.on('state_changed', (snap) => {
               const pct = Math.round((snap.bytesTransferred / Math.max(1, snap.totalBytes)) * 100);
               setUploadProgress((p) => ({ ...p, [label]: pct }));
+              const now = Date.now();
+              const deltaBytes = snap.bytesTransferred - lastBytes;
+              const deltaMs = Math.max(1, now - lastTime);
+              const speedMbps = (deltaBytes * 8) / (deltaMs / 1000) / 1_000_000; // megabits/s
+              const remainingBytes = Math.max(0, snap.totalBytes - snap.bytesTransferred);
+              const estSeconds = speedMbps > 0 ? (remainingBytes * 8) / (speedMbps * 1_000_000) : Infinity;
+              if (pct >= lastLoggedPct + 10 || pct === 100) {
+                // Log cada ~10%
+                console.log(`[upload:${label}] intento ${attempt + 1}/${maxRetries + 1} ${pct}% | ${(snap.bytesTransferred/1024/1024).toFixed(2)}MB/${(snap.totalBytes/1024/1024).toFixed(2)}MB | velocidad ~${speedMbps.toFixed(2)} Mb/s | ETA ~${Number.isFinite(estSeconds) ? Math.ceil(estSeconds) + 's' : 'N/A'}`);
+                lastLoggedPct = pct;
+              }
+              lastBytes = snap.bytesTransferred;
+              lastTime = now;
               resetIdle();
             }, (err) => {
               if (idleTimer) window.clearTimeout(idleTimer);
+              console.error(`[upload:${label}] error:`, err?.message || err);
               reject(err);
             }, async () => {
               if (idleTimer) window.clearTimeout(idleTimer);
               try {
                 const url = await getDownloadURL(task.snapshot.ref);
+                const totalMs = Date.now() - startedAt;
+                console.log(`[upload:${label}] completado en ${(totalMs/1000).toFixed(1)}s → ${url}`);
                 resolve(url);
               } catch (e) {
                 reject(e);
@@ -222,39 +330,52 @@ export default function UploadPage() {
           attempt++;
           if (attempt > maxRetries) break;
           const backoffMs = 1000 * Math.pow(2, attempt - 1);
+          console.warn(`[upload:${label}] reintentando en ${backoffMs}ms (intento ${attempt + 1}/${maxRetries + 1})`);
           await new Promise((r) => setTimeout(r, backoffMs));
         }
       }
       throw lastError || new Error('upload failed');
     }
 
-    try {
-      setUploading(true);
-      setUploadProgress({});
-      for (const u of uploads) {
-        if (!u.file) continue;
-        // Aviso previo si la red es mala
-        try {
-          const anyConn: any = (navigator as any).connection;
-          if (anyConn && anyConn.downlink && anyConn.downlink < 1.0) {
-            toast({ title: `Subiendo ${u.label}…`, description: 'Conexión lenta, puede tardar más de lo normal.', variant: 'default' });
-          }
-        } catch {}
-        const url = await uploadWithRetry(u.label, u.file, u.path, 2);
+    let fallbackToServer = false;
+    setUploading(true);
+    setUploadProgress({});
+    for (const u of uploads) {
+      if (!u.file) continue;
+      // Aviso previo si la red es mala
+      try {
+        const anyConn: any = (navigator as any).connection;
+        if (anyConn && anyConn.downlink && anyConn.downlink < 1.0) {
+          toast({ title: `Subiendo ${u.label}…`, description: 'Conexión lenta, puede tardar más de lo normal.', variant: 'default' });
+        }
+      } catch {}
+      const eff = fileByLabel[u.label] || u.file; // comprimido si existe
+      console.log(`[upload:${u.label}] iniciando → ${u.path} | ${(eff.size/1024/1024).toFixed(2)} MB | tipo=${eff.type || 'video/mp4'}`);
+      try {
+        const url = await uploadWithRetry(u.label, eff, u.path, 2);
         urlByLabel[u.label] = url;
+      } catch (err) {
+        console.warn(`[upload:${u.label}] fallo subida a Storage; haré fallback a subida vía servidor.`, (err as any)?.message || err);
+        fallbackToServer = true;
+        break;
       }
-    } catch (e: any) {
-      setUploading(false);
-      toast({ title: 'Error al subir', description: 'No pudimos subir el video. Revisa tu Internet o usa Wi‑Fi e intenta de nuevo.', variant: 'destructive' });
-      return;
     }
     setUploading(false);
 
-    // Adjuntar URLs en el FormData y NO adjuntar archivos binarios
-    if (urlByLabel['back']) formData.set('uploadedBackUrl', urlByLabel['back']);
-    if (urlByLabel['front']) formData.set('uploadedFrontUrl', urlByLabel['front']);
-    if (urlByLabel['left']) formData.set('uploadedLeftUrl', urlByLabel['left']);
-    if (urlByLabel['right']) formData.set('uploadedRightUrl', urlByLabel['right']);
+    if (!fallbackToServer) {
+      // Adjuntar URLs en el FormData y NO adjuntar archivos binarios
+      if (urlByLabel['back']) formData.set('uploadedBackUrl', urlByLabel['back']);
+      if (urlByLabel['front']) formData.set('uploadedFrontUrl', urlByLabel['front']);
+      if (urlByLabel['left']) formData.set('uploadedLeftUrl', urlByLabel['left']);
+      if (urlByLabel['right']) formData.set('uploadedRightUrl', urlByLabel['right']);
+    } else {
+      // Fallback: adjuntar archivos binarios para subida server-side
+      try { toast({ title: 'Subida alternativa', description: 'Usando subida desde el servidor para evitar CORS.', variant: 'default' }); } catch {}
+      if (backVideo) formData.set('video-back', fileByLabel['back'] || backVideo);
+      if (selectedVideo) formData.set('video-front', fileByLabel['front'] || selectedVideo);
+      if (leftVideo) formData.set('video-left', fileByLabel['left'] || leftVideo);
+      if (rightVideo) formData.set('video-right', fileByLabel['right'] || rightVideo);
+    }
 
     // Mostrar modal de análisis en curso
     setAnalyzingOpen(true);
@@ -270,7 +391,7 @@ export default function UploadPage() {
         variant: 'destructive',
       });
     }, 120000);
-    (formAction as any)(formData);
+    startTransition(() => (formAction as any)(formData));
   };
 
   useEffect(() => {
@@ -349,15 +470,7 @@ export default function UploadPage() {
       }
   }, [state, toast, router]);
 
-  // Abrir el aviso apenas se ingresa si el perfil está incompleto
-  useEffect(() => {
-    const p: any = userProfile as any;
-    const isNonEmptyString = (v: any) => typeof v === 'string' && v.trim().length > 0;
-    const isComplete = !!p && isNonEmptyString(p.name) && !!p.dob && isNonEmptyString(p.country) && isNonEmptyString(p.ageGroup) && isNonEmptyString(p.playerLevel) && isNonEmptyString(p.position) && p.height && p.wingspan;
-    if (!isComplete) {
-      setProfileIncompleteOpen(true);
-    }
-  }, [userProfile]);
+  // Ya no abrimos modal automático por perfil incompleto al entrar.
 
   if (!user) {
     return (
@@ -507,11 +620,30 @@ export default function UploadPage() {
                 <p className="text-xs text-blue-700 mt-2">Recordá: Trasera es obligatoria. Usar los 4 ángulos mejora la precisión. Duraciones sugeridas: Trasera 40s; Frontal/Laterales 30s. Subí con Wi‑Fi si es posible.</p>
               </div>
 
+              {/* Compresión en cliente */}
+              <div className="flex items-center justify-between p-3 border rounded">
+                <div>
+                  <div className="font-medium">Comprimir antes de subir</div>
+                  <div className="text-xs text-muted-foreground">Reduce el peso a 720p/24fps para subir más rápido. Recomendado.</div>
+                </div>
+                <Switch checked={compressEnabled} onCheckedChange={(v) => setCompressEnabled(Boolean(v))} />
+              </div>
+
               <SubmitButton analyzing={analyzingOpen} />
               <PendingNotice />
-              {uploading && (
+              {(compressing || uploading) && (
                 <div className="text-sm text-muted-foreground">
-                  <div className="mt-2">Subiendo a la nube…</div>
+                  {compressing && <div className="mt-2">Comprimiendo videos…</div>}
+                  {compressing && (['back','front','left','right'] as const).map((k) => (
+                    <div key={`cmp-${k}`} className="mt-1">
+                      <span className="mr-2 capitalize">{k}:</span>
+                      <span>{(compressionProgress[k] ?? 0)}%</span>
+                      <div className="h-1 bg-muted rounded mt-1">
+                        <div className="h-1 bg-primary rounded" style={{ width: `${compressionProgress[k] ?? 0}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                  {uploading && <div className="mt-4">Subiendo a la nube…</div>}
                   {(['back','front','left','right'] as const).map((k) => (
                     <div key={k} className="mt-1">
                       <span className="mr-2 capitalize">{k}:</span>
@@ -615,21 +747,23 @@ export default function UploadPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Perfil incompleto */}
-      <AlertDialog open={profileIncompleteOpen} onOpenChange={setProfileIncompleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Completa tu perfil para comenzar</AlertDialogTitle>
-            <AlertDialogDescription>
-              No podés iniciar un análisis hasta completar tu perfil. Completá tu nombre, fecha de nacimiento, país, grupo de edad, nivel, posición, altura y envergadura.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setProfileIncompleteOpen(false)}>Cerrar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setProfileIncompleteOpen(false); router.push('/profile'); }}>Ir a mi perfil</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Perfil incompleto: ya no bloquea; mostramos opción de ir al perfil solo si se abre explícitamente */}
+      {profileIncompleteOpen && (
+        <AlertDialog open={profileIncompleteOpen} onOpenChange={setProfileIncompleteOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Completar perfil (opcional)</AlertDialogTitle>
+              <AlertDialogDescription>
+                Completar nombre, fecha de nacimiento, país, grupo de edad, nivel, posición, altura y envergadura mejora la precisión del análisis.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setProfileIncompleteOpen(false)}>Cerrar</AlertDialogCancel>
+              <AlertDialogAction onClick={() => { setProfileIncompleteOpen(false); router.push('/profile'); }}>Ir a mi perfil</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
 
       {/* Modal de saldo insuficiente */}
       <AlertDialog open={noBalanceOpen} onOpenChange={setNoBalanceOpen}>
