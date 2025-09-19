@@ -717,7 +717,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             }
         } else {
             // Subida server-side (legacy)
-            const primaryMaxSeconds = primaryIsBack ? 40 : 30;
+            const primaryMaxSeconds = primaryIsBack ? 30 : 30;
             const uploadedPrimaryUrl = await uploadVideoToStorage(primaryFile!, currentUser.id, { maxSeconds: primaryMaxSeconds });
             videoFrontUrl = primaryIsBack ? null : uploadedPrimaryUrl;
             videoBackUrl = primaryIsBack ? uploadedPrimaryUrl : null;
@@ -728,7 +728,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 videoRightUrl = await uploadVideoToStorage(videoRight, currentUser.id, { maxSeconds: 30 });
             }
             if (primaryIsBack === false && formBack && formBack.size > 0) {
-                videoBackUrl = await uploadVideoToStorage(formBack, currentUser.id, { maxSeconds: 40 });
+                videoBackUrl = await uploadVideoToStorage(formBack, currentUser.id, { maxSeconds: 30 });
             }
             if (primaryIsBack === true && formFront && formFront.size > 0) {
                 videoFrontUrl = await uploadVideoToStorage(formFront, currentUser.id, { maxSeconds: 30 });

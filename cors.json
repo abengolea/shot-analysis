@@ -11,12 +11,3 @@
     "maxAgeSeconds": 3600
   }
 ]
-
-[
-  {
-    " origin\: [\http://localhost:9999\, \http://localhost:3000\, \https://shot-analysis--shotanalisys.us-central1.hosted.app\],
- \method\: [\GET\, \HEAD\, \PUT\, \POST\, \DELETE\, \OPTIONS\],
- \responseHeader\: [\Authorization\, \Content-Type\, \x-goog-*\],
- \maxAgeSeconds\: 3600
- }
-]

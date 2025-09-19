@@ -23,7 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Loader2, Video } from "lucide-react";
+import { Loader2, Video, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -100,9 +100,11 @@ export default function UploadPage() {
   const router = useRouter();
   const [confirmPartialOpen, setConfirmPartialOpen] = useState(false);
   const [confirmedPartial, setConfirmedPartial] = useState(false);
+  const [confirmLargeOpen, setConfirmLargeOpen] = useState(false);
+  const [confirmedLarge, setConfirmedLarge] = useState(false);
   const [noBalanceOpen, setNoBalanceOpen] = useState(false);
-  const [analyzingOpen, setAnalyzingOpen] = useState(false);
-  const analyzingTimerRef = useRef<number | null>(null);
+  // Control de fase única para UX
+  const [phase, setPhase] = useState<'idle'|'uploading'|'analyzing'|'complete'>('idle');
   const [tipsOpen, setTipsOpen] = useState(false);
   const [dontShowTipsAgain, setDontShowTipsAgain] = useState(false);
   const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
@@ -119,11 +121,11 @@ export default function UploadPage() {
   const leftInputRef = useRef<HTMLInputElement>(null);
   const rightInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
-  const [compressEnabled, setCompressEnabled] = useState(true);
+  const [compressEnabled, setCompressEnabled] = useState(false);
   const [compressing, setCompressing] = useState(false);
   const [compressionProgress, setCompressionProgress] = useState<Record<string, number>>({});
+  // uploading boolean ya no se usa; usamos phase
 
   const isPlayerProfileComplete = (p: any | null | undefined): boolean => {
     if (!p) return false;
@@ -172,6 +174,16 @@ export default function UploadPage() {
         variant: "destructive",
       });
       return;
+    }
+
+    // Si hay algún archivo grande (>15 MB), sugerimos WhatsApp antes de subir
+    const LARGE_MB = 15;
+    const LARGE_BYTES = LARGE_MB * 1024 * 1024;
+    const filesToCheck = [backVideo, selectedVideo, leftVideo, rightVideo].filter(Boolean) as File[];
+    const hasLarge = filesToCheck.some((f) => f.size > LARGE_BYTES);
+    if (hasLarge && !confirmedLarge) {
+      setConfirmLargeOpen(true);
+      return; // Espera confirmación del usuario para continuar
     }
 
     // Asegurar tipo de lanzamiento en el FormData
@@ -338,8 +350,10 @@ export default function UploadPage() {
     }
 
     let fallbackToServer = false;
-    setUploading(true);
+    setPhase('uploading');
     setUploadProgress({});
+    // Doble RAF para garantizar pintado del overlay de "Subiendo a la nube…"
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     for (const u of uploads) {
       if (!u.file) continue;
       // Aviso previo si la red es mala
@@ -360,7 +374,7 @@ export default function UploadPage() {
         break;
       }
     }
-    setUploading(false);
+    setPhase('analyzing');
 
     if (!fallbackToServer) {
       // Adjuntar URLs en el FormData y NO adjuntar archivos binarios
@@ -377,20 +391,6 @@ export default function UploadPage() {
       if (rightVideo) formData.set('video-right', fileByLabel['right'] || rightVideo);
     }
 
-    // Mostrar modal de análisis en curso
-    setAnalyzingOpen(true);
-    if (analyzingTimerRef.current) {
-      window.clearTimeout(analyzingTimerRef.current);
-      analyzingTimerRef.current = null;
-    }
-    analyzingTimerRef.current = window.setTimeout(() => {
-      setAnalyzingOpen(false);
-      toast({
-        title: 'Demora inusual',
-        description: 'El análisis está tardando más de lo normal. Verifica tu conexión y vuelve a intentar.',
-        variant: 'destructive',
-      });
-    }, 120000);
     startTransition(() => (formAction as any)(formData));
   };
 
@@ -431,43 +431,30 @@ export default function UploadPage() {
   
   const handleFormSubmit: React.FormEventHandler<HTMLFormElement> = () => {
     setConfirmedPartial(false);
+    setConfirmedLarge(false);
   };
 
   useEffect(() => {
-      if (state?.message) {
-          if (state.error) {
-              setAnalyzingOpen(false);
-              if (analyzingTimerRef.current) { window.clearTimeout(analyzingTimerRef.current); analyzingTimerRef.current = null; }
-              toast({
-                  title: "Error de Análisis",
-                  description: state.message,
-                  variant: "destructive",
-              });
-              if (typeof state.message === 'string' && (state.message.includes('no tenés créditos') || state.message.toLowerCase().includes('límite') || state.message.toLowerCase().includes('crédit'))) {
-                  setNoBalanceOpen(true);
-              }
-          } else {
-              setAnalyzingOpen(false);
-              if (analyzingTimerRef.current) { window.clearTimeout(analyzingTimerRef.current); analyzingTimerRef.current = null; }
-              toast({
-                  title: "¡Éxito!",
-                  description: state.message,
-                  variant: "default",
-              });
-              if (formRef.current) {
-                  formRef.current.reset();
-              }
-              setSelectedVideo(null);
-              setLeftVideo(null);
-              setRightVideo(null);
-              setBackVideo(null);
-              if (state && typeof state.redirectTo === 'string' && !state.error) {
-                  setTimeout(() => {
-                      router.push(state.redirectTo as string);
-                  }, 2000);
-              }
-          }
+    if (state?.message) {
+      if (state.error) {
+        setPhase('idle');
+        toast({ title: 'Error de Análisis', description: state.message, variant: 'destructive' });
+        if (typeof state.message === 'string' && (state.message.includes('no tenés créditos') || state.message.toLowerCase().includes('límite') || state.message.toLowerCase().includes('crédit'))) {
+          setNoBalanceOpen(true);
+        }
+      } else {
+        setPhase('complete');
+        toast({ title: '¡Éxito!', description: state.message, variant: 'default' });
+        if (formRef.current) formRef.current.reset();
+        setSelectedVideo(null);
+        setLeftVideo(null);
+        setRightVideo(null);
+        setBackVideo(null);
+        if (state && typeof state.redirectTo === 'string' && !state.error) {
+          setTimeout(() => { router.push(state.redirectTo as string); }, 2000);
+        }
       }
+    }
   }, [state, toast, router]);
 
   // Ya no abrimos modal automático por perfil incompleto al entrar.
@@ -531,8 +518,11 @@ export default function UploadPage() {
         <CardHeader>
           <CardTitle>Videos para el análisis</CardTitle>
           <CardDescription>
-            Para un mejor análisis, usá los 4 ángulos: Trasera (obligatoria), Frontal, Lateral Izquierdo y Lateral Derecho. Te recomendamos grabarlos primero y luego subirlos. Si subís menos de 4, la precisión puede ser menor. Duraciones sugeridas: Trasera hasta 40s; Frontal y laterales hasta 30s.
+            Para un mejor análisis, usá los 4 ángulos: Trasera (obligatoria), Frontal, Lateral Izquierdo y Lateral Derecho. Te recomendamos grabarlos primero y luego subirlos. Si subís menos de 4, la precisión puede ser menor. Duraciones sugeridas: Trasera hasta 30s; Frontal y laterales hasta 30s.
           </CardDescription>
+          <div className="mt-2 text-xs text-blue-700">
+            Tip: si te enviás el video por WhatsApp y lo descargás aquí, suele quedar más liviano y la subida es más rápida.
+          </div>
           {!shotType && (
             <div className="text-xs text-amber-600 mt-2">Seleccioná el tipo de lanzamiento arriba para habilitar la subida.</div>
           )}
@@ -546,9 +536,23 @@ export default function UploadPage() {
               </Button>
               <Input ref={backInputRef} id="video-back" type="file" accept="video/*" onChange={(e) => setBackVideo(e.target.files?.[0] || null)} className="hidden" />
               {backVideo && (
-                <p className="text-xs text-muted-foreground">
-                  {backVideo.name} — {(backVideo.size / 1024 / 1024).toFixed(2)} MB
-                </p>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    {backVideo.name} — {(backVideo.size / 1024 / 1024).toFixed(2)} MB
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-6 px-2"
+                    aria-label="Quitar video trasera"
+                    onClick={() => {
+                      setBackVideo(null);
+                      if (backInputRef.current) backInputRef.current.value = "";
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
               )}
             </div>
             <div className="space-y-2">
@@ -558,9 +562,23 @@ export default function UploadPage() {
               </Button>
               <Input ref={frontInputRef} id="video-front" type="file" accept="video/*" onChange={(e) => setSelectedVideo(e.target.files?.[0] || null)} className="hidden" />
               {selectedVideo && (
-                <p className="text-xs text-muted-foreground">
-                  {selectedVideo.name} — {(selectedVideo.size / 1024 / 1024).toFixed(2)} MB
-                </p>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    {selectedVideo.name} — {(selectedVideo.size / 1024 / 1024).toFixed(2)} MB
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-6 px-2"
+                    aria-label="Quitar video frontal"
+                    onClick={() => {
+                      setSelectedVideo(null);
+                      if (frontInputRef.current) frontInputRef.current.value = "";
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
               )}
             </div>
             <div className="space-y-2">
@@ -570,9 +588,23 @@ export default function UploadPage() {
               </Button>
               <Input ref={leftInputRef} id="video-left" type="file" accept="video/*" onChange={(e) => setLeftVideo(e.target.files?.[0] || null)} className="hidden" />
               {leftVideo && (
-                <p className="text-xs text-muted-foreground">
-                  {leftVideo.name} — {(leftVideo.size / 1024 / 1024).toFixed(2)} MB
-                </p>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    {leftVideo.name} — {(leftVideo.size / 1024 / 1024).toFixed(2)} MB
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-6 px-2"
+                    aria-label="Quitar video lateral izquierdo"
+                    onClick={() => {
+                      setLeftVideo(null);
+                      if (leftInputRef.current) leftInputRef.current.value = "";
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
               )}
             </div>
             <div className="space-y-2">
@@ -582,9 +614,23 @@ export default function UploadPage() {
               </Button>
               <Input ref={rightInputRef} id="video-right" type="file" accept="video/*" onChange={(e) => setRightVideo(e.target.files?.[0] || null)} className="hidden" />
               {rightVideo && (
-                <p className="text-xs text-muted-foreground">
-                  {rightVideo.name} — {(rightVideo.size / 1024 / 1024).toFixed(2)} MB
-                </p>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    {rightVideo.name} — {(rightVideo.size / 1024 / 1024).toFixed(2)} MB
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-6 px-2"
+                    aria-label="Quitar video lateral derecho"
+                    onClick={() => {
+                      setRightVideo(null);
+                      if (rightInputRef.current) rightInputRef.current.value = "";
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -617,44 +663,12 @@ export default function UploadPage() {
                   {rightVideo && (<><strong>Lateral Derecho:</strong> {rightVideo.name} — {(rightVideo.size / 1024 / 1024).toFixed(2)} MB<br/></>)}
                   {!backVideo && !selectedVideo && <>Aún no seleccionaste video principal</>}
                 </p>
-                <p className="text-xs text-blue-700 mt-2">Recordá: Trasera es obligatoria. Usar los 4 ángulos mejora la precisión. Duraciones sugeridas: Trasera 40s; Frontal/Laterales 30s. Subí con Wi‑Fi si es posible.</p>
+                <p className="text-xs text-blue-700 mt-2">Recordá: Trasera es obligatoria. Usar los 4 ángulos mejora la precisión. Duraciones sugeridas: Trasera 30s; Frontal/Laterales 30s. Subí con Wi‑Fi si es posible.</p>
               </div>
 
-              {/* Compresión en cliente */}
-              <div className="flex items-center justify-between p-3 border rounded">
-                <div>
-                  <div className="font-medium">Comprimir antes de subir</div>
-                  <div className="text-xs text-muted-foreground">Reduce el peso a 720p/24fps para subir más rápido. Recomendado.</div>
-                </div>
-                <Switch checked={compressEnabled} onCheckedChange={(v) => setCompressEnabled(Boolean(v))} />
-              </div>
+              {/* Compresión en cliente (oculto por ahora) */}
 
-              <SubmitButton analyzing={analyzingOpen} />
-              <PendingNotice />
-              {(compressing || uploading) && (
-                <div className="text-sm text-muted-foreground">
-                  {compressing && <div className="mt-2">Comprimiendo videos…</div>}
-                  {compressing && (['back','front','left','right'] as const).map((k) => (
-                    <div key={`cmp-${k}`} className="mt-1">
-                      <span className="mr-2 capitalize">{k}:</span>
-                      <span>{(compressionProgress[k] ?? 0)}%</span>
-                      <div className="h-1 bg-muted rounded mt-1">
-                        <div className="h-1 bg-primary rounded" style={{ width: `${compressionProgress[k] ?? 0}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                  {uploading && <div className="mt-4">Subiendo a la nube…</div>}
-                  {(['back','front','left','right'] as const).map((k) => (
-                    <div key={k} className="mt-1">
-                      <span className="mr-2 capitalize">{k}:</span>
-                      <span>{(uploadProgress[k] ?? 0)}%</span>
-                      <div className="h-1 bg-muted rounded mt-1">
-                        <div className="h-1 bg-primary rounded" style={{ width: `${uploadProgress[k] ?? 0}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <SubmitButton analyzing={phase === 'analyzing'} />
             </form>
           </CardContent>
         </Card>
@@ -699,14 +713,16 @@ export default function UploadPage() {
           </AlertDialogHeader>
           <div className="text-sm space-y-2">
             <ol className="list-decimal pl-5 space-y-2">
-              <li>Graba 40 segundos para la cámara trasera; 30 segundos para las demás.</li>
+              <li>Graba 30 segundos para cada ángulo (trasera, frontal y laterales).</li>
               <li>Subí con conexión Wi‑Fi para evitar cortes o demoras.</li>
               <li>Iluminación: buena luz; evitá contraluces fuertes y escenas oscuras.</li>
               <li>Encuadre: que se vea el cuerpo entero y, desde atrás, el aro.</li>
               <li>Estabilidad: apoyá el teléfono o usá trípode.</li>
               <li>Orientación: horizontal (apaisado) recomendada.</li>
               <li>Distancia: 4 a 6 metros para que entre el cuerpo completo.</li>
-              <li>Calidad: 1080p a 30 fps o más.</li>
+              <li>Calidad: 720p o 1080p a 24–30 fps es suficiente.</li>
+              <li>Truco: enviate el video por WhatsApp y descárgalo aquí para subir más rápido.</li>
+              <li>Para aprovechar el tiempo, tené varias pelotas y quien te las alcance para hacer más tiros seguidos.</li>
             </ol>
             <div className="flex items-center gap-2 pt-2">
               <Checkbox id="dont-show-tips" checked={dontShowTipsAgain} onCheckedChange={(v) => setDontShowTipsAgain(Boolean(v))} />
@@ -726,6 +742,31 @@ export default function UploadPage() {
               }}
             >
               Entendido
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmación por archivo grande (>15 MB) */}
+      <AlertDialog open={confirmLargeOpen} onOpenChange={setConfirmLargeOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Tu video es pesado (más de 15 MB)</AlertDialogTitle>
+            <AlertDialogDescription>
+              Detectamos que al menos uno de los videos supera 15 MB. Para subir más rápido, te recomendamos enviarte el video por WhatsApp y descargarlo aquí: suele comprimirse automáticamente. Si querés continuar igual, podés hacerlo.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmLargeOpen(false)}>Volver</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmLargeOpen(false);
+                setConfirmedLarge(true);
+                // Reintentar el envío automáticamente
+                formRef.current?.requestSubmit();
+              }}
+            >
+              Continuar y subir ahora
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -812,8 +853,54 @@ export default function UploadPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Overlay de análisis en curso (seguro visual) */}
-      {analyzingOpen && (
+      {/* Overlay: Comprimiendo (si aplica) */}
+      {compressing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
+          <div className="rounded-lg border bg-card p-6 text-center shadow-lg w-full max-w-lg">
+            <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin" />
+            <p className="text-sm text-muted-foreground mb-2">Comprimiendo videos…</p>
+            <div className="text-left text-xs text-muted-foreground">
+              {Object.keys(compressionProgress).map((k) => (
+                <div key={`cmp-ov-${k}`} className="mt-2">
+                  <div className="flex justify-between">
+                    <span className="capitalize">{k}</span>
+                    <span>{(compressionProgress as any)[k] ?? 0}%</span>
+                  </div>
+                  <div className="h-1 bg-muted rounded mt-1">
+                    <div className="h-1 bg-primary rounded" style={{ width: `${(compressionProgress as any)[k] ?? 0}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Overlay: Subiendo a la nube */}
+      {phase === 'uploading' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
+          <div className="rounded-lg border bg-card p-6 text-center shadow-lg w-full max-w-lg">
+            <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin" />
+            <p className="text-sm text-muted-foreground mb-2">Subiendo a la nube…</p>
+            <div className="text-left text-xs text-muted-foreground">
+              {(['back','front','left','right'] as const).map((k) => (
+                <div key={`upl-ov-${k}`} className="mt-2">
+                  <div className="flex justify-between">
+                    <span className="capitalize">{k}</span>
+                    <span>{(uploadProgress as any)[k] ?? 0}%</span>
+                  </div>
+                  <div className="h-1 bg-muted rounded mt-1">
+                    <div className="h-1 bg-primary rounded" style={{ width: `${(uploadProgress as any)[k] ?? 0}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Overlay: Analizando */}
+      {phase === 'analyzing' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
           <div className="rounded-lg border bg-card p-6 text-center shadow-lg">
             <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin" />
@@ -822,8 +909,8 @@ export default function UploadPage() {
         </div>
       )}
 
-      {/* Modal de análisis en progreso */}
-      <AlertDialog open={analyzingOpen}>
+      {/* Modal: Analizando (accesibilidad) */}
+      <AlertDialog open={phase === 'analyzing'}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Analizando tu video…</AlertDialogTitle>

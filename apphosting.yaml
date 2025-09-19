@@ -38,6 +38,11 @@ env:
   - variable: FIREBASE_ADMIN_PROJECT_ID
     value: "shotanalisys"
 
+# Declaración explícita del backend de App Hosting
+backends:
+  - id: shot-analysis
+    region: us-central1
+
 # Defines a "flow" that can be deployed to Cloud Functions.
 # This can be triggered via an HTTP request or any other supported
 # event trigger.

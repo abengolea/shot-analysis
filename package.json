@@ -12,8 +12,8 @@
     "typecheck": "tsc --noEmit",
     "setup:firebase": "node setup-firebase.js",
     "firebase:deploy": "firebase deploy --only firestore:rules,storage",
-    "storage:cors:set": "gsutil cors set cors.json gs://shotanalisys.appspot.com",
-    "storage:cors:get": "gsutil cors get gs://shotanalisys.appspot.com",
+    "storage:cors:set": "gsutil cors set cors.json gs://shotanalisys.firebasestorage.app",
+    "storage:cors:get": "gsutil cors get gs://shotanalisys.firebasestorage.app",
     "firebase:emulators": "firebase emulators:start"
   },
   "dependencies": {
