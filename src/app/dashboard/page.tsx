@@ -24,6 +24,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from '@/hooks/use-auth';
+import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { PlayerProgressChart } from "@/components/player-progress-chart";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -43,6 +44,7 @@ function FormattedDate({ dateString }: { dateString: string }) {
 export default function DashboardPage() {
   const { user, userProfile, loading } = useAuth();
   const router = useRouter();
+  const { toast } = useToast();
   const [userAnalyses, setUserAnalyses] = useState<any[]>([]);
   const [analysesLoading, setAnalysesLoading] = useState(true);
   const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
@@ -265,8 +267,8 @@ export default function DashboardPage() {
                 const isNonEmptyString = (v: any) => typeof v === 'string' && v.trim().length > 0;
                 const isComplete = !!p && isNonEmptyString(p.name) && !!p.dob && isNonEmptyString(p.country) && isNonEmptyString(p.ageGroup) && isNonEmptyString(p.playerLevel) && isNonEmptyString(p.position) && p.height && p.wingspan;
                 if (!isComplete) {
-                  e.preventDefault();
-                  setProfileIncompleteOpen(true);
+                  // Ya no bloqueamos; solo informamos
+                  toast({ title: 'Perfil incompleto', description: 'Podés continuar. Completar tu perfil mejora la precisión del análisis.', variant: 'default' });
                 }
               }}>
                 <PlusCircle className="mr-2 h-4 w-4" />
@@ -360,8 +362,7 @@ export default function DashboardPage() {
                   const isNonEmptyString = (v: any) => typeof v === 'string' && v.trim().length > 0;
                   const isComplete = !!p && isNonEmptyString(p.name) && !!p.dob && isNonEmptyString(p.country) && isNonEmptyString(p.ageGroup) && isNonEmptyString(p.playerLevel) && isNonEmptyString(p.position) && p.height && p.wingspan;
                   if (!isComplete) {
-                    e.preventDefault();
-                    setProfileIncompleteOpen(true);
+                    toast({ title: 'Perfil incompleto', description: 'Podés continuar. Completar tu perfil mejora la precisión del análisis.', variant: 'default' });
                   }
                 }}>
                   <PlusCircle className="mr-2 h-4 w-4" />
@@ -460,20 +461,7 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      <AlertDialog open={profileIncompleteOpen} onOpenChange={setProfileIncompleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Completa tu perfil para comenzar</AlertDialogTitle>
-            <AlertDialogDescription>
-              No podés iniciar un análisis hasta completar tu perfil. Completá tu nombre, fecha de nacimiento, país, grupo de edad, nivel, posición, altura y envergadura.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setProfileIncompleteOpen(false)}>Cerrar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setProfileIncompleteOpen(false); router.push('/profile'); }}>Ir a mi perfil</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Modal de perfil incompleto eliminado: ya no bloquea desde el dashboard */}
     </div>
   );
 }

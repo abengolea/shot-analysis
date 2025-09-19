@@ -7,8 +7,8 @@ import { getStorage as getAdminStorage, Storage as AdminStorage } from 'firebase
 
 // Configuración del proyecto
 const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID || "shotanalisys";
-// Preferir el bucket estándar appspot.com
-const storageBucket = process.env.FIREBASE_ADMIN_STORAGE_BUCKET || "shotanalisys.appspot.com";
+// Bucket real (dominio nuevo)
+const storageBucket = process.env.FIREBASE_ADMIN_STORAGE_BUCKET || "shotanalisys.firebasestorage.app";
 
 console.log("🔍 Firebase Admin - Variables de entorno:");
 console.log("  - FIREBASE_ADMIN_PROJECT_ID:", process.env.FIREBASE_ADMIN_PROJECT_ID);
