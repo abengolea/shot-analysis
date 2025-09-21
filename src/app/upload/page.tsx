@@ -63,9 +63,8 @@ async function getFfmpegInstance() {
 function SubmitButton({ analyzing }: { analyzing: boolean }) {
   const { pending } = useFormStatus();
   const isBusy = pending || analyzing;
-  console.log('🔘 SubmitButton - analyzing:', analyzing, 'pending:', pending, 'isBusy:', isBusy);
   return (
-    <Button type="submit" className="w-full" disabled={isBusy} onClick={() => console.log('🖱️ Botón SubmitButton clickeado')}>
+    <Button type="submit" className="w-full" disabled={isBusy}>
       {isBusy ? (
         <>
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -143,11 +142,8 @@ export default function UploadPage() {
   };
 
   const handleSubmit = async (formData: FormData, skipLargeCheck = false) => {
-    console.log('🚀 handleSubmit ejecutándose con formData:', formData);
-    // Modal de mantenimiento - bloquear análisis temporalmente
-    console.log('🚨 Mostrando modal de mantenimiento');
+    // BLOQUEAR TEMPORALMENTE - SITIO EN MANTENIMIENTO
     setMaintenanceOpen(true);
-    console.log('🚨 setMaintenanceOpen(true) ejecutado');
     return;
 
     // Chequeos de conectividad previos
@@ -439,14 +435,12 @@ export default function UploadPage() {
   }, [shotType]);
   
   const handleFormSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
-    console.log('🔥 handleFormSubmit ejecutándose');
     e.preventDefault();
     setConfirmedPartial(false);
     setConfirmedLarge(false);
     
     // Crear FormData y llamar a handleSubmit
     const formData = new FormData(e.currentTarget);
-    console.log('🔥 Llamando a handleSubmit con formData:', formData);
     await handleSubmit(formData);
   };
 
@@ -955,7 +949,6 @@ export default function UploadPage() {
       </AlertDialog>
 
       {/* Modal: Mantenimiento */}
-      {console.log('🔍 Modal maintenanceOpen:', maintenanceOpen)}
       <AlertDialog open={maintenanceOpen} onOpenChange={setMaintenanceOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
