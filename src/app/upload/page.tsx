@@ -142,10 +142,6 @@ export default function UploadPage() {
   };
 
   const handleSubmit = async (formData: FormData, skipLargeCheck = false) => {
-    // BLOQUEAR TEMPORALMENTE - SITIO EN MANTENIMIENTO
-    setMaintenanceOpen(true);
-    return;
-
     // Chequeos de conectividad previos
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       toast({ title: 'Sin conexión', description: 'Estás sin Internet. Conéctate a Wi‑Fi o datos y vuelve a intentar.', variant: 'destructive' });
@@ -441,9 +437,8 @@ export default function UploadPage() {
   
   const handleFormSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
-    // BLOQUEAR DIRECTAMENTE - MOSTRAR MODAL
-    setMaintenanceOpen(true);
-    return;
+    const formData = new FormData(e.currentTarget);
+    await handleSubmit(formData);
   };
 
   useEffect(() => {
