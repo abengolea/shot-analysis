@@ -48,6 +48,7 @@ export default function DashboardPage() {
   const [userAnalyses, setUserAnalyses] = useState<any[]>([]);
   const [analysesLoading, setAnalysesLoading] = useState(true);
   const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [coachFeedbackByAnalysis, setCoachFeedbackByAnalysis] = useState<Record<string, boolean>>({});
 
   // Controles de filtro/rango
@@ -261,19 +262,9 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex items-center gap-2">
-            <Button asChild>
-              <Link href="/upload" onClick={(e) => {
-                const p: any = userProfile as any;
-                const isNonEmptyString = (v: any) => typeof v === 'string' && v.trim().length > 0;
-                const isComplete = !!p && isNonEmptyString(p.name) && !!p.dob && isNonEmptyString(p.country) && isNonEmptyString(p.ageGroup) && isNonEmptyString(p.playerLevel) && isNonEmptyString(p.position) && p.height && p.wingspan;
-                if (!isComplete) {
-                  // Ya no bloqueamos; solo informamos
-                  toast({ title: 'Perfil incompleto', description: 'Podés continuar. Completar tu perfil mejora la precisión del análisis.', variant: 'default' });
-                }
-              }}>
+            <Button onClick={() => setMaintenanceOpen(true)}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Analizar Nuevo Lanzamiento
-              </Link>
             </Button>
         </div>
       </div>
@@ -461,7 +452,26 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Modal de perfil incompleto eliminado: ya no bloquea desde el dashboard */}
+      {/* Modal de mantenimiento */}
+      <AlertDialog open={maintenanceOpen} onOpenChange={() => {}}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>🔧 SITIO EN MANTENIMIENTO</AlertDialogTitle>
+            <AlertDialogDescription>
+              Estamos ajustando variables importantes del sistema.
+              <br /><br />
+              <strong>El análisis de lanzamientos está temporalmente deshabilitado.</strong>
+              <br /><br />
+              Volveremos pronto con mejoras. ¡Gracias por tu paciencia!
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setMaintenanceOpen(false)}>
+              Entendido
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -644,18 +644,6 @@ export default function UploadPage() {
         </CardContent>
       </Card>
 
-      {/* BOTÓN DE ANÁLISIS - SIEMPRE VISIBLE */}
-      <Card>
-        <CardContent className="pt-6">
-          <Button 
-            onClick={() => setMaintenanceOpen(true)}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 text-lg font-semibold"
-          >
-            🔧 Analizar Nuevo Lanzamiento
-          </Button>
-        </CardContent>
-      </Card>
-
       {/* Configuración del Análisis */}
       {anyVideoSelected && (
         <Card>
