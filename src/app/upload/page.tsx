@@ -63,8 +63,9 @@ async function getFfmpegInstance() {
 function SubmitButton({ analyzing }: { analyzing: boolean }) {
   const { pending } = useFormStatus();
   const isBusy = pending || analyzing;
+  console.log('🔘 SubmitButton - analyzing:', analyzing, 'pending:', pending, 'isBusy:', isBusy);
   return (
-    <Button type="submit" className="w-full" disabled={isBusy}>
+    <Button type="submit" className="w-full" disabled={isBusy} onClick={() => console.log('🖱️ Botón SubmitButton clickeado')}>
       {isBusy ? (
         <>
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
