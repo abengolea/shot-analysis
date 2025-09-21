@@ -860,7 +860,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             shotType,
             status: 'analyzed',
             analysisResult,
-            redirectTo: '/dashboard'
+            redirectTo: `/analysis/${analysisRef.id}`
         };
 
     } catch (error) {
