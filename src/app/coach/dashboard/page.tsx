@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { PlayerCard } from "@/components/player-card";
 import {
   Card,
   CardContent,
@@ -430,21 +429,6 @@ export default function CoachDashboardPage() {
                 </Link>
               ))}
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {players.map((player) => (
-              <PlayerCard key={player.id} player={player as any} />
-            ))}
-            {players.length === 0 && (
-              <div className="col-span-full py-8 text-center text-muted-foreground">
-                <Users className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No tienes jugadores</h3>
-                <p className="text-muted-foreground">
-                  Aún no tienes jugadores asignados. Acepta solicitudes de conexión para comenzar.
-                </p>
-              </div>
-            )}
           </div>
         </TabsContent>
 
