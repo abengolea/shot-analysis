@@ -46,14 +46,19 @@ export type DetailedChecklistItem = {
   id: string;
   name: string;
   description: string;
-  // Nuevo sistema de 5 niveles (1..5)
-  rating: 1 | 2 | 3 | 4 | 5;
-  // Marcar cuando no se puede evaluar por falta de datos (no contar en el cálculo)
-  na?: boolean;
-  // Para el ítem especial "Fluidez / Armonía (transferencia energética)" (1..10)
-  rating10?: number;
-  // Campo legacy (opcional) para compatibilidad con datos antiguos
-  status?: 'Incorrecto' | 'Incorrecto leve' | 'Mejorable' | 'Correcto' | 'Excelente';
+  // Sistema de evaluación actualizado
+  status: 'Correcto' | 'Mejorable' | 'Incorrecto' | 'no_evaluable';
+  // Rating puede ser 0 para no_evaluable
+  rating: 0 | 1 | 2 | 3 | 4 | 5;
+  // Timestamp cuando se observó el parámetro
+  timestamp?: string;
+  // Evidencia de lo que se observó visualmente
+  evidencia?: string;
+  // Marcar cuando no se puede evaluar por limitaciones del video
+  na: boolean;
+  // Razón específica por la que no es evaluable
+  razon?: string;
+  // Comentario basado en evidencia visual o explicación de por qué no es evaluable
   comment: string;
   // Comentario opcional del entrenador (visible para jugador y entrenador; editable solo por entrenador)
   coachComment?: string;

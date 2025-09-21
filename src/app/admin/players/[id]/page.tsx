@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { adminUpdatePlayerStatus, adminUpdateWallet, adminSetHistoryPlus, adminSendPasswordReset, giftAnalyses } from "@/app/actions";
+import { AdminWalletForm } from "@/components/admin-wallet-form";
 
 // Server action wrappers with single-parameter signature for <form action>
 export async function actionUpdatePlayerStatus(formData: FormData) { 'use server'; return await (adminUpdatePlayerStatus as any)(undefined, formData); }
@@ -106,19 +107,15 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
               </form>
             </div>
 
+            <AdminWalletForm
+              userId={data.id}
+              initialCredits={wallet?.credits ?? 0}
+              initialFreeAnalysesUsed={wallet?.freeAnalysesUsed ?? 0}
+              redirectTo={`/admin/players/${data.id}`}
+            />
+            
             <div className="space-y-2">
-              <div className="text-sm font-medium">Wallet</div>
-              <form method="post" action="/api/admin/update-wallet" className="grid grid-cols-2 gap-2">
-                <input type="hidden" name="userId" defaultValue={data.id} />
-                <input type="hidden" name="redirectTo" defaultValue={`/admin/players/${data.id}`} />
-                <label className="text-sm text-muted-foreground">Créditos</label>
-                <input name="credits" type="number" defaultValue={wallet?.credits ?? 0} className="border rounded px-2 py-1" />
-                <label className="text-sm text-muted-foreground">Gratis usados</label>
-                <input name="freeAnalysesUsed" type="number" defaultValue={wallet?.freeAnalysesUsed ?? 0} className="border rounded px-2 py-1" />
-                <div className="col-span-2 flex justify-end">
-                  <Button type="submit" size="sm">Guardar</Button>
-                </div>
-              </form>
+              <div className="text-sm font-medium">Análisis gratuitos</div>
               <div className="flex items-center gap-2">
                 <form action={actionGiftAnalyses}>
                   <input type="hidden" name="userId" value={data.id} />

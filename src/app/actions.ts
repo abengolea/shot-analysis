@@ -290,22 +290,45 @@ export async function adminUpdateWallet(_prev: any, formData: FormData) {
         const credits = Number(formData.get('credits') || 0);
         const freeAnalysesUsed = Number(formData.get('freeAnalysesUsed') || 0);
         const redirectTo = String(formData.get('redirectTo') || '');
+        
+        console.log('adminUpdateWallet called with:', { userId, credits, freeAnalysesUsed, redirectTo });
+        
         if (!userId || credits < 0 || freeAnalysesUsed < 0) {
+            console.error('Parámetros inválidos:', { userId, credits, freeAnalysesUsed });
             return { success: false, message: 'Parámetros inválidos' };
         }
-        if (!adminDb) return { success: false, message: 'Servidor sin Admin SDK' };
+        if (!adminDb) {
+            console.error('Admin SDK no inicializado');
+            return { success: false, message: 'Servidor sin Admin SDK' };
+        }
+        
         const walletRef = adminDb.collection('wallets').doc(userId);
         const nowIso = new Date().toISOString();
-        await walletRef.set({ userId, credits, freeAnalysesUsed, updatedAt: nowIso }, { merge: true });
+        const walletData = { userId, credits, freeAnalysesUsed, updatedAt: nowIso };
+        
+        console.log('Actualizando wallet con datos:', walletData);
+        await walletRef.set(walletData, { merge: true });
+        
+        console.log('Wallet actualizada exitosamente, revalidando paths...');
         revalidatePath('/admin');
         revalidatePath(`/admin/players/${userId}`);
+        
+        // Solo redirigir si se especifica redirectTo (formularios HTML normales)
         if (redirectTo) {
+            console.log('Redirigiendo a:', redirectTo);
             redirect(redirectTo);
         }
+        
+        console.log('adminUpdateWallet completado exitosamente');
         return { success: true };
-    } catch (e) {
+    } catch (e: any) {
+        // Si es un error de redirect de Next.js, no lo tratamos como error
+        if (e?.message === 'NEXT_REDIRECT') {
+            console.log('Redirección exitosa');
+            throw e; // Re-lanzamos para que Next.js maneje la redirección
+        }
         console.error('Error actualizando wallet:', e);
-        return { success: false };
+        return { success: false, message: `Error: ${e?.message || 'Error desconocido'}` };
     }
 }
 

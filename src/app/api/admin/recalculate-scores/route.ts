@@ -99,12 +99,12 @@ function computeFinalScoreWithFluidez(
   const fluidezPercent = typeof fluidezScore10 === 'number' ? Math.max(0, Math.min(100, (fluidezScore10 / 10) * 100)) : 0;
 
   // Contribuciones especiales mano no dominante
-  const ascensoHandPercent = ascensoHandRating !== null && ascensoHandRating >= 4 ? 2 : 0; // 2% binario
+  const ascensoHandPercent = ascensoHandRating !== null && ascensoHandRating >= 4 ? 2.18 : 0; // 2.18% binario
   let liberacionHandPercent = 0;
   let penaltyFactor = 1.0;
   if (liberacionHandRating !== null) {
     if (liberacionHandRating >= 4) {
-      liberacionHandPercent = 3;
+      liberacionHandPercent = 3.26;
     } else if (liberacionHandRating === 2) {
       penaltyFactor = 0.8; // -20%
     } else if (liberacionHandRating === 1) {
@@ -113,8 +113,8 @@ function computeFinalScoreWithFluidez(
   }
 
   // Nueva combinación (rebalanceo global 0.95 para rubros existentes) + 2% ascenso + 3% liberación
-  // 57% Fluidez + 7.6% Set Point + 6.65% Codo + 23.75% resto + 2% + 3%
-  let finalScore = 0.57 * fluidezPercent + 0.076 * setPointPercent + 0.0665 * elbowPercent + 0.2375 * restPercent + ascensoHandPercent + liberacionHandPercent;
+  // 50% Fluidez + 8.27% Set Point + 7.24% Codo + 26.38% resto + 2.18% + 3.26%
+  let finalScore = 0.50 * fluidezPercent + 0.0827 * setPointPercent + 0.0724 * elbowPercent + 0.2638 * restPercent + ascensoHandPercent + liberacionHandPercent;
   finalScore = finalScore * penaltyFactor;
   return Number(Math.max(0, Math.min(100, finalScore)).toFixed(2));
 }
