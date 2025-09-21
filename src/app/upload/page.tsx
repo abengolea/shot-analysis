@@ -679,15 +679,6 @@ export default function UploadPage() {
               {/* Compresión en cliente (oculto por ahora) */}
 
               <SubmitButton analyzing={phase === 'analyzing'} />
-              
-              {/* BOTÓN DE PRUEBA TEMPORAL */}
-              <Button 
-                type="button" 
-                onClick={() => setMaintenanceOpen(true)}
-                className="w-full mt-2 bg-red-500 hover:bg-red-600"
-              >
-                🧪 PRUEBA: Mostrar Modal de Mantenimiento
-              </Button>
             </form>
           </CardContent>
         </Card>
@@ -958,16 +949,16 @@ export default function UploadPage() {
       </AlertDialog>
 
       {/* Modal: Mantenimiento */}
-      <AlertDialog open={maintenanceOpen} onOpenChange={setMaintenanceOpen}>
+      <AlertDialog open={maintenanceOpen} onOpenChange={() => {}}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>🔧 Ajustes Importantes en Progreso</AlertDialogTitle>
+            <AlertDialogTitle>🔧 SITIO EN MANTENIMIENTO</AlertDialogTitle>
             <AlertDialogDescription>
-              Estamos realizando mejoras importantes en nuestro sistema de análisis de IA. 
+              Estamos ajustando variables importantes del sistema.
               <br /><br />
-              <strong>El análisis de tiros estará temporalmente deshabilitado</strong> mientras implementamos nuevas funcionalidades para brindarte una mejor experiencia.
+              <strong>El análisis de lanzamientos está temporalmente deshabilitado.</strong>
               <br /><br />
-              Te notificaremos tan pronto como esté disponible nuevamente. ¡Gracias por tu paciencia!
+              Volveremos pronto con mejoras. ¡Gracias por tu paciencia!
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
