@@ -102,6 +102,17 @@ export function NotificationsBell() {
     }
   };
 
+  const markMessageAsRead = async (messageId: string) => {
+    try {
+      if (!isAdmin) {
+        const ref = doc(db as any, 'messages', messageId);
+        await updateDoc(ref, { read: true, readAt: new Date().toISOString() });
+      }
+    } catch (e) {
+      console.error('Error marcando mensaje como leído:', e);
+    }
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -129,7 +140,12 @@ export function NotificationsBell() {
           <div className="p-3 text-sm text-muted-foreground">Sin mensajes</div>
         )}
         {!isAdmin && messages.slice(0, 10).map((m) => (
-          <DropdownMenuItem key={m.id} className="flex flex-col items-start gap-1 py-3" onClick={() => { try { router.push('/support'); } catch {} }}>
+          <DropdownMenuItem key={m.id} className="flex flex-col items-start gap-1 py-3" onClick={() => { 
+            if (!m.read) {
+              markMessageAsRead(m.id);
+            }
+            try { router.push('/support'); } catch {} 
+          }}>
             <div className="text-xs text-muted-foreground">{new Date(m.createdAt || Date.now()).toLocaleString()}</div>
             <div className="text-sm">{m.text}</div>
           </DropdownMenuItem>
