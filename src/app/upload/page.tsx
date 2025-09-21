@@ -436,12 +436,9 @@ export default function UploadPage() {
   
   const handleFormSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
-    setConfirmedPartial(false);
-    setConfirmedLarge(false);
-    
-    // Crear FormData y llamar a handleSubmit
-    const formData = new FormData(e.currentTarget);
-    await handleSubmit(formData);
+    // BLOQUEAR DIRECTAMENTE - MOSTRAR MODAL
+    setMaintenanceOpen(true);
+    return;
   };
 
   useEffect(() => {
