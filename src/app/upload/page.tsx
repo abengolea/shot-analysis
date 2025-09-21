@@ -427,10 +427,8 @@ export default function UploadPage() {
   // Cargar última selección del tipo de lanzamiento
   useEffect(() => {
     try {
-      // Limpiar localStorage para forzar selección manual
+      // Limpiar localStorage para forzar selección manual y mostrar avisos de desarrollo
       localStorage.removeItem('lastShotType');
-      // const last = localStorage.getItem('lastShotType');
-      // if (last) setShotType(last);
     } catch {}
   }, []);
 
