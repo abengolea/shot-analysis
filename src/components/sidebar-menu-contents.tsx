@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Trophy,
   Settings,
+  MessageSquare,
 } from 'lucide-react';
 import {
   SidebarMenuItem,
@@ -88,16 +89,24 @@ export function SidebarMenuContents() {
   const PlayerMenu = () => (
     <>
       <SidebarMenuItem>
-        <SidebarMenuButton asChild isActive={isActive("/dashboard")} tooltip="Mi Panel">
-          <Link href="/dashboard">
+        <SidebarMenuButton asChild isActive={isActive("/player/dashboard")} tooltip="Mi Panel">
+          <Link href="/player/dashboard">
             <LayoutDashboard />
             Mi Panel
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
       <SidebarMenuItem>
-        <SidebarMenuButton asChild isActive={isActive("/support")} tooltip="Soporte">
-          <Link href="/support">
+        <SidebarMenuButton asChild isActive={isActive("/player/messages")} tooltip="Mensajes">
+          <Link href="/player/messages">
+            <MessageSquare />
+            Mensajes
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuButton asChild isActive={isActive("/player/support")} tooltip="Soporte">
+          <Link href="/player/support">
             <Shield />
             Soporte
           </Link>
@@ -106,11 +115,11 @@ export function SidebarMenuContents() {
       <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={isActive("/upload")}
+          isActive={isActive("/player/upload")}
           tooltip="Analizar Lanzamiento"
         >
           <Link
-            href="/upload"
+            href="/player/upload"
             onClick={(e) => {
               if (!isPlayerProfileComplete(userProfile)) {
                 e.preventDefault();
@@ -126,10 +135,10 @@ export function SidebarMenuContents() {
       <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={isActive("/coaches")}
+          isActive={isActive("/coach/coaches")}
           tooltip="Buscar Entrenadores"
         >
-          <Link href="/coaches">
+          <Link href="/coach/coaches">
             <Search />
             Buscar Entrenadores
           </Link>
@@ -138,10 +147,10 @@ export function SidebarMenuContents() {
       <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={isActive("/rankings")}
+          isActive={isActive("/player/rankings")}
           tooltip="Rankings"
         >
-          <Link href="/rankings">
+          <Link href="/player/rankings">
             <Trophy />
             Rankings
           </Link>

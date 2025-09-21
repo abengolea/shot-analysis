@@ -103,7 +103,7 @@ export function UserMenu() {
 
   const switchToPlayer = () => {
     try { localStorage.setItem('preferredRole', 'player'); } catch {}
-    window.location.href = '/dashboard';
+    window.location.href = '/player/dashboard';
   };
 
   if (!user) {
@@ -164,7 +164,7 @@ export function UserMenu() {
           <User className="mr-2 h-4 w-4" />
           Dashboard
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => { try { localStorage.setItem('preferredRole', inCoachView ? 'coach' : 'player'); } catch {}; window.location.href = '/profile'; }} className="cursor-pointer">
+        <DropdownMenuItem onClick={() => { try { localStorage.setItem('preferredRole', inCoachView ? 'coach' : 'player'); } catch {}; window.location.href = inCoachView ? '/coach/profile' : '/player/profile'; }} className="cursor-pointer">
           <Settings className="mr-2 h-4 w-4" />
           Configuración
         </DropdownMenuItem>
@@ -181,7 +181,7 @@ export function UserMenu() {
               Cambiar a Entrenador
             </DropdownMenuItem>
           ) : (
-            <DropdownMenuItem onClick={() => { window.location.href = '/coach-register'; }} className="cursor-pointer">
+            <DropdownMenuItem onClick={() => { window.location.href = '/coach/register'; }} className="cursor-pointer">
               <Shuffle className="mr-2 h-4 w-4" />
               Convertirme en Entrenador
             </DropdownMenuItem>

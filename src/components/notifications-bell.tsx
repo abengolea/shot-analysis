@@ -44,8 +44,11 @@ export function NotificationsBell() {
       const apply = (snap: any) => {
         setMessages(prev => {
           const incoming = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })) as Message[];
+          console.log('Mensajes recibidos:', incoming.length, incoming.map(m => ({ id: m.id, read: m.read, text: m.text?.substring(0, 50) })));
           const merged = [...incoming, ...prev].reduce((acc: Record<string, Message>, m: Message) => { acc[m.id] = m; return acc; }, {} as any);
-          return Object.values(merged).sort((a, b) => (new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
+          const sorted = Object.values(merged).sort((a, b) => (new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
+          console.log('Mensajes totales después de merge:', sorted.length, sorted.map(m => ({ id: m.id, read: m.read, text: m.text?.substring(0, 50) })));
+          return sorted;
         });
       };
       unsubs.push(onSnapshot(q1, apply));
@@ -82,6 +85,13 @@ export function NotificationsBell() {
     try {
       if (!isAdmin) {
         const toMark = messages.filter(m => !m.read);
+        
+        // Actualizar inmediatamente el estado local
+        setMessages(prev => prev.map(m => 
+          !m.read ? { ...m, read: true, readAt: new Date().toISOString() } : m
+        ));
+        
+        // Actualizar en la base de datos
         await Promise.all(toMark.map(async (m) => {
           const ref = doc(db as any, 'messages', m.id);
           await updateDoc(ref, { read: true, readAt: new Date().toISOString() });
@@ -105,8 +115,15 @@ export function NotificationsBell() {
   const markMessageAsRead = async (messageId: string) => {
     try {
       if (!isAdmin) {
+        console.log('Marcando mensaje como leído:', messageId);
         const ref = doc(db as any, 'messages', messageId);
         await updateDoc(ref, { read: true, readAt: new Date().toISOString() });
+        console.log('Mensaje marcado como leído exitosamente');
+        
+        // Actualizar inmediatamente el estado local para reflejar el cambio
+        setMessages(prev => prev.map(m => 
+          m.id === messageId ? { ...m, read: true, readAt: new Date().toISOString() } : m
+        ));
       }
     } catch (e) {
       console.error('Error marcando mensaje como leído:', e);
@@ -136,15 +153,15 @@ export function NotificationsBell() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <div className="px-3 py-2 text-xs text-muted-foreground">Tickets sin leer: {ticketsUnread}</div>
-        {!isAdmin && messages.length === 0 && (
-          <div className="p-3 text-sm text-muted-foreground">Sin mensajes</div>
+        {!isAdmin && messages.filter(m => !m.read).length === 0 && (
+          <div className="p-3 text-sm text-muted-foreground">Sin mensajes nuevos</div>
         )}
-        {!isAdmin && messages.slice(0, 10).map((m) => (
+        {!isAdmin && messages.filter(m => !m.read).slice(0, 10).map((m) => (
           <DropdownMenuItem key={m.id} className="flex flex-col items-start gap-1 py-3" onClick={() => { 
-            if (!m.read) {
-              markMessageAsRead(m.id);
-            }
-            try { router.push('/support'); } catch {} 
+            console.log('Click en mensaje:', m.id, 'leído:', m.read);
+            console.log('Mensaje no leído, marcando como leído...');
+            markMessageAsRead(m.id);
+            try { router.push('/player/messages'); } catch {} 
           }}>
             <div className="text-xs text-muted-foreground">{new Date(m.createdAt || Date.now()).toLocaleString()}</div>
             <div className="text-sm">{m.text}</div>
