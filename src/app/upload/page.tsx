@@ -679,6 +679,15 @@ export default function UploadPage() {
               {/* Compresión en cliente (oculto por ahora) */}
 
               <SubmitButton analyzing={phase === 'analyzing'} />
+              
+              {/* BOTÓN DE PRUEBA TEMPORAL */}
+              <Button 
+                type="button" 
+                onClick={() => setMaintenanceOpen(true)}
+                className="w-full mt-2 bg-red-500 hover:bg-red-600"
+              >
+                🧪 PRUEBA: Mostrar Modal de Mantenimiento
+              </Button>
             </form>
           </CardContent>
         </Card>
