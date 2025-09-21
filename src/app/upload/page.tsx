@@ -142,9 +142,11 @@ export default function UploadPage() {
   };
 
   const handleSubmit = async (formData: FormData, skipLargeCheck = false) => {
+    console.log('🚀 handleSubmit ejecutándose con formData:', formData);
     // Modal de mantenimiento - bloquear análisis temporalmente
     console.log('🚨 Mostrando modal de mantenimiento');
     setMaintenanceOpen(true);
+    console.log('🚨 setMaintenanceOpen(true) ejecutado');
     return;
 
     // Chequeos de conectividad previos
@@ -436,12 +438,14 @@ export default function UploadPage() {
   }, [shotType]);
   
   const handleFormSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
+    console.log('🔥 handleFormSubmit ejecutándose');
     e.preventDefault();
     setConfirmedPartial(false);
     setConfirmedLarge(false);
     
     // Crear FormData y llamar a handleSubmit
     const formData = new FormData(e.currentTarget);
+    console.log('🔥 Llamando a handleSubmit con formData:', formData);
     await handleSubmit(formData);
   };
 
