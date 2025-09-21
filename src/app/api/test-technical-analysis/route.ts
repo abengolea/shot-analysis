@@ -45,6 +45,14 @@ export async function POST(request: NextRequest) {
     const prompt = `
     Eres un entrenador experto de baloncesto. Analiza este video de lanzamiento y evalúa los 22 parámetros técnicos del tiro.
 
+    🎯 SISTEMA DE PESOS ACTUALIZADO (para calcular score_global):
+    - FLUIDEZ: 50% peso (CRÍTICO - más importante)
+    - RESTO DE CATEGORÍAS: 26.38% peso (ALTO)
+    - SET POINT: 8.27% peso (MEDIO)
+    - CODO: 7.24% peso (MEDIO) 
+    - MANO LIBERACIÓN: 3.26% peso (BAJO)
+    - MANO ASCENSO: 2.18% peso (BAJO)
+
     INSTRUCCIONES CRÍTICAS:
     - Analiza SOLO lo que puedes VER claramente en el video
     - NO inventes mediciones que no puedes determinar
@@ -63,19 +71,19 @@ export async function POST(request: NextRequest) {
     6. Mirada enfocada al aro (¿mira al aro?)
 
     ASCENSO:
-    7. Mano no dominante guía el balón (¿mano guía visible?)
-    8. Codos cerca del cuerpo (¿codos no abiertos?)
+    7. Mano no dominante guía el balón (¿mano guía visible?) - PESO: 2.18%
+    8. Codos cerca del cuerpo (¿codos no abiertos?) - PESO: 7.24%
     9. Balón sube en línea recta (¿trayectoria recta?)
     10. Trayectoria suave al set point (¿movimiento fluido?)
-    11. Set point sobre la cabeza (¿balón sobre cabeza?)
+    11. Set point sobre la cabeza (¿balón sobre cabeza?) - PESO: 8.27%
     12. Timing correcto (¿no muy rápido/lento?)
 
-    FLUIDEZ:
+    FLUIDEZ (PESO: 50% - CRÍTICO):
     13. Tiro en un solo movimiento continuo (¿movimiento fluido?)
     14. Sincronización piernas-brazos (¿todo junto?)
 
     LIBERACIÓN:
-    15. Mano guía se retira a tiempo (¿mano guía se quita?)
+    15. Mano guía se retira a tiempo (¿mano guía se quita?) - PESO: 3.26%
     16. Extensión completa del brazo (¿brazo extendido?)
     17. Muñeca con snap hacia abajo (¿muñeca activa?)
     18. Ángulo de salida apropiado (¿ángulo bueno?)
@@ -85,6 +93,19 @@ export async function POST(request: NextRequest) {
     20. Equilibrio al aterrizar (¿aterriza equilibrado?)
     21. Duración del follow-through (¿mantiene 1-2 seg?)
     22. Consistencia general del movimiento (¿movimiento consistente?)
+
+    📋 REGLAS PARA RECOMENDACIONES AUTOMÁTICAS (por peso):
+    - Si FLUIDEZ < 7: PRIORIDAD MÁXIMA (50% peso)
+    - Si SET POINT < 6: PRIORIDAD ALTA (8.27% peso)
+    - Si CODO < 6: PRIORIDAD ALTA (7.24% peso)
+    - Si MANO LIBERACIÓN < 5: PRIORIDAD MEDIA (3.26% peso)
+    - Si MANO ASCENSO < 5: PRIORIDAD MEDIA (2.18% peso)
+
+    📋 REGLAS PARA FORTALEZAS AUTOMÁTICAS (por peso):
+    - Si FLUIDEZ ≥ 8: fortaleza PRINCIPAL
+    - Si SET POINT ≥ 8: fortaleza SECUNDARIA
+    - Si CODO ≥ 8: fortaleza SECUNDARIA
+    - Otros parámetros ≥ 8: fortalezas terciarias
 
     RESPONDE ÚNICAMENTE CON JSON VÁLIDO:
     {
@@ -121,8 +142,8 @@ export async function POST(request: NextRequest) {
         "consistencia": {"score": 8, "feedback": "Movimiento consistente"}
       },
       "score_global": 7.5,
-      "principales_mejoras": ["Mano guía se retira tarde", "Set point un poco bajo"],
-      "principales_fortalezas": ["Excelente follow-through", "Buena flexión de rodillas", "Hombros relajados"]
+      "principales_mejoras": ["Mejoras ordenadas por peso/importancia según scores"],
+      "principales_fortalezas": ["Fortalezas ordenadas por peso/importancia según scores"]
     }
     `;
 
