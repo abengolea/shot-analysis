@@ -23,7 +23,7 @@
   - pack_3: ARS 13500
   - pack_10: ARS 40000
   - history_plus_annual: ARS 12000
-- Límite: 2 análisis gratis por año por jugador (se consume antes que créditos).
+- Límite: 2 análisis gratis por año por jugador con 6 meses de separación entre cada uno (se consume antes que créditos).
 - Créditos: se acreditan por pagos aprobados; consumo al iniciar análisis si ya se usaron los 2 gratis.
 - Retención: 24 meses por defecto. History+ mantiene todo el historial activo mientras dure la suscripción.
 - Mercado Pago: Checkout Pro (one-shot) y webhook; suscripción anual para History+ (preapproval, a definir en próxima etapa).

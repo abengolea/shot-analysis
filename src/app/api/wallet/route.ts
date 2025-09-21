@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
     if (!adminDb) return NextResponse.json({ error: 'DB no inicializada' }, { status: 500 });
     const ref = adminDb.collection('wallets').doc(userId);
     const snap = await ref.get();
-    if (!snap.exists) return NextResponse.json({ credits: 0, freeAnalysesUsed: 0, yearInUse: new Date().getFullYear() });
+    if (!snap.exists) return NextResponse.json({ credits: 0, freeAnalysesUsed: 0, yearInUse: new Date().getFullYear(), lastFreeAnalysisDate: null });
     return NextResponse.json(snap.data());
   } catch (e: any) {
     console.error('wallet api error', e);

@@ -208,6 +208,7 @@ export type Wallet = {
   credits: number; // créditos disponibles para análisis pagos
   freeAnalysesUsed: number; // cuántos gratis usados en el añoEnCurso
   yearInUse: number; // año calendario de referencia para freeAnalysesUsed
+  lastFreeAnalysisDate?: string; // ISO string - fecha del último análisis gratuito
   historyPlusActive?: boolean;
   historyPlusValidUntil?: string; // ISO string
   currency: 'ARS';

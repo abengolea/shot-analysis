@@ -640,11 +640,38 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 if (Number(data.yearInUse) !== currentYear) {
                     data.freeAnalysesUsed = 0;
                     data.yearInUse = currentYear;
+                    data.lastFreeAnalysisDate = null; // Reset last free analysis date for new year
                 }
-                if ((data.freeAnalysesUsed || 0) < 2) {
+                
+                // Check if user can use a free analysis (2 per year with 6 months separation)
+                const canUseFreeAnalysis = () => {
+                    const freeUsed = data.freeAnalysesUsed || 0;
+                    if (freeUsed >= 2) return false;
+                    
+                    // If no free analysis used yet, allow it
+                    if (freeUsed === 0) return true;
+                    
+                    // If one free analysis used, check if 6 months have passed
+                    const lastFreeDate = data.lastFreeAnalysisDate;
+                    if (!lastFreeDate) return false;
+                    
+                    const lastDate = new Date(lastFreeDate);
+                    const now = new Date();
+                    const sixMonthsAgo = new Date(now.getTime() - (6 * 30 * 24 * 60 * 60 * 1000)); // 6 months in milliseconds
+                    
+                    return lastDate <= sixMonthsAgo;
+                };
+                
+                if (canUseFreeAnalysis()) {
                     data.freeAnalysesUsed = (data.freeAnalysesUsed || 0) + 1;
+                    data.lastFreeAnalysisDate = new Date().toISOString();
                     data.updatedAt = new Date().toISOString();
-                    tx.update(walletRef, { freeAnalysesUsed: data.freeAnalysesUsed, yearInUse: data.yearInUse, updatedAt: data.updatedAt });
+                    tx.update(walletRef, { 
+                        freeAnalysesUsed: data.freeAnalysesUsed, 
+                        lastFreeAnalysisDate: data.lastFreeAnalysisDate,
+                        yearInUse: data.yearInUse, 
+                        updatedAt: data.updatedAt 
+                    });
                     billingInfo = { type: 'free', year: currentYear };
                 } else if ((data.credits || 0) > 0) {
                     data.credits = Number(data.credits) - 1;
@@ -659,6 +686,26 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             return { message: 'No se pudo verificar tu saldo. Intenta nuevamente.', error: true };
         }
         if (!billingInfo) {
+            // Check if it's because of the 6-month waiting period
+            const walletSnap = await adminDb.collection('wallets').doc(userId).get();
+            const walletData = walletSnap.data();
+            const freeUsed = walletData?.freeAnalysesUsed || 0;
+            const lastFreeDate = walletData?.lastFreeAnalysisDate;
+            
+            if (freeUsed === 1 && lastFreeDate) {
+                const lastDate = new Date(lastFreeDate);
+                const now = new Date();
+                const sixMonthsFromLast = new Date(lastDate.getTime() + (6 * 30 * 24 * 60 * 60 * 1000));
+                const daysUntilNext = Math.ceil((sixMonthsFromLast.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                
+                if (daysUntilNext > 0) {
+                    return {
+                        message: `Usaste tu primer análisis gratis. Tu segundo análisis gratis estará disponible en ${daysUntilNext} días (después de 6 meses desde el último análisis gratuito). Mientras tanto, podés comprar un análisis o pack.`,
+                        error: true,
+                    };
+                }
+            }
+            
             return {
                 message: 'Alcanzaste el límite de 2 análisis gratis este año y no tenés créditos. Comprá un análisis o pack para continuar.',
                 error: true,

@@ -116,7 +116,7 @@ export default function UploadPage() {
   const [rightVideo, setRightVideo] = useState<File | null>(null);
   const [backVideo, setBackVideo] = useState<File | null>(null);
   const [shotType, setShotType] = useState<string>("");
-  const [wallet, setWallet] = useState<{ credits: number; freeLeft: number } | null>(null);
+  const [wallet, setWallet] = useState<{ credits: number; freeLeft: number; lastFreeAnalysisDate?: string; freeAnalysesUsed?: number } | null>(null);
   const [buyUrl, setBuyUrl] = useState<string | null>(null);
   const frontInputRef = useRef<HTMLInputElement>(null);
   const leftInputRef = useRef<HTMLInputElement>(null);
@@ -405,7 +405,12 @@ export default function UploadPage() {
       try {
         const res = await fetch(`/api/wallet?userId=${user.uid}`);
         const data = await res.json();
-        setWallet({ credits: data.credits || 0, freeLeft: Math.max(0, 2 - (data.freeAnalysesUsed || 0)) });
+        setWallet({ 
+          credits: data.credits || 0, 
+          freeLeft: Math.max(0, 2 - (data.freeAnalysesUsed || 0)),
+          lastFreeAnalysisDate: data.lastFreeAnalysisDate,
+          freeAnalysesUsed: data.freeAnalysesUsed || 0
+        });
       } catch {}
     };
     fetchWallet();
@@ -422,8 +427,10 @@ export default function UploadPage() {
   // Cargar última selección del tipo de lanzamiento
   useEffect(() => {
     try {
-      const last = localStorage.getItem('lastShotType');
-      if (last) setShotType(last);
+      // Limpiar localStorage para forzar selección manual
+      localStorage.removeItem('lastShotType');
+      // const last = localStorage.getItem('lastShotType');
+      // if (last) setShotType(last);
     } catch {}
   }, []);
 
@@ -494,6 +501,24 @@ export default function UploadPage() {
             Ver recomendaciones
           </Button>
         </div>
+        
+        {/* Información de análisis gratuitos */}
+        {wallet && (
+          <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <h3 className="font-semibold text-blue-800 mb-2">📊 Tu estado de análisis gratuitos</h3>
+            <div className="text-sm text-blue-700 space-y-1">
+              <p>• Análisis gratuitos usados este año: <strong>{wallet.freeAnalysesUsed || 0}/2</strong></p>
+              <p>• Análisis gratuitos disponibles: <strong>{wallet.freeLeft}</strong></p>
+              {wallet.freeAnalysesUsed === 1 && wallet.lastFreeAnalysisDate && (
+                <p>• Tu segundo análisis gratuito estará disponible después de 6 meses desde el último uso</p>
+              )}
+              <p>• Créditos disponibles: <strong>{wallet.credits}</strong></p>
+            </div>
+            <div className="text-xs text-blue-600 mt-2">
+              💡 Política: 2 análisis gratuitos por año con 6 meses de separación entre cada uno
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Tipo de lanzamiento (visible siempre) */}
@@ -519,6 +544,37 @@ export default function UploadPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Aviso de desarrollo para tipos de tiro */}
+      {shotType && (shotType === "Tiro Libre" || shotType === "Lanzamiento de Media Distancia (Jump Shot)") && (
+        <Card className="bg-amber-50 border-amber-300 shadow-md">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0">
+                <div className="h-8 w-8 bg-amber-100 rounded-full flex items-center justify-center">
+                  <span className="text-amber-600 text-lg">⚠️</span>
+                </div>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-amber-800 mb-2">
+                  🚧 Funcionalidad en Desarrollo
+                </h3>
+                <div className="text-sm text-amber-700 leading-relaxed space-y-2">
+                  <p>
+                    <strong>El análisis de {shotType.toLowerCase()} está actualmente en proceso de desarrollo.</strong>
+                  </p>
+                  <p>
+                    Por el momento, <strong>solo estamos midiendo y probando el análisis de lanzamientos de tres puntos</strong>.
+                  </p>
+                  <p className="bg-amber-100 p-2 rounded border-l-4 border-amber-400">
+                    <strong>💡 Recomendación:</strong> Si querés probar el sistema, seleccioná <strong>"Lanzamiento de Tres"</strong> para obtener un análisis completo.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Selector de videos (unificado) */}
       <Card>
@@ -832,7 +888,7 @@ export default function UploadPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Sin saldo disponible</AlertDialogTitle>
             <AlertDialogDescription>
-              Ya usaste tus análisis gratis anuales o no tenés créditos. Podés comprar un análisis o un pack y volver a intentar.
+              Ya usaste tus análisis gratis anuales (2 por año con 6 meses de separación entre cada uno) o no tenés créditos. Podés comprar un análisis o un pack y volver a intentar.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:gap-2">
