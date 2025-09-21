@@ -15,6 +15,7 @@ import {
   Shield,
   ShieldCheck,
   Trophy,
+  Settings,
 } from 'lucide-react';
 import {
   SidebarMenuItem,
@@ -261,6 +262,18 @@ export function SidebarMenuContents() {
           <Link href="/admin?tab=players">
             <Users />
             Jugadores
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          asChild
+          isActive={pathname.startsWith("/admin/maintenance")}
+          tooltip="Configuración de Mantenimiento"
+        >
+          <Link href="/admin/maintenance">
+            <Settings />
+            Mantenimiento
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
