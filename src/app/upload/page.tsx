@@ -435,9 +435,14 @@ export default function UploadPage() {
     } catch {}
   }, [shotType]);
   
-  const handleFormSubmit: React.FormEventHandler<HTMLFormElement> = () => {
+  const handleFormSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
+    e.preventDefault();
     setConfirmedPartial(false);
     setConfirmedLarge(false);
+    
+    // Crear FormData y llamar a handleSubmit
+    const formData = new FormData(e.currentTarget);
+    await handleSubmit(formData);
   };
 
   useEffect(() => {
@@ -653,7 +658,7 @@ export default function UploadPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form ref={formRef} action={handleSubmit} onSubmit={handleFormSubmit} className="space-y-4">
+            <form ref={formRef} onSubmit={handleFormSubmit} className="space-y-4">
               {/* Usuario ID oculto */}
               <input type="hidden" name="userId" value={user.uid} />
               {/* Tipo de lanzamiento (solo para envío) */}
