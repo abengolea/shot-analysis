@@ -49,6 +49,7 @@ export default function DashboardPage() {
   const [analysesLoading, setAnalysesLoading] = useState(true);
   const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
+  const [maintenanceConfig, setMaintenanceConfig] = useState<any>(null);
   const [coachFeedbackByAnalysis, setCoachFeedbackByAnalysis] = useState<Record<string, boolean>>({});
 
   // Controles de filtro/rango
@@ -56,6 +57,22 @@ export default function DashboardPage() {
   const [shotFilter, setShotFilter] = useState<string>("all"); // all, three, jump, free
 
   // Función para obtener análisis del usuario
+  // Cargar configuración de mantenimiento
+  useEffect(() => {
+    const fetchMaintenanceConfig = async () => {
+      try {
+        const response = await fetch('/api/admin/maintenance');
+        if (response.ok) {
+          const config = await response.json();
+          setMaintenanceConfig(config);
+        }
+      } catch (error) {
+        console.error('Error cargando configuración de mantenimiento:', error);
+      }
+    };
+    fetchMaintenanceConfig();
+  }, []);
+
   useEffect(() => {
     const fetchAnalyses = async () => {
       if (!user?.uid) return;
@@ -262,7 +279,13 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex items-center gap-2">
-            <Button onClick={() => setMaintenanceOpen(true)}>
+            <Button onClick={() => {
+              if (maintenanceConfig?.enabled) {
+                setMaintenanceOpen(true);
+              } else {
+                router.push('/upload');
+              }
+            }}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Analizar Nuevo Lanzamiento
             </Button>
@@ -456,13 +479,9 @@ export default function DashboardPage() {
       <AlertDialog open={maintenanceOpen} onOpenChange={() => {}}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>🔧 SITIO EN MANTENIMIENTO</AlertDialogTitle>
-            <AlertDialogDescription>
-              Estamos ajustando variables importantes del sistema.
-              <br /><br />
-              <strong>El análisis de lanzamientos está temporalmente deshabilitado.</strong>
-              <br /><br />
-              Volveremos pronto con mejoras. ¡Gracias por tu paciencia!
+            <AlertDialogTitle>{maintenanceConfig?.title || '🔧 SITIO EN MANTENIMIENTO'}</AlertDialogTitle>
+            <AlertDialogDescription className="whitespace-pre-line">
+              {maintenanceConfig?.message || 'El análisis de lanzamientos está temporalmente deshabilitado.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
