@@ -211,6 +211,19 @@ export default function LandingPage() {
               </Button>
             </div>
           </div>
+          
+          {/* Enlaces legales */}
+          <div className="mt-8 pt-8 border-t border-gray-200">
+            <div className="flex flex-col sm:flex-row justify-center items-center gap-4 text-sm text-muted-foreground">
+              <span>© 2025 Notificas SRL. Todos los derechos reservados.</span>
+              <Link 
+                href="/bases-y-condiciones" 
+                className="text-primary hover:text-primary/80 underline"
+              >
+                Bases y Condiciones
+              </Link>
+            </div>
+          </div>
         </footer>
       </div>
     </div>

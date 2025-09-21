@@ -78,7 +78,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <SidebarSeparator />
           <div className="p-2 group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:px-1">
             <div className="text-center text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-              chaaaas.com v1.0
+              <div className="mb-2">chaaaas.com v1.0</div>
+              <div className="flex flex-col gap-1">
+                <Link 
+                  href="/bases-y-condiciones" 
+                  className="text-primary hover:text-primary/80 underline"
+                >
+                  Bases y Condiciones
+                </Link>
+                <span>© 2025 Notificas SRL</span>
+              </div>
             </div>
           </div>
         </SidebarFooter>
