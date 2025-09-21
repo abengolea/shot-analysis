@@ -143,6 +143,7 @@ export default function UploadPage() {
 
   const handleSubmit = async (formData: FormData, skipLargeCheck = false) => {
     // Modal de mantenimiento - bloquear análisis temporalmente
+    console.log('🚨 Mostrando modal de mantenimiento');
     setMaintenanceOpen(true);
     return;
 
@@ -944,6 +945,7 @@ export default function UploadPage() {
       </AlertDialog>
 
       {/* Modal: Mantenimiento */}
+      {console.log('🔍 Modal maintenanceOpen:', maintenanceOpen)}
       <AlertDialog open={maintenanceOpen} onOpenChange={setMaintenanceOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
