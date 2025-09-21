@@ -82,22 +82,12 @@ export type AnalyzeBasketballShotOutput = z.infer<typeof AnalyzeBasketballShotOu
 
 export async function analyzeBasketballShot(input: AnalyzeBasketballShotInput): Promise<AnalyzeBasketballShotOutput> {
   try {
-    // Intentar correr la IA directamente; si falla por clave ausente u otro motivo, caemos al básico
+    // Intentar correr la IA directamente
     return await analyzeBasketballShotFlow(input);
   } catch (e: any) {
-    console.warn('[analyzeBasketballShot] IA falló, usando análisis básico. Motivo:', e?.message || e);
-    const selected = Array.isArray(input.availableKeyframes)
-      ? input.availableKeyframes.slice(0, 6).map((k) => k.index)
-      : [];
-    return {
-      analysisSummary: 'Análisis básico: no se pudo ejecutar la IA (ver logs del servidor).',
-      strengths: [],
-      weaknesses: [],
-      recommendations: ['Verifica la GEMINI_API_KEY/GOOGLE_API_KEY y vuelve a intentar.'],
-      selectedKeyframes: selected,
-      keyframeAnalysis: selected.length > 0 ? 'Selección automática de los primeros fotogramas disponibles.' : 'Sin fotogramas disponibles.',
-      detailedChecklist: [],
-    } as AnalyzeBasketballShotOutput;
+    console.error('[analyzeBasketballShot] IA falló completamente. Motivo:', e?.message || e);
+    // NO generar análisis falso - lanzar error real
+    throw new Error(`Error en análisis de IA: ${e?.message || 'Error desconocido'}. Verifica la configuración de API keys.`);
   }
 }
 

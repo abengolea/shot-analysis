@@ -15,6 +15,10 @@ import {
   analyzeBasketballShot,
   AnalyzeBasketballShotOutput,
 } from './analyze-basketball-shot';
+import {
+  validateBasketballContent,
+  ValidateBasketballContentOutput,
+} from './validate-basketball-content';
 import { adminDb } from '@/lib/firebase-admin';
 import type { Player } from '@/lib/types';
 // Usar Admin SDK (adminDb) directamente; no importar helpers del SDK cliente
@@ -94,7 +98,52 @@ const processUploadedVideoFlow = ai.defineFlow(
         ? 'Amateur adulto'
         : (`Sub-${String(ageGroup).replace('U', '')}` as any);
 
-    // 4.5. Load admin prompt config for this shot type (if any)
+    // 4.5. VALIDAR CONTENIDO DEL VIDEO ANTES DEL ANÁLISIS
+    console.log('Validando contenido del video...');
+    const contentValidation: ValidateBasketballContentOutput = 
+      await validateBasketballContent({
+        videoUrl: videoUrl,
+        shotType: pendingData.shotType,
+      });
+
+    console.log('Resultado de validación:', contentValidation);
+
+    if (!contentValidation.isBasketballContent) {
+      console.error(`Video rechazado - No es contenido de baloncesto: ${contentValidation.reason}`);
+      
+      // Guardar análisis de rechazo
+      const rejectedAnalysisData = {
+        playerId: userId,
+        createdAt: new Date().toISOString(),
+        videoUrl,
+        shotType: pendingData.shotType,
+        status: 'rejected',
+        rejectionReason: contentValidation.reason,
+        validationResult: contentValidation,
+        analysisSummary: 'Video rechazado: No contiene contenido válido de baloncesto.',
+        strengths: [],
+        weaknesses: [],
+        recommendations: ['Sube un video que muestre claramente un tiro de baloncesto.'],
+        selectedKeyframes: [],
+        keyframeAnalysis: 'No aplicable - Video rechazado.',
+        detailedChecklist: [],
+      };
+
+      const rejectedAnalysisRef = adminDb.collection('analyses').doc(docId);
+      await rejectedAnalysisRef.set(rejectedAnalysisData);
+      
+      // Limpiar documento pendiente
+      await pendingDocRef.delete();
+      console.log(`Video rechazado y guardado como análisis fallido: ${docId}`);
+      return;
+    }
+
+    if (contentValidation.recommendation === 'REVIEW') {
+      console.warn(`Video requiere revisión manual: ${contentValidation.reason}`);
+      // Marcar para revisión manual (podrías crear una cola de revisión)
+    }
+
+    // 4.6. Load admin prompt config for this shot type (if any)
     let promptConfig: any | undefined = undefined;
     try {
       const cfgRef = adminDb.collection('config').doc(
@@ -122,8 +171,37 @@ const processUploadedVideoFlow = ai.defineFlow(
     console.log('Calling analyzeBasketballShot flow with input:', aiInput);
 
     // 5. Run the analysis
-    const analysisResult: AnalyzeBasketballShotOutput =
-      await analyzeBasketballShot(aiInput);
+    let analysisResult: AnalyzeBasketballShotOutput;
+    try {
+      analysisResult = await analyzeBasketballShot(aiInput);
+    } catch (e: any) {
+      console.error('Error en análisis de IA:', e?.message || e);
+      
+      // Guardar análisis de error
+      const errorAnalysisData = {
+        playerId: userId,
+        createdAt: new Date().toISOString(),
+        videoUrl,
+        shotType: pendingData.shotType,
+        status: 'error',
+        errorMessage: e?.message || 'Error desconocido en análisis de IA',
+        analysisSummary: 'Error en el análisis: No se pudo procesar el video con IA.',
+        strengths: [],
+        weaknesses: [],
+        recommendations: ['Error técnico. Contacta al soporte si persiste.'],
+        selectedKeyframes: [],
+        keyframeAnalysis: 'No aplicable - Error en análisis.',
+        detailedChecklist: [],
+      };
+
+      const errorAnalysisRef = adminDb.collection('analyses').doc(docId);
+      await errorAnalysisRef.set(errorAnalysisData);
+      
+      // Limpiar documento pendiente
+      await pendingDocRef.delete();
+      console.log(`Análisis con error guardado: ${docId}`);
+      return;
+    }
 
     // 6. Save the final analysis to the 'analyses' collection
     const finalAnalysisData = {

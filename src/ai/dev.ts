@@ -4,6 +4,7 @@ config();
 import '@/ai/flows/content-moderation.ts';
 import '@/ai/flows/generate-personalized-drills.ts';
 import '@/ai/flows/analyze-basketball-shot.ts';
+import '@/ai/flows/validate-basketball-content.ts';
 import '@/ai/flows/process-uploaded-video.ts';
 
 import { onObjectFinalized } from 'firebase-functions/v2/storage';
@@ -16,6 +17,7 @@ import { processUploadedVideo } from '@/ai/flows/process-uploaded-video';
 // Exportar flows explícitamente para dev si la CLI lo requiere (evitar import de 'genkit/dev')
 export { analyzeBasketballShot } from '@/ai/flows/analyze-basketball-shot';
 export { moderateContent as contentModeration } from '@/ai/flows/content-moderation';
+export { validateBasketballContent } from '@/ai/flows/validate-basketball-content';
 export { generatePersonalizedDrills } from '@/ai/flows/generate-personalized-drills';
 export { processUploadedVideo as processUploadedVideoFlowEntry } from '@/ai/flows/process-uploaded-video';
 

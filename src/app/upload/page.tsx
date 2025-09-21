@@ -759,11 +759,14 @@ export default function UploadPage() {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setConfirmLargeOpen(false)}>Volver</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
+              onClick={async () => {
                 setConfirmLargeOpen(false);
                 setConfirmedLarge(true);
-                // Reintentar el envío automáticamente
-                formRef.current?.requestSubmit();
+                // Ejecutar directamente la lógica de subida
+                const formData = new FormData();
+                formData.set('userId', user?.uid || '');
+                formData.set('shotType', shotType);
+                await handleSubmit(formData);
               }}
             >
               Continuar y subir ahora
@@ -783,7 +786,15 @@ export default function UploadPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setConfirmPartialOpen(false)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmedPartial(true); setConfirmPartialOpen(false); formRef.current?.requestSubmit(); }}>Confirmar y analizar</AlertDialogAction>
+            <AlertDialogAction onClick={async () => { 
+              setConfirmedPartial(true); 
+              setConfirmPartialOpen(false); 
+              // Ejecutar directamente la lógica de subida
+              const formData = new FormData();
+              formData.set('userId', user?.uid || '');
+              formData.set('shotType', shotType);
+              await handleSubmit(formData);
+            }}>Confirmar y analizar</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
