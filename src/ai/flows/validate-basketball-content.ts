@@ -7,6 +7,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
+import { analyzeVideoContent } from './analyze-video-content';
 
 const ValidateBasketballContentInputSchema = z.object({
   videoUrl: z.string().describe('URL del video a validar.'),
@@ -28,25 +29,37 @@ export async function validateBasketballContent(
   input: ValidateBasketballContentInput
 ): Promise<ValidateBasketballContentOutput> {
   try {
-    console.log('[validateBasketballContent] Iniciando validación para:', input.videoUrl);
-    const result = await validateBasketballContentFlow(input);
-    console.log('[validateBasketballContent] Resultado:', result);
+    console.log('[validateBasketballContent] Iniciando validación con IA para:', input.videoUrl);
+    
+    // Usar el análisis real de IA para validar el contenido
+    const aiAnalysis = await analyzeVideoContent(input);
+    
+    // Convertir el resultado del análisis de IA al formato de validación
+    const result: ValidateBasketballContentOutput = {
+      isBasketballContent: aiAnalysis.isBasketballContent,
+      confidence: aiAnalysis.confidence,
+      detectedElements: aiAnalysis.detectedElements,
+      reason: aiAnalysis.reason,
+      recommendation: aiAnalysis.recommendation
+    };
+    
+    console.log('[validateBasketballContent] Resultado de IA:', result);
     return result;
   } catch (e: any) {
-    console.error('[validateBasketballContent] Error en validación:', e?.message || e);
+    console.error('[validateBasketballContent] Error en validación con IA:', e?.message || e);
     console.error('[validateBasketballContent] Stack:', e?.stack);
     
-    // Validación básica basada en URL
+    // Fallback: validación básica basada en URL si la IA falla
     const isPartyVideo = input.videoUrl.toLowerCase().includes('party') || 
                         input.videoUrl.toLowerCase().includes('fiesta');
     
     return {
       isBasketballContent: !isPartyVideo,
-      confidence: 0.8,
+      confidence: 0.6,
       detectedElements: isPartyVideo ? [] : ['URL sugiere contenido deportivo'],
       reason: isPartyVideo 
         ? 'Video de fiesta detectado por URL. No es contenido de baloncesto válido.'
-        : 'No se pudo validar el contenido del video. Se requiere revisión manual.',
+        : 'No se pudo validar el contenido del video con IA. Se requiere revisión manual.',
       recommendation: isPartyVideo ? 'REJECT' : 'REVIEW'
     };
   }

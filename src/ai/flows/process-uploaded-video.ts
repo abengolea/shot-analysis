@@ -19,6 +19,7 @@ import {
   validateBasketballContent,
   ValidateBasketballContentOutput,
 } from './validate-basketball-content';
+import { analyzeVideoFrames } from './analyze-video-frames';
 import { adminDb } from '@/lib/firebase-admin';
 import type { Player } from '@/lib/types';
 // Usar Admin SDK (adminDb) directamente; no importar helpers del SDK cliente

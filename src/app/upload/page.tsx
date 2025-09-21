@@ -108,6 +108,7 @@ export default function UploadPage() {
   const [tipsOpen, setTipsOpen] = useState(false);
   const [dontShowTipsAgain, setDontShowTipsAgain] = useState(false);
   const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   
   // Estados para los videos (sin frames)
   const [selectedVideo, setSelectedVideo] = useState<File | null>(null); // frontal
@@ -141,6 +142,10 @@ export default function UploadPage() {
   };
 
   const handleSubmit = async (formData: FormData, skipLargeCheck = false) => {
+    // Modal de mantenimiento - bloquear análisis temporalmente
+    setMaintenanceOpen(true);
+    return;
+
     // Chequeos de conectividad previos
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       toast({ title: 'Sin conexión', description: 'Estás sin Internet. Conéctate a Wi‑Fi o datos y vuelve a intentar.', variant: 'destructive' });
@@ -935,6 +940,27 @@ export default function UploadPage() {
             <Loader2 className="h-4 w-4 animate-spin" />
             Procesando…
           </div>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal: Mantenimiento */}
+      <AlertDialog open={maintenanceOpen} onOpenChange={setMaintenanceOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>🔧 Ajustes Importantes en Progreso</AlertDialogTitle>
+            <AlertDialogDescription>
+              Estamos realizando mejoras importantes en nuestro sistema de análisis de IA. 
+              <br /><br />
+              <strong>El análisis de tiros estará temporalmente deshabilitado</strong> mientras implementamos nuevas funcionalidades para brindarte una mejor experiencia.
+              <br /><br />
+              Te notificaremos tan pronto como esté disponible nuevamente. ¡Gracias por tu paciencia!
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setMaintenanceOpen(false)}>
+              Entendido
+            </AlertDialogAction>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
