@@ -106,9 +106,9 @@ const processUploadedVideoFlow = ai.defineFlow(
     const { Storage } = await import('@google-cloud/storage');
     const storage = new Storage();
     const bucketName = 'shot-analysis-storage';
-    const fileName = filePath.replace('videos/', '');
+    const storageFileName = filePath.replace('videos/', '');
     const bucket = storage.bucket(bucketName);
-    const file = bucket.file(fileName);
+    const file = bucket.file(storageFileName);
     
     // Descargar video a buffer
     const [videoBuffer] = await file.download();
