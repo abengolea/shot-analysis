@@ -4,6 +4,7 @@ config();
 import '@/ai/flows/content-moderation.ts';
 import '@/ai/flows/generate-personalized-drills.ts';
 import '@/ai/flows/analyze-basketball-shot.ts';
+import '@/ai/flows/analyze-basketball-pose.ts';
 import '@/ai/flows/validate-basketball-content.ts';
 import '@/ai/flows/analyze-video-content.ts';
 import '@/ai/flows/analyze-video-frames.ts';
@@ -18,6 +19,7 @@ import { processUploadedVideo } from '@/ai/flows/process-uploaded-video';
 // This is the entrypoint for the Genkit dev server.
 // Exportar flows explícitamente para dev si la CLI lo requiere (evitar import de 'genkit/dev')
 export { analyzeBasketballShot } from '@/ai/flows/analyze-basketball-shot';
+export { analyzeBasketballPose } from '@/ai/flows/analyze-basketball-pose';
 export { moderateContent as contentModeration } from '@/ai/flows/content-moderation';
 export { validateBasketballContent } from '@/ai/flows/validate-basketball-content';
 export { analyzeVideoContent } from '@/ai/flows/analyze-video-content';

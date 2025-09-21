@@ -124,14 +124,16 @@ INSTRUCCIONES IMPORTANTES:
 5. Da una recomendación clara basada en tu análisis visual
 
 ELEMENTOS QUE INDICAN BALONCESTO (cualquiera de estos es suficiente):
-- Canasta de baloncesto (aro, tablero, red) - INCLUSO SI ES PARCIAL
+- Canasta de baloncesto (aro, tablero, red) - INCLUSO SI ES PARCIAL O NO VISIBLE
 - Balón de baloncesto (color naranja, tamaño estándar) - INCLUSO SI ES PARCIAL
 - Cancha de baloncesto (líneas, dimensiones, superficie) - INCLUSO SI ES PARCIAL
-- Jugador con ropa deportiva cerca de una canasta
-- Movimiento de tiro o lanzamiento
+- Jugador con UNIFORME DE BALONCESTO (camiseta, shorts deportivos)
+- Jugador con BALÓN DE BALONCESTO en las manos
+- Movimiento de tiro o lanzamiento (incluso si no se ve el aro)
+- Jugador en posición de tiro o lanzamiento
 - Entorno deportivo (gimnasio, cancha, etc.)
 - Equipamiento deportivo (zapatillas, ropa deportiva)
-- Cualquier elemento que sugiera deporte de baloncesto
+- Cualquier combinación de: uniforme deportivo + balón + movimiento de tiro
 
 ELEMENTOS QUE DEFINITIVAMENTE NO SON BALONCESTO:
 - Fiestas, celebraciones, eventos sociales OBVIOS
@@ -140,19 +142,25 @@ ELEMENTOS QUE DEFINITIVAMENTE NO SON BALONCESTO:
 - Personas bailando o cantando en contexto no deportivo
 - Contenido claramente no deportivo
 
-CRITERIOS DE EVALUACIÓN (SÉ MUY ESTRICTO):
-- PROCEED: Solo si hay evidencia CLARA y OBVIA de baloncesto (canasta, balón, cancha visible)
-- REJECT: Si hay CUALQUIER indicio de fiesta, celebración, música, baile, o contenido no deportivo
-- REVIEW: Solo si el contenido es completamente ambiguo y no se puede determinar
+CRITERIOS DE EVALUACIÓN (EQUILIBRADO):
+- PROCEED: Si hay evidencia de baloncesto (canasta, balón, cancha, jugador tirando, etc.) O si es un jugador haciendo movimiento de tiro
+- REJECT: Solo si hay evidencia CLARA de fiesta, celebración, música, baile, o contenido NO deportivo
+- REVIEW: Si el contenido es ambiguo pero no hay indicios claros de fiesta
 
-REGLAS CRÍTICAS:
+REGLAS EQUILIBRADAS:
 1. Si hay CUALQUIER indicio de fiesta/celebración, elige REJECT inmediatamente
-2. Si no ves una canasta de baloncesto CLARA, elige REJECT
-3. Si no ves un balón de baloncesto CLARO, elige REJECT
-4. Si hay música, baile, o celebraciones, elige REJECT
-5. Es mejor rechazar un video ambiguo que aprobar uno de fiesta
-6. Analiza solo lo que realmente ves en los frames proporcionados
-7. NO inventes contenido que no esté presente`
+2. Si ves un jugador con UNIFORME DE BALONCESTO haciendo movimiento de tiro, elige PROCEED (aunque no veas canasta)
+3. Si ves un jugador con BALÓN DE BALONCESTO en posición de tiro, elige PROCEED
+4. Si ves elementos de baloncesto (canasta, balón, cancha, jugador deportivo), elige PROCEED
+5. Si hay música, baile, o celebraciones OBVIAS, elige REJECT
+6. Si es un video deportivo ambiguo pero NO es fiesta, elige PROCEED
+7. Analiza solo lo que realmente ves en los frames proporcionados
+8. NO inventes contenido que no esté presente
+
+CASOS ESPECIALES:
+- Jugador con uniforme de baloncesto + balón = PROCEED (es baloncesto)
+- Jugador haciendo movimiento de tiro + balón = PROCEED (es baloncesto)
+- Solo falta canasta visible NO es razón para REJECT si hay otros elementos de baloncesto`
 });
 
 const analyzeVideoFramesFlow = ai.defineFlow(

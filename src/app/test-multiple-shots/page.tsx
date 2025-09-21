@@ -219,6 +219,34 @@ export default function TestMultipleShotsPage() {
                                 
                                 <p className="text-sm text-gray-700 mb-2">{shot.description}</p>
                                 
+                                {/* Mostrar frames extraídos */}
+                                {result.analysis.extractedFrames && result.analysis.extractedFrames[shot.shotIndex] && (
+                                  <div className="mb-3">
+                                    <span className="text-sm font-medium text-blue-600">📸 Frames extraídos:</span>
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                      {result.analysis.extractedFrames[shot.shotIndex].frames.slice(0, 4).map((frame: any, frameIndex: number) => (
+                                        <div key={frameIndex} className="relative">
+                                          <img 
+                                            src={`data:image/jpeg;base64,${frame.imageData}`}
+                                            alt={`Frame ${frameIndex + 1}`}
+                                            className="w-20 h-20 object-cover rounded border border-gray-300"
+                                          />
+                                          <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b">
+                                            {frame.timestamp.toFixed(1)}s
+                                          </div>
+                                        </div>
+                                      ))}
+                                      {result.analysis.extractedFrames[shot.shotIndex].frames.length > 4 && (
+                                        <div className="w-20 h-20 bg-gray-100 rounded border border-gray-300 flex items-center justify-center">
+                                          <span className="text-xs text-gray-500">
+                                            +{result.analysis.extractedFrames[shot.shotIndex].frames.length - 4}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                                
                                 {shot.basketballIndicators.length > 0 && (
                                   <div className="mb-2">
                                     <span className="text-sm font-medium text-green-600">✅ Indicadores de baloncesto:</span>

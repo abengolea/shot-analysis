@@ -28,6 +28,16 @@ const AnalyzeMultipleShotsOutputSchema = z.object({
   overallRecommendation: z.enum(['PROCEED', 'REJECT', 'REVIEW']).describe('Recomendación general'),
   overallConfidence: z.number().min(0).max(1).describe('Confianza general del análisis'),
   summary: z.string().describe('Resumen del análisis completo'),
+  extractedFrames: z.array(z.object({
+    shotIndex: z.number(),
+    startTime: z.number(),
+    endTime: z.number(),
+    frames: z.array(z.object({
+      index: z.number(),
+      timestamp: z.number(),
+      imageData: z.string().describe('Frame en base64')
+    }))
+  })).optional().describe('Frames extraídos para visualización')
 });
 
 export type AnalyzeMultipleShotsInput = z.infer<typeof AnalyzeMultipleShotsInputSchema>;
@@ -71,6 +81,12 @@ export async function analyzeMultipleShots(
       segments: segmentsData
     });
     
+    // La validación ahora se basa únicamente en la presencia de elementos de baloncesto
+    // No hay validación post-procesamiento sesgada hacia fiestas
+    
+    // Agregar los frames extraídos al resultado
+    result.extractedFrames = segmentsData;
+    
     console.log('[analyzeMultipleShots] Resultado:', result);
     return result;
   } catch (e: any) {
@@ -113,42 +129,37 @@ INSTRUCCIONES IMPORTANTES:
 1. Analiza cada segmento por separado
 2. Para cada segmento, examina todos los frames proporcionados
 3. Determina si cada segmento es un tiro de baloncesto válido
-4. Sé GENEROSO en reconocer baloncesto - es mejor aprobar un segmento ambiguo que rechazar uno válido
-5. Proporciona un análisis detallado de cada segmento
+4. Proporciona un análisis detallado de cada segmento
+5. Analiza solo lo que realmente ves en los frames proporcionados
+6. NO inventes contenido que no esté presente
 
 ELEMENTOS QUE INDICAN BALONCESTO EN UN SEGMENTO:
-- Canasta de baloncesto (aro, tablero, red) - INCLUSO SI ES PARCIAL
-- Balón de baloncesto (color naranja, tamaño estándar) - INCLUSO SI ES PARCIAL
-- Cancha de baloncesto (líneas, dimensiones, superficie) - INCLUSO SI ES PARCIAL
+- Canasta de baloncesto (aro, tablero, red) - debe ser visible y clara
+- Balón de baloncesto (color naranja, tamaño estándar) - debe ser visible y claro
+- Cancha de baloncesto (líneas, dimensiones, superficie) - debe ser visible y clara
 - Jugador con ropa deportiva ejecutando movimiento de tiro
 - Movimiento de lanzamiento hacia una canasta
 - Entorno deportivo (gimnasio, cancha, etc.)
 - Equipamiento deportivo (zapatillas, ropa deportiva)
-- Cualquier elemento que sugiera deporte de baloncesto
-
-ELEMENTOS QUE DEFINITIVAMENTE NO SON BALONCESTO:
-- Fiestas, celebraciones, eventos sociales OBVIOS
-- Otros deportes claramente identificables (fútbol, tenis, etc.)
-- Contenido de entretenimiento/música OBVIO
-- Personas bailando o cantando en contexto no deportivo
-- Contenido claramente no deportivo
 
 CRITERIOS DE EVALUACIÓN POR SEGMENTO:
-- PROCEED: Si el segmento muestra claramente un tiro de baloncesto
-- REJECT: Si el segmento muestra claramente contenido que NO es baloncesto
-- REVIEW: Contenido ambiguo que podría ser baloncesto
+- PROCEED: Si ves CLARAMENTE una canasta de baloncesto Y un balón naranja Y movimiento de tiro
+- REJECT: Si NO ves elementos claros de baloncesto (canasta, balón, cancha, movimiento de tiro)
+- REVIEW: Solo si el contenido es completamente ambiguo
 
 RECOMENDACIÓN GENERAL:
-- PROCEED: Si hay al menos un segmento válido de baloncesto
-- REJECT: Si ningún segmento es de baloncesto
-- REVIEW: Si hay segmentos ambiguos que requieren revisión
+- PROCEED: Solo si hay al menos un segmento con evidencia CLARA de baloncesto
+- REJECT: Si NO hay evidencia clara de baloncesto en ningún segmento
+- REVIEW: Solo si es completamente ambiguo
 
-REGLAS IMPORTANTES:
-1. Analiza cada segmento independientemente
-2. Si no estás 100% seguro de un segmento, elige PROCEED o REVIEW
-3. Es mejor aprobar un segmento ambiguo que rechazar uno válido
-4. Busca elementos de baloncesto incluso si son parciales o en segundo plano
-5. Analiza solo lo que realmente ves en los frames proporcionados`
+REGLAS CRÍTICAS:
+1. Si no ves una canasta de baloncesto clara, elige REJECT
+2. Si no ves un balón de baloncesto claro, elige REJECT
+3. Si no ves movimiento de tiro claro, elige REJECT
+4. Si no estás 100% seguro de que es baloncesto, elige REJECT
+5. Analiza solo lo que realmente ves en los frames proporcionados
+6. NO inventes contenido que no esté presente
+7. Es mejor rechazar contenido ambiguo que aprobar contenido no deportivo`
 });
 
 const analyzeMultipleShotsFlow = ai.defineFlow(

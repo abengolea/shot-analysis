@@ -100,17 +100,36 @@ const processUploadedVideoFlow = ai.defineFlow(
         : (`Sub-${String(ageGroup).replace('U', '')}` as any);
 
     // 4.5. VALIDAR CONTENIDO DEL VIDEO ANTES DEL ANÁLISIS
-    console.log('Validando contenido del video...');
-    const contentValidation: ValidateBasketballContentOutput = 
-      await validateBasketballContent({
-        videoUrl: videoUrl,
-        shotType: pendingData.shotType,
-      });
+    console.log('Validando contenido del video con análisis real de frames...');
+    
+    // Descargar el video desde GCS para análisis
+    const { Storage } = await import('@google-cloud/storage');
+    const storage = new Storage();
+    const bucketName = 'shot-analysis-storage';
+    const fileName = filePath.replace('videos/', '');
+    const bucket = storage.bucket(bucketName);
+    const file = bucket.file(fileName);
+    
+    // Descargar video a buffer
+    const [videoBuffer] = await file.download();
+    
+    // Usar análisis real de frames (no solo URL)
+    const contentValidation = await analyzeVideoFrames({
+      videoBuffer: videoBuffer,
+      framesPerSecond: 1
+    });
 
     console.log('Resultado de validación:', contentValidation);
 
-    if (!contentValidation.isBasketballContent) {
+    if (!contentValidation.isBasketballContent || contentValidation.recommendation === 'REJECT') {
       console.error(`Video rechazado - No es contenido de baloncesto: ${contentValidation.reason}`);
+      
+      // Crear mensaje más específico para el usuario
+      let userMessage = 'El video subido no corresponde a un lanzamiento de baloncesto.';
+      if (contentValidation.nonBasketballIndicators && contentValidation.nonBasketballIndicators.length > 0) {
+        userMessage += ` Se detectó: ${contentValidation.nonBasketballIndicators.join(', ')}.`;
+      }
+      userMessage += ' Por favor, sube un video que muestre claramente un jugador ejecutando un tiro al aro.';
       
       // Guardar análisis de rechazo
       const rejectedAnalysisData = {
@@ -119,12 +138,16 @@ const processUploadedVideoFlow = ai.defineFlow(
         videoUrl,
         shotType: pendingData.shotType,
         status: 'rejected',
-        rejectionReason: contentValidation.reason,
+        rejectionReason: userMessage,
         validationResult: contentValidation,
         analysisSummary: 'Video rechazado: No contiene contenido válido de baloncesto.',
         strengths: [],
         weaknesses: [],
-        recommendations: ['Sube un video que muestre claramente un tiro de baloncesto.'],
+        recommendations: [
+          'Sube un video que muestre claramente un tiro de baloncesto.',
+          'Asegúrate de que el video incluya: canasta, balón, y movimiento de tiro.',
+          'Evita videos de fiestas, otros deportes, o actividades no relacionadas con baloncesto.'
+        ],
         selectedKeyframes: [],
         keyframeAnalysis: 'No aplicable - Video rechazado.',
         detailedChecklist: [],
