@@ -140,7 +140,7 @@ export default function UploadPage() {
     return hasName && hasDob && hasCountry && hasAgeGroup && hasPlayerLevel && hasPosition && heightOk && wingspanOk;
   };
 
-  const handleSubmit = async (formData: FormData) => {
+  const handleSubmit = async (formData: FormData, skipLargeCheck = false) => {
     // Chequeos de conectividad previos
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       toast({ title: 'Sin conexión', description: 'Estás sin Internet. Conéctate a Wi‑Fi o datos y vuelve a intentar.', variant: 'destructive' });
@@ -181,7 +181,7 @@ export default function UploadPage() {
     const LARGE_BYTES = LARGE_MB * 1024 * 1024;
     const filesToCheck = [backVideo, selectedVideo, leftVideo, rightVideo].filter(Boolean) as File[];
     const hasLarge = filesToCheck.some((f) => f.size > LARGE_BYTES);
-    if (hasLarge && !confirmedLarge) {
+    if (hasLarge && !confirmedLarge && !skipLargeCheck) {
       setConfirmLargeOpen(true);
       return; // Espera confirmación del usuario para continuar
     }
@@ -760,13 +760,14 @@ export default function UploadPage() {
             <AlertDialogCancel onClick={() => setConfirmLargeOpen(false)}>Volver</AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
-                setConfirmLargeOpen(false);
                 setConfirmedLarge(true);
-                // Ejecutar directamente la lógica de subida
+                // Ejecutar directamente la lógica de subida SIN cerrar el diálogo primero
                 const formData = new FormData();
                 formData.set('userId', user?.uid || '');
                 formData.set('shotType', shotType);
-                await handleSubmit(formData);
+                // Cerrar el diálogo después de iniciar el proceso
+                setConfirmLargeOpen(false);
+                await handleSubmit(formData, true); // skipLargeCheck = true
               }}
             >
               Continuar y subir ahora
@@ -788,12 +789,13 @@ export default function UploadPage() {
             <AlertDialogCancel onClick={() => setConfirmPartialOpen(false)}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={async () => { 
               setConfirmedPartial(true); 
-              setConfirmPartialOpen(false); 
-              // Ejecutar directamente la lógica de subida
+              // Ejecutar directamente la lógica de subida SIN cerrar el diálogo primero
               const formData = new FormData();
               formData.set('userId', user?.uid || '');
               formData.set('shotType', shotType);
-              await handleSubmit(formData);
+              // Cerrar el diálogo después de iniciar el proceso
+              setConfirmPartialOpen(false);
+              await handleSubmit(formData, true); // skipLargeCheck = true
             }}>Confirmar y analizar</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
