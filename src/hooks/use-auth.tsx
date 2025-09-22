@@ -42,7 +42,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Determinar preferencia de rol según ruta y preferencia guardada
           const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
           const preferredRole = typeof window !== 'undefined' ? (localStorage.getItem('preferredRole') || '') : '';
-          const preferCoach = pathname.startsWith('/coach') || preferredRole === 'coach';
+          // Mantener rol de entrenador cuando está viendo perfiles de jugadores
+          const isCoachViewingPlayer = pathname.startsWith('/player/players/');
+          const preferCoach = pathname.startsWith('/coach') || preferredRole === 'coach' || isCoachViewingPlayer;
+          
+          // Si estamos viendo perfiles de jugadores y tenemos preferencia de entrenador, mantenerla
+          if (isCoachViewingPlayer && preferredRole === 'coach') {
+            localStorage.setItem('preferredRole', 'coach');
+          }
 
           // Cargar ambos perfiles en paralelo para decidir correctamente cuando existen los dos
           const [playerSnap, coachSnap] = await Promise.all([
@@ -55,6 +62,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (coachSnap.exists()) {
               const data = coachSnap.data() as any;
               selected = { id: user.uid, ...(data as any) } as Coach;
+              // Guardar preferencia de entrenador cuando está viendo perfiles de jugadores
+              if (isCoachViewingPlayer && typeof window !== 'undefined') {
+                localStorage.setItem('preferredRole', 'coach');
+              }
             } else if (playerSnap.exists()) {
               const data = playerSnap.data() as any;
               selected = { id: user.uid, ...(data as any) } as Player;

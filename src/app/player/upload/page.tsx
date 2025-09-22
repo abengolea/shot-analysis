@@ -869,7 +869,7 @@ export default function UploadPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => setProfileIncompleteOpen(false)}>Cerrar</AlertDialogCancel>
-              <AlertDialogAction onClick={() => { setProfileIncompleteOpen(false); router.push('/profile'); }}>Ir a mi perfil</AlertDialogAction>
+              <AlertDialogAction onClick={() => { setProfileIncompleteOpen(false); router.push('/player/profile'); }}>Ir a mi perfil</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

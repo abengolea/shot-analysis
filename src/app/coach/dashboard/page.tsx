@@ -200,7 +200,7 @@ export default function CoachDashboardPage() {
       // Marcar el mensaje como leído
       await updateDoc(doc(db as any, 'messages', m.id), { read: true, readAt: new Date().toISOString() });
       // Buscar último análisis del jugador
-      let targetUrl = `/players/${m.fromId}`;
+      let targetUrl = `/coach/players/${m.fromId}`;
       try {
         const qa = query(collection(db as any, 'analyses'), where('playerId', '==', m.fromId), orderBy('createdAt', 'desc'), limit(1));
         const res = await getDocs(qa);
@@ -416,7 +416,7 @@ export default function CoachDashboardPage() {
                 <div className="py-6 text-center text-sm text-muted-foreground">No hay jugadores</div>
               )}
               {filteredPlayers.map((p) => (
-                <Link key={p.id} href={`/players/${p.id}`} className="flex items-center gap-3 p-3 hover:bg-muted/40">
+                <Link key={p.id} href={`/coach/players/${p.id}`} className="flex items-center gap-3 p-3 hover:bg-muted/40">
                   <Avatar className="h-8 w-8">
                     <AvatarImage src={p.avatarUrl} alt={p.name} />
                     <AvatarFallback>{p.name?.charAt(0)}</AvatarFallback>

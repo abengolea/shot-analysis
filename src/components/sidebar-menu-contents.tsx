@@ -200,7 +200,7 @@ export function SidebarMenuContents() {
       {hasPlayerProfile && (
         <SidebarMenuItem>
           <SidebarMenuButton asChild isActive={false} tooltip="Cambiar a Jugador">
-            <Link href="/dashboard" onClick={() => {
+            <Link href="/player/dashboard" onClick={() => {
               try { localStorage.setItem('preferredRole', 'player'); } catch {}
             }}>
               <Users />
@@ -316,7 +316,7 @@ export function SidebarMenuContents() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setProfileIncompleteOpen(false)}>Cerrar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setProfileIncompleteOpen(false); router.push('/profile'); }}>Ir a mi perfil</AlertDialogAction>
+            <AlertDialogAction onClick={() => { setProfileIncompleteOpen(false); router.push('/player/profile'); }}>Ir a mi perfil</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

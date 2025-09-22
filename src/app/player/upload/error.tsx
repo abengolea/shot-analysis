@@ -35,7 +35,7 @@ export default function UploadError({ error, reset }: { error: Error & { digest?
             <Button type="button" onClick={() => reset()}>
               <RotateCcw className="mr-2 h-4 w-4" /> Reintentar
             </Button>
-            <Button type="button" variant="secondary" onClick={() => router.push("/upload")}>
+            <Button type="button" variant="secondary" onClick={() => router.push("/player/upload")}>
               Volver a intentar desde Upload
             </Button>
             <Button type="button" variant="outline" onClick={() => router.push("/") }>

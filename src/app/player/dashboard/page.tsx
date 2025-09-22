@@ -335,7 +335,7 @@ export default function DashboardPage() {
             </div>
             <div className="mt-3">
               <Button asChild variant="link" className="px-0">
-                <Link href="/dashboard/history">Ver historial</Link>
+                <Link href="/player/dashboard/history">Ver historial</Link>
               </Button>
             </div>
           </CardContent>
@@ -371,7 +371,7 @@ export default function DashboardPage() {
             <div className="py-8 text-center text-muted-foreground">
               <p className="mb-4">Aún no tienes análisis de lanzamiento.</p>
               <Button asChild>
-                <Link href="/upload" onClick={(e) => {
+                <Link href="/player/upload" onClick={(e) => {
                   const p: any = userProfile as any;
                   const isNonEmptyString = (v: any) => typeof v === 'string' && v.trim().length > 0;
                   const isComplete = !!p && isNonEmptyString(p.name) && !!p.dob && isNonEmptyString(p.country) && isNonEmptyString(p.ageGroup) && isNonEmptyString(p.playerLevel) && isNonEmptyString(p.position) && p.height && p.wingspan;

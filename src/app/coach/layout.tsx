@@ -102,7 +102,7 @@ export default function CoachLayout({ children }: { children: React.ReactNode })
             <p className="text-muted-foreground">Mientras se aprueba, solo podrás actualizar tu perfil.</p>
             <div className="flex items-center justify-center gap-3">
               <Button asChild>
-                <Link href="/profile">Ir a mi perfil</Link>
+                <Link href="/player/profile">Ir a mi perfil</Link>
               </Button>
               <Button variant="outline" asChild>
                 <Link href="/">Ir al inicio</Link>

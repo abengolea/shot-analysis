@@ -52,7 +52,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
 
   useEffect(() => {
     const fetchAnalysis = async () => {
-      if (!id || !user?.uid) return;
+      if (!id) return;
 
       try {
         setLoading(true);
@@ -101,7 +101,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
     };
 
     fetchAnalysis();
-  }, [id, user?.uid]);
+  }, [id]); // Removido user?.uid de las dependencias
 
   if (loading) {
     return (
@@ -123,7 +123,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
             {error || 'No se pudo cargar el análisis'}
           </p>
           <Button asChild>
-            <Link href="/dashboard">
+            <Link href="/player/dashboard">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Volver al Dashboard
             </Link>
@@ -142,7 +142,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
             No se pudo cargar la información del jugador
           </p>
           <Button asChild>
-            <Link href="/dashboard">
+            <Link href="/player/dashboard">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Volver al Dashboard
             </Link>

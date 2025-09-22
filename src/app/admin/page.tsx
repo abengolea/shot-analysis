@@ -269,8 +269,8 @@ export default function AdminHome() {
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin?tab=subscriptions">Suscripciones</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin/revision-ia">Revisión IA</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/rankings">Rankings públicos</Link>
-									<Link className="rounded border p-3 hover:bg-gray-50" href="/upload">Subir y analizar video</Link>
-									<Link className="rounded border p-3 hover:bg-gray-50" href="/dashboard">Dashboard usuario</Link>
+									<Link className="rounded border p-3 hover:bg-gray-50" href="/player/upload">Subir y analizar video</Link>
+									<Link className="rounded border p-3 hover:bg-gray-50" href="/player/dashboard">Dashboard usuario</Link>
 								</div>
 							</div>
 						</>

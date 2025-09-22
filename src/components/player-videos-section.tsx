@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Calendar, Target, Play, Star, TrendingUp, TrendingDown } from "lucide-react";
 import { ShotAnalysis } from "@/lib/types";
+import { VideoPlayer } from "./video-player";
 
 interface PlayerVideosSectionProps {
   analyses: ShotAnalysis[];
@@ -279,16 +280,22 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
               </div>
               
               <div className="space-y-4">
-                {/* Video Player Placeholder */}
-                <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-                  <div className="text-center">
-                    <Play className="h-16 w-16 text-primary mx-auto mb-4" />
-                    <p className="text-muted-foreground">Reproductor de Video</p>
-                    <p className="text-sm text-muted-foreground">
-                      URL: {selectedAnalysis.videoUrl}
-                    </p>
+                {/* Video Player */}
+                {selectedAnalysis.videoUrl ? (
+                  <VideoPlayer
+                    src={selectedAnalysis.videoUrl}
+                    onFrameChange={() => {}}
+                    onBookmarkAdd={() => {}}
+                    bookmarks={[]}
+                  />
+                ) : (
+                  <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
+                    <div className="text-center">
+                      <Play className="h-16 w-16 text-primary mx-auto mb-4" />
+                      <p className="text-muted-foreground">No hay video disponible</p>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Información del Análisis */}
                 <div className="grid gap-4 md:grid-cols-2">

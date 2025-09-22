@@ -40,6 +40,8 @@ export function VideoPlayer({
   const [bookmarkLabel, setBookmarkLabel] = useState("");
   const [currentFrame, setCurrentFrame] = useState(0);
   const [fps, setFps] = useState(30);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [isVideoReady, setIsVideoReady] = useState(false);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -49,6 +51,12 @@ export function VideoPlayer({
       setDuration(video.duration);
       // Fallback seguro: usar 30fps por defecto para evitar CORS/tainted canvas
       setFps(30);
+      setVideoError(null); // Limpiar error cuando el video se carga correctamente
+      setIsVideoReady(true); // Marcar video como listo
+    };
+
+    const handleCanPlay = () => {
+      setIsVideoReady(true);
     };
 
     const handleTimeUpdate = () => {
@@ -60,22 +68,45 @@ export function VideoPlayer({
     };
 
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('canplay', handleCanPlay);
     video.addEventListener('timeupdate', handleTimeUpdate);
 
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('canplay', handleCanPlay);
       video.removeEventListener('timeupdate', handleTimeUpdate);
     };
   }, [fps, onFrameChange]);
 
-  const togglePlay = () => {
-    if (videoRef.current) {
+  // Limpiar error cuando cambie la fuente del video
+  useEffect(() => {
+    setVideoError(null);
+    setIsVideoReady(false);
+  }, [src]);
+
+  const togglePlay = async () => {
+    if (!videoRef.current || !isVideoReady) return;
+    
+    try {
       if (isPlaying) {
         videoRef.current.pause();
+        setIsPlaying(false);
       } else {
-        videoRef.current.play();
+        // Usar await para manejar la promesa de play()
+        await videoRef.current.play();
+        setIsPlaying(true);
       }
-      setIsPlaying(!isPlaying);
+    } catch (error) {
+      // Manejar errores de reproducción (incluyendo interrupciones)
+      console.warn('Error en reproducción:', error);
+      setIsPlaying(false);
+      
+      // Si es un error de interrupción, no mostrar como error crítico
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('Reproducción interrumpida (normal)');
+      } else {
+        setVideoError('Error al reproducir el video');
+      }
     }
   };
 
@@ -141,9 +172,14 @@ export function VideoPlayer({
             src={src}
             className="w-full h-auto max-h-96"
             playsInline
-            onPlay={() => setIsPlaying(true)}
+            onPlay={() => {
+              setIsPlaying(true);
+              setVideoError(null); // Limpiar errores al reproducir exitosamente
+            }}
             onPause={() => setIsPlaying(false)}
             onEnded={() => setIsPlaying(false)}
+            onLoadStart={() => setIsVideoReady(false)}
+            onCanPlay={() => setIsVideoReady(true)}
             onError={(e) => {
               const el = e.currentTarget as HTMLVideoElement;
               const err = (el && (el.error as any)) || {};
@@ -154,10 +190,48 @@ export function VideoPlayer({
                 readyState: el?.readyState,
                 src,
               });
+              
+              // Establecer mensaje de error apropiado
+              if (err?.code === 4) {
+                setVideoError('Error de CORS: El video no se puede cargar debido a restricciones de seguridad del navegador');
+              } else if (err?.code === 3) {
+                setVideoError('Error de decodificación: El formato del video no es compatible');
+              } else if (err?.code === 2) {
+                setVideoError('Error de red: No se pudo descargar el video');
+              } else {
+                setVideoError('Error al cargar el video. Por favor, inténtalo de nuevo.');
+              }
             }}
             controls
           />
-          {!src && (
+          {videoError && (
+            <div className="absolute inset-0 flex items-center justify-center text-white bg-red-900/80">
+              <div className="text-center p-4">
+                <p className="text-lg font-medium text-red-100">Error al cargar el video</p>
+                <p className="text-sm opacity-80 text-red-200">{videoError}</p>
+                <button 
+                  onClick={() => {
+                    setVideoError(null);
+                    if (videoRef.current) {
+                      videoRef.current.load();
+                    }
+                  }}
+                  className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                >
+                  Reintentar
+                </button>
+              </div>
+            </div>
+          )}
+          {src && !isVideoReady && !videoError && (
+            <div className="absolute inset-0 flex items-center justify-center text-white bg-black/50">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
+                <p className="text-sm opacity-80">Cargando video...</p>
+              </div>
+            </div>
+          )}
+          {!src && !videoError && (
             <div className="absolute inset-0 flex items-center justify-center text-white">
               <div className="text-center">
                 <p className="text-lg font-medium">No hay video seleccionado</p>

@@ -51,7 +51,7 @@ export default function TicketDetailPage() {
       setTimeout(scrollToEnd, 50);
     } catch (e: any) {
       alert(e?.message || 'Error cargando ticket');
-      router.push('/support');
+      router.push('/player/support');
     } finally {
       setLoading(false);
     }
@@ -83,7 +83,7 @@ export default function TicketDetailPage() {
 
   return (
     <div className="max-w-3xl mx-auto p-4">
-      <Button variant="ghost" className="h-8 px-2 text-blue-600 mb-2" onClick={() => router.push('/support')}>← Volver</Button>
+      <Button variant="ghost" className="h-8 px-2 text-blue-600 mb-2" onClick={() => router.push('/player/support')}>← Volver</Button>
       <h1 className="text-2xl font-semibold mb-1">{ticket?.subject || 'Ticket'}</h1>
       <div className="flex items-center gap-2 mb-2">
         {ticket?.status ? <Badge variant={ticket.status === 'open' ? 'destructive' : (ticket.status === 'in_progress' ? 'default' : 'secondary')}>{statusLabel[ticket.status] || ticket.status}</Badge> : null}

@@ -44,6 +44,7 @@ import {
   Circle as CircleIcon,
   Eraser,
   ListChecks,
+  Users,
 } from "lucide-react";
 import { DrillCard } from "./drill-card";
 import { DetailedChecklist } from "./detailed-checklist";
@@ -92,7 +93,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         right: Array.isArray((kf as any).right) ? (kf as any).right : [],
       });
     }
-  }, [analysis.keyframes]);
+  }, [analysis.keyframes]); // Solo analysis.keyframes como dependencia
 
   // Solo mostrar ángulos que tengan keyframes disponibles (preferir estado local)
   const knownAngles: Array<'front'|'back'|'left'|'right'> = ['front','back','left','right'];
@@ -1232,7 +1233,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     Hasta que no contactes a un entrenador y realice la revisión, este apartado permanecerá vacío.
                   </p>
                   <Button asChild>
-                    <a href="/coaches">Buscar Entrenador</a>
+                    <a href="/coach/coaches">Buscar Entrenador</a>
                   </Button>
                 </div>
               </CardContent>
@@ -1314,19 +1315,43 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-muted p-8 text-center">
-                <FilePenLine className="h-12 w-12 text-muted-foreground" />
-                <h3 className="font-semibold">Coordina una sesión de mejora técnica</h3>
-                <p className="text-sm text-muted-foreground max-w-prose">
-                  Un entrenador revisará tu análisis, definirá objetivos específicos y te guiará en ejercicios correctivos. Puedes contactar a un entrenador desde el siguiente enlace.
-                </p>
-                <Button asChild>
-                  <a href="/coaches">
-                    <ShieldAlert className="mr-2 h-4 w-4" />
-                    Buscar Entrenador
-                  </a>
-                </Button>
-              </div>
+              {player.coachId ? (
+                <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-green-200 bg-green-50 p-8 text-center">
+                  <FilePenLine className="h-12 w-12 text-green-600" />
+                  <h3 className="font-semibold text-green-800">Tu entrenador asignado te dará el plan de mejora</h3>
+                  <p className="text-sm text-green-700 max-w-prose">
+                    Ya tienes un entrenador asignado que revisará tu análisis y te proporcionará un plan de mejora personalizado con objetivos específicos y ejercicios correctivos.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <Button variant="outline" asChild className="border-green-300 text-green-700 hover:bg-green-100">
+                      <a href="/player/messages">
+                        <MessageSquare className="mr-2 h-4 w-4" />
+                        Contactar Entrenador
+                      </a>
+                    </Button>
+                    <Button asChild className="bg-green-600 hover:bg-green-700">
+                      <a href="/player/dashboard">
+                        <Users className="mr-2 h-4 w-4" />
+                        Ir a Mi Panel
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-muted p-8 text-center">
+                  <FilePenLine className="h-12 w-12 text-muted-foreground" />
+                  <h3 className="font-semibold">Coordina una sesión de mejora técnica</h3>
+                  <p className="text-sm text-muted-foreground max-w-prose">
+                    Un entrenador revisará tu análisis, definirá objetivos específicos y te guiará en ejercicios correctivos. Puedes contactar a un entrenador desde el siguiente enlace.
+                  </p>
+                  <Button asChild>
+                    <a href="/coach/coaches">
+                      <ShieldAlert className="mr-2 h-4 w-4" />
+                      Buscar Entrenador
+                    </a>
+                  </Button>
+                </div>
+              )}
               {/* Se removió la generación de ejercicios de ejemplo para evitar contenido dummy */}
             </CardContent>
           </Card>
