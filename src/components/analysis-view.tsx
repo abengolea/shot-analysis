@@ -45,6 +45,7 @@ import {
   Eraser,
   ListChecks,
   Users,
+  Star,
 } from "lucide-react";
 import { DrillCard } from "./drill-card";
 import { DetailedChecklist } from "./detailed-checklist";
@@ -67,6 +68,47 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const { toast } = useToast();
   console.log('🎯 AnalysisView recibió:', analysis);
   console.log('👤 Player recibido:', player);
+  
+  // Funciones auxiliares para visualización
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return 'text-green-600';
+    if (score >= 60) return 'text-yellow-600';
+    return 'text-red-600';
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'correcto': return 'text-green-600 bg-green-50';
+      case 'mejorable': return 'text-yellow-600 bg-yellow-50';
+      case 'incorrecto': return 'text-red-600 bg-red-50';
+      default: return 'text-gray-600 bg-gray-50';
+    }
+  };
+
+  const renderStars = (score: number) => {
+    const stars = Math.round(score / 20); // Convertir 0-100 a 0-5 estrellas
+    return (
+      <div className="flex items-center gap-1">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <Star
+            key={star}
+            className={`w-4 h-4 ${
+              star <= stars ? 'text-yellow-400 fill-current' : 'text-gray-300'
+            }`}
+          />
+        ))}
+        <span className="ml-2 text-sm font-medium">{stars}/5</span>
+      </div>
+    );
+  };
+  
+  // Debug específico para detailedChecklist
+  console.log('🔍 Debug - AnalysisView detailedChecklist:', {
+    hasDetailedChecklist: !!analysis.detailedChecklist,
+    detailedChecklistType: typeof analysis.detailedChecklist,
+    detailedChecklistLength: analysis.detailedChecklist?.length || 0,
+    detailedChecklistSample: analysis.detailedChecklist?.slice(0, 2) || 'N/A'
+  });
   
   // Asegurar que keyframes tenga la estructura correcta
   const safeKeyframes = analysis.keyframes || {
@@ -102,7 +144,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     const hasKfs = Array.isArray(kfs) && kfs.length > 0;
     const anyObj = analysis as any;
     const hasVideo = angle === 'front'
-      ? Boolean(anyObj?.videoUrl)
+      ? Boolean(anyObj?.videoUrl || anyObj?.videoFrontUrl)
       : angle === 'back'
         ? Boolean(anyObj?.videoBackUrl)
         : angle === 'left'
@@ -128,43 +170,176 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   console.log('❌ Ángulos faltantes:', missingAngles);
 
   // Estado del checklist (usar directamente lo que venga en analysis)
-  const normalizeChecklist = (cats: ChecklistCategory[]): ChecklistCategory[] => {
-    // Construir mapa de ítems IA por id (normalizados)
-    const iaItemById: Record<string, DetailedChecklistItem> = {};
-    if (Array.isArray(cats)) {
-      for (const cat of cats) {
-        for (const item of (cat.items || [])) {
-          const id = String(item.id || '').trim().toLowerCase();
-          if (!id) continue;
-          const s = (item.status as unknown as string | undefined);
-          const normalizedRating =
-            typeof item.rating === 'number'
-              ? item.rating
-              : s === 'Incorrecto'
-                ? 1
-                : s === 'Incorrecto leve'
-                  ? 2
-                  : s === 'Mejorable'
-                    ? 3
-                    : s === 'Correcto'
-                      ? 4
-                      : s === 'Excelente'
-                        ? 5
-                        : 3;
-          iaItemById[id] = {
-            ...item,
-            id: id,
-            rating: normalizedRating as DetailedChecklistItem['rating'],
-          } as DetailedChecklistItem;
+  const normalizeChecklist = (input: any): ChecklistCategory[] => {
+    console.log('🔍 Debug - normalizeChecklist input:', {
+      inputType: typeof input,
+      isArray: Array.isArray(input),
+      inputLength: input?.length || 0,
+      inputSample: input?.slice(0, 1) || 'N/A'
+    });
+    
+    // Debug detallado de la estructura
+    if (Array.isArray(input) && input.length > 0) {
+      console.log('🔍 Debug - Estructura detallada del primer item:', {
+        firstItem: input[0],
+        firstItemKeys: Object.keys(input[0] || {}),
+        hasItems: 'items' in input[0],
+        hasId: 'id' in input[0],
+        hasName: 'name' in input[0]
+      });
+    }
+
+    // Si es un array de items individuales (no categorías), convertirlo
+    let items: DetailedChecklistItem[] = [];
+    if (Array.isArray(input)) {
+      if (input.length > 0 && 'name' in input[0]) {
+        // Es un array de items individuales (puede tener 'id' o no)
+        console.log('🔍 Debug - Detectado array de items individuales, convirtiendo...');
+        
+        // Función para normalizar IDs (convertir nombre a id)
+        const normalizeIdFromName = (name: string): string => {
+          return name
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '') // Quitar acentos
+            .replace(/\s+/g, '_') // Espacios a guiones bajos
+            .replace(/[^a-z0-9_]/g, ''); // Solo letras, números y guiones bajos
+        };
+        
+        items = input.map((item, index) => {
+          const mappedItem = {
+            id: item.id || normalizeIdFromName(item.name),
+            name: item.name,
+            score: item.score || 0,
+            status: item.status || 'no_evaluable',
+            comment: item.comment || '',
+            evidencia: item.evidencia || '',
+            rating: 3, // Rating por defecto
+            description: item.comment || '' // Usar comment como description
+          };
+          console.log(`🔍 Debug - Mapeando item ${index}:`, {
+            original: { name: item.name, score: item.score, status: item.status },
+            mapped: { name: mappedItem.name, score: mappedItem.score, status: mappedItem.status }
+          });
+          return mappedItem;
+        }) as DetailedChecklistItem[];
+      } else if (input.length > 0 && 'items' in input[0]) {
+        // Es un array de categorías, extraer todos los items
+        console.log('🔍 Debug - Detectado array de categorías, extrayendo items...');
+        for (const cat of input) {
+          if (cat.items && Array.isArray(cat.items)) {
+            items.push(...cat.items);
+          }
         }
       }
+    }
+
+    console.log('🔍 Debug - Items finales antes de normalizar:', {
+      itemsLength: items.length,
+      itemsSample: items.slice(0, 2),
+      firstItemKeys: items[0] ? Object.keys(items[0]) : []
+    });
+
+    console.log('🔍 Debug - Items extraídos:', {
+      itemsLength: items.length,
+      itemsSample: items.slice(0, 2)
+    });
+
+    // Función para normalizar IDs (remover acentos, convertir a formato canónico)
+    const normalizeId = (id: string): string => {
+      return id
+        .toLowerCase()
+        .trim()
+        .replace(/á/g, 'a')
+        .replace(/é/g, 'e')
+        .replace(/í/g, 'i')
+        .replace(/ó/g, 'o')
+        .replace(/ú/g, 'u')
+        .replace(/ñ/g, 'n')
+        .replace(/[^a-z0-9_]/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '');
+    };
+
+    // Función para mapear IDs de Gemini a IDs canónicos
+    const mapGeminiToCanonical = (geminiId: string): string => {
+      const normalized = normalizeId(geminiId);
+      
+      // Mapeo específico de IDs problemáticos
+      const mapping: Record<string, string> = {
+        'alineacion_de_pies': 'alineacion_pies',
+        'alineacion_corporal': 'alineacion_cuerpo',
+        'flexion_de_rodillas': 'flexion_rodillas',
+        'mano_no_dominante_en_ascenso': 'mano_no_dominante_ascenso',
+        'codos_cerca_del_cuerpo': 'codos_cerca_cuerpo',
+        'subida_recta_del_balon': 'subida_recta_balon',
+        'tiempo_de_lanzamiento': 'tiempo_lanzamiento',
+        'tiro_en_un_solo_tiempo': 'tiro_un_solo_tiempo',
+        'transferencia_energetica_sincronia_con_piernas': 'sincronia_piernas',
+        'mano_no_dominante_en_liberacion': 'mano_no_dominante_liberacion',
+        'extension_completa_del_brazo': 'extension_completa_brazo',
+        'giro_de_la_pelota': 'giro_pelota',
+        'angulo_de_salida': 'angulo_salida',
+        'mantenimiento_del_equilibrio': 'mantenimiento_equilibrio',
+        'equilibrio_en_aterrizaje': 'equilibrio_aterrizaje',
+        'duracion_del_follow_through': 'duracion_follow_through',
+        'consistencia_del_movimiento': 'consistencia_repetitiva',
+        'consistencia_tecnica': 'consistencia_repetitiva',
+        'consistencia_de_resultados': 'consistencia_repetitiva'
+      };
+      
+      return mapping[normalized] || normalized;
+    };
+
+    // Construir mapa de ítems IA por id (normalizados)
+    const iaItemById: Record<string, DetailedChecklistItem> = {};
+    for (const item of items) {
+      const originalId = String(item.id || '').trim();
+      const mappedId = mapGeminiToCanonical(originalId);
+      console.log('🔍 Debug - Procesando item:', {
+        originalId,
+        mappedId,
+        itemKeys: Object.keys(item || {}),
+        hasScore: 'score' in item,
+        scoreValue: (item as any).score,
+        hasStatus: 'status' in item,
+        statusValue: (item as any).status,
+        itemSample: item
+      });
+      if (!mappedId) continue;
+      const s = (item.status as unknown as string | undefined);
+      const normalizedRating =
+        typeof item.rating === 'number'
+          ? item.rating
+          : s === 'Incorrecto'
+            ? 1
+            : s === 'Incorrecto leve'
+              ? 2
+              : s === 'Mejorable'
+                ? 3
+                : s === 'Correcto'
+                  ? 4
+                  : s === 'Excelente'
+                    ? 5
+                    : 3;
+      iaItemById[mappedId] = {
+        ...item,
+        id: originalId, // Mantener ID original para referencia
+        rating: normalizedRating as DetailedChecklistItem['rating'],
+      } as DetailedChecklistItem;
     }
 
     // Construir checklist canónico y superponer datos de IA por id (sin agregar otros ítems)
     const canonical = CANONICAL_CATEGORIES.map((cat) => {
       const items = cat.items.map((def) => {
-        const id = def.id.trim().toLowerCase();
-        const fromIA = iaItemById[id];
+        const canonicalId = def.id.trim().toLowerCase();
+        const fromIA = iaItemById[canonicalId];
+        
+        console.log('🔍 Debug - Buscando coincidencia:', {
+          canonicalId,
+          found: !!fromIA,
+          availableKeys: Object.keys(iaItemById).slice(0, 5)
+        });
         if (fromIA) {
           return {
             id: def.id,
@@ -174,6 +349,10 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             comment: String(fromIA.comment || ''),
             coachComment: fromIA.coachComment,
             na: Boolean((fromIA as any).na),
+            // Preservar score y status de la IA
+            score: (fromIA as any).score,
+            status: (fromIA as any).status,
+            evidencia: (fromIA as any).evidencia,
           } as DetailedChecklistItem;
         }
         // Ítem faltante en IA → mostrar como N/A sin penalizar
@@ -188,13 +367,34 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       });
       return { category: cat.category, items } as ChecklistCategory;
     });
+    
+    console.log('🔍 Debug - normalizeChecklist output:', {
+      canonicalLength: canonical.length,
+      canonicalSample: canonical.slice(0, 1),
+      iaItemByIdKeys: Object.keys(iaItemById),
+      iaItemByIdSample: Object.values(iaItemById).slice(0, 2)
+    });
+    
     return canonical;
   };
 
   const [checklistState, setChecklistState] = useState<ChecklistCategory[]>(() => {
+    console.log('🔍 Debug - Initializing checklistState with:', {
+      hasDetailedChecklist: !!analysis.detailedChecklist,
+      isArray: Array.isArray(analysis.detailedChecklist),
+      length: analysis.detailedChecklist?.length || 0,
+      sample: analysis.detailedChecklist?.slice(0, 2) || 'N/A'
+    });
+    
     if (analysis.detailedChecklist && Array.isArray(analysis.detailedChecklist)) {
-      return normalizeChecklist(analysis.detailedChecklist);
+      const normalized = normalizeChecklist(analysis.detailedChecklist);
+      console.log('🔍 Debug - Normalized checklist:', {
+        normalizedLength: normalized.length,
+        normalizedSample: normalized.slice(0, 1)
+      });
+      return normalized;
     }
+    console.log('🔍 Debug - Returning empty checklist array');
     return [];
   });
 
@@ -367,7 +567,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const canEdit = userProfile?.role === 'coach' && userProfile.id === (player.coachId || '');
+  const canEdit = userProfile?.role === 'coach' && userProfile.id === (player?.coachId || '');
   const [completing, setCompleting] = useState(false);
   const markCompleted = async () => {
     if (!canEdit) return;
@@ -935,6 +1135,45 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               </Card>
             )}
 
+            {/* PUNTUACIÓN GLOBAL (si existe scoreMetadata) */}
+            {(safeAnalysis as any).scoreMetadata && (
+              <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-blue-900">
+                    🎯 Puntuación Global
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <p className="text-sm text-blue-700 font-medium">Score Final</p>
+                      <p className="text-3xl font-bold text-blue-900">
+                        {(safeAnalysis as any).scoreMetadata.weightedScore}/100
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-blue-700 font-medium">Parámetros Evaluables</p>
+                      <p className="text-2xl font-bold text-green-700">
+                        {(safeAnalysis as any).scoreMetadata.evaluableCount}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-blue-700 font-medium">No Evaluables</p>
+                      <p className="text-2xl font-bold text-amber-600">
+                        {(safeAnalysis as any).scoreMetadata.nonEvaluableCount}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-blue-200">
+                    <p className="text-xs text-blue-700">
+                      <strong>Tipo de tiro:</strong> {(safeAnalysis as any).scoreMetadata.shotTypeKey} • 
+                      <strong> Calculado:</strong> {new Date((safeAnalysis as any).scoreMetadata.calculatedAt).toLocaleString('es-ES')}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
               <CardHeader>
                 <CardTitle className="font-headline">
@@ -1042,59 +1281,86 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             </CardHeader>
             <CardContent>
               {/* Videos disponibles (frente/espalda/izquierda/derecha) */}
-              <div className="grid gap-6 md:grid-cols-2">
-                {((safeAnalysis as any).videoFrontUrl || (safeAnalysis as any).videoUrl) && (
-                  <div>
-                    <h4 className="font-medium mb-2">Frente</h4>
-                    <video
-                      controls
-                      className="w-full rounded-lg shadow-lg max-h-[360px]"
-                      src={(safeAnalysis as any).videoFrontUrl || (safeAnalysis as any).videoUrl}
-                    >
-                      Tu navegador no soporta el elemento video.
-                    </video>
-                  </div>
-                )}
-                {(safeAnalysis as any).videoBackUrl && (
-                  <div>
-                    <h4 className="font-medium mb-2">Espalda</h4>
-                    <video
-                      controls
-                      className="w-full rounded-lg shadow-lg max-h-[360px]"
-                      src={(safeAnalysis as any).videoBackUrl}
-                    >
-                      Tu navegador no soporta el elemento video.
-                    </video>
-                  </div>
-                )}
-                {(safeAnalysis as any).videoLeftUrl && (
-                  <div>
-                    <h4 className="font-medium mb-2">Izquierda</h4>
-                    <video
-                      controls
-                      className="w-full rounded-lg shadow-lg max-h-[360px]"
-                      src={(safeAnalysis as any).videoLeftUrl}
-                    >
-                      Tu navegador no soporta el elemento video.
-                    </video>
-                  </div>
-                )}
-                {(safeAnalysis as any).videoRightUrl && (
-                  <div>
-                    <h4 className="font-medium mb-2">Derecha</h4>
-                    <video
-                      controls
-                      className="w-full rounded-lg shadow-lg max-h-[360px]"
-                      src={(safeAnalysis as any).videoRightUrl}
-                    >
-                      Tu navegador no soporta el elemento video.
-                    </video>
-                  </div>
-                )}
-              </div>
+              {(() => {
+                const hasAnyVideo = (safeAnalysis as any).videoUrl || 
+                                   (safeAnalysis as any).videoFrontUrl || 
+                                   (safeAnalysis as any).videoBackUrl || 
+                                   (safeAnalysis as any).videoLeftUrl || 
+                                   (safeAnalysis as any).videoRightUrl;
+                
+                console.log('🎥 Debug - Videos disponibles:', {
+                  videoUrl: (safeAnalysis as any).videoUrl ? 'Sí' : 'No',
+                  videoFrontUrl: (safeAnalysis as any).videoFrontUrl ? 'Sí' : 'No',
+                  videoBackUrl: (safeAnalysis as any).videoBackUrl ? 'Sí' : 'No',
+                  videoLeftUrl: (safeAnalysis as any).videoLeftUrl ? 'Sí' : 'No',
+                  videoRightUrl: (safeAnalysis as any).videoRightUrl ? 'Sí' : 'No',
+                });
 
-              {/* Botón dev para generar si no hay nada */}
-              {availableAngles.length === 0 && (
+                if (!hasAnyVideo) {
+                  return (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>No hay videos disponibles para este análisis.</p>
+                      <p className="text-xs mt-2">Los videos pueden no haberse guardado correctamente.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid gap-6 md:grid-cols-2">
+                    {((safeAnalysis as any).videoBackUrl) && (
+                      <div>
+                        <h4 className="font-medium mb-2">Trasera</h4>
+                        <video
+                          controls
+                          className="w-full rounded-lg shadow-lg max-h-[360px]"
+                          src={(safeAnalysis as any).videoBackUrl}
+                        >
+                          Tu navegador no soporta el elemento video.
+                        </video>
+                      </div>
+                    )}
+                    {((safeAnalysis as any).videoFrontUrl || (safeAnalysis as any).videoUrl) && (
+                      <div>
+                        <h4 className="font-medium mb-2">Frontal</h4>
+                        <video
+                          controls
+                          className="w-full rounded-lg shadow-lg max-h-[360px]"
+                          src={(safeAnalysis as any).videoFrontUrl || (safeAnalysis as any).videoUrl}
+                        >
+                          Tu navegador no soporta el elemento video.
+                        </video>
+                      </div>
+                    )}
+                    {(safeAnalysis as any).videoLeftUrl && (
+                      <div>
+                        <h4 className="font-medium mb-2">Lateral Izquierdo</h4>
+                        <video
+                          controls
+                          className="w-full rounded-lg shadow-lg max-h-[360px]"
+                          src={(safeAnalysis as any).videoLeftUrl}
+                        >
+                          Tu navegador no soporta el elemento video.
+                        </video>
+                      </div>
+                    )}
+                    {(safeAnalysis as any).videoRightUrl && (
+                      <div>
+                        <h4 className="font-medium mb-2">Lateral Derecho</h4>
+                        <video
+                          controls
+                          className="w-full rounded-lg shadow-lg max-h-[360px]"
+                          src={(safeAnalysis as any).videoRightUrl}
+                        >
+                          Tu navegador no soporta el elemento video.
+                        </video>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Botón dev para generar si no hay nada - SOLO PARA ADMINS */}
+              {availableAngles.length === 0 && userProfile?.role === 'admin' && (
                 <div className="flex items-center justify-center mb-6">
                   <div className="flex gap-2">
                     <Button
@@ -1241,18 +1507,73 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
           )}
         </TabsContent>
         <TabsContent value="checklist" className="mt-6">
-          <DetailedChecklist
-            categories={checklistState}
-            onChecklistChange={handleChecklistChange}
-            analysisId={safeAnalysis.id}
-            currentScore={safeAnalysis.score}
-            editable={userProfile?.role === 'coach' && userProfile.id === (player.coachId || '')}
-            showCoachBox={false}
-            coachInline={isCoach}
-            coachIsEditable={isCoach}
-            coachFeedbackByItemId={coachFeedbackByItemId}
-            onCoachFeedbackChange={onCoachFeedbackChange}
-          />
+          {/* METADATOS DEL SCORE (si existen) */}
+          {(safeAnalysis as any).scoreMetadata && (
+            <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 mb-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-blue-900">
+                  🎯 Puntuación Global
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm text-blue-700 font-medium">Score Final</p>
+                    <p className="text-2xl font-bold text-blue-900">
+                      {(safeAnalysis as any).scoreMetadata.weightedScore}/100
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-blue-700 font-medium">Parámetros Evaluables</p>
+                    <p className="text-2xl font-bold text-green-700">
+                      {(safeAnalysis as any).scoreMetadata.evaluableCount}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-blue-700 font-medium">No Evaluables</p>
+                    <p className="text-2xl font-bold text-amber-600">
+                      {(safeAnalysis as any).scoreMetadata.nonEvaluableCount}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-blue-200">
+                  <p className="text-xs text-blue-700">
+                    <strong>Tipo de tiro:</strong> {(safeAnalysis as any).scoreMetadata.shotTypeKey} • 
+                    <strong> Calculado:</strong> {new Date((safeAnalysis as any).scoreMetadata.calculatedAt).toLocaleString('es-ES')}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          
+          {console.log('🔍 Debug - About to render DetailedChecklist with:', {
+            categoriesLength: checklistState.length,
+            categoriesSample: checklistState.slice(0, 1)
+          })}
+          {(() => {
+            try {
+              return (
+                <DetailedChecklist
+                  categories={checklistState}
+                  onChecklistChange={handleChecklistChange}
+                  analysisId={safeAnalysis.id}
+                  currentScore={safeAnalysis.score}
+                  editable={userProfile?.role === 'coach' && userProfile.id === (player?.coachId || '')}
+                  showCoachBox={false}
+                  coachInline={isCoach}
+                  coachIsEditable={isCoach}
+                  coachFeedbackByItemId={coachFeedbackByItemId}
+                  onCoachFeedbackChange={onCoachFeedbackChange}
+                  getScoreColor={getScoreColor}
+                  getStatusColor={getStatusColor}
+                  renderStars={renderStars}
+                />
+              );
+            } catch (error) {
+              console.error('❌ Error rendering DetailedChecklist:', error);
+              return <div>Error rendering checklist: {error.message}</div>;
+            }
+          })()}
           {isCoach && (
             <div className="mt-6 space-y-4">
               <Card>
@@ -1315,7 +1636,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {player.coachId ? (
+              {player?.coachId ? (
                 <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-green-200 bg-green-50 p-8 text-center">
                   <FilePenLine className="h-12 w-12 text-green-600" />
                   <h3 className="font-semibold text-green-800">Tu entrenador asignado te dará el plan de mejora</h3>

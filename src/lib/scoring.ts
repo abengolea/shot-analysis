@@ -1,4 +1,5 @@
 import type { ChecklistCategory, DetailedChecklistItem } from "./types";
+import { adminDb } from "./firebase-admin";
 
 // Pesos exactos por ítem del checklist de Tiro de Tres (default). Deben sumar 100.
 export const ITEM_WEIGHTS_TRES: Record<string, number> = {
@@ -28,11 +29,11 @@ export const ITEM_WEIGHTS_TRES: Record<string, number> = {
   giro_pelota: 2,
   angulo_salida: 2,
 
-  // Seguimiento / Post-liberación (9%)
+  // Seguimiento / Post-liberación (6%) - Ajustado para sumar 100%
   mantenimiento_equilibrio: 2,
   equilibrio_aterrizaje: 1,
   duracion_follow_through: 1,
-  consistencia_repetitiva: 5,
+  consistencia_repetitiva: 2, // Reducido de 5 a 2 para que total = 100%
 };
 
 export const CATEGORY_TO_ITEM_IDS: Record<string, string[]> = {
@@ -59,7 +60,7 @@ export const CATEGORY_TO_ITEM_IDS: Record<string, string[]> = {
     "giro_pelota",
     "angulo_salida",
   ],
-  "Seguimiento / Post-liberación (9%)": [
+  "Seguimiento / Post-liberación (6%)": [
     "mantenimiento_equilibrio",
     "equilibrio_aterrizaje",
     "duracion_follow_through",
@@ -67,18 +68,64 @@ export const CATEGORY_TO_ITEM_IDS: Record<string, string[]> = {
   ],
 };
 
-export function getItemWeight(itemId: string): number {
+// Cache de pesos cargados desde Firestore
+let cachedWeights: Record<string, Record<string, number>> = {};
+
+// Cargar pesos desde Firestore
+export async function loadWeightsFromFirestore(shotType: string = 'tres'): Promise<Record<string, number>> {
+  try {
+    const docId = `scoringWeights_${shotType}`;
+    
+    // Verificar cache
+    if (cachedWeights[shotType]) {
+      return cachedWeights[shotType];
+    }
+
+    if (!adminDb) {
+      console.warn('⚠️ AdminDb no disponible, usando pesos por defecto');
+      return ITEM_WEIGHTS_TRES;
+    }
+
+    const docRef = adminDb.collection('config').doc(docId);
+    const docSnap = await docRef.get();
+
+    if (!docSnap.exists) {
+      console.log(`📊 No hay pesos personalizados para ${shotType}, usando por defecto`);
+      cachedWeights[shotType] = ITEM_WEIGHTS_TRES;
+      return ITEM_WEIGHTS_TRES;
+    }
+
+    const data = docSnap.data();
+    const weights = data?.weights || ITEM_WEIGHTS_TRES;
+    
+    console.log(`✅ Pesos cargados desde Firestore para ${shotType}`);
+    cachedWeights[shotType] = weights;
+    
+    return weights;
+  } catch (error) {
+    console.error('❌ Error cargando pesos desde Firestore:', error);
+    return ITEM_WEIGHTS_TRES;
+  }
+}
+
+// Limpiar cache (útil cuando se actualizan los pesos)
+export function clearWeightsCache() {
+  cachedWeights = {};
+}
+
+export function getItemWeight(itemId: string, customWeights?: Record<string, number>): number {
   const key = (itemId || "").trim().toLowerCase();
-  return ITEM_WEIGHTS_TRES[key] ?? 0;
+  const weights = customWeights || ITEM_WEIGHTS_TRES;
+  return weights[key] ?? 0;
 }
 
-export function getCategoryNominalWeight(categoryName: string): number {
+export function getCategoryNominalWeight(categoryName: string, customWeights?: Record<string, number>): number {
   const ids = CATEGORY_TO_ITEM_IDS[categoryName] || [];
-  return ids.reduce((sum, id) => sum + getItemWeight(id), 0);
+  return ids.reduce((sum, id) => sum + getItemWeight(id, customWeights), 0);
 }
 
-export function computeCategorySubtotal(category: ChecklistCategory): { achieved: number; max: number } {
-  const max = getCategoryNominalWeight(category.category);
+export function computeCategorySubtotal(category: ChecklistCategory, customWeights?: Record<string, number>): { achieved: number; max: number } {
+  const max = getCategoryNominalWeight(category.category, customWeights);
   if (max <= 0) return { achieved: 0, max: 0 };
   
   // Filtrar solo ítems evaluables (no N/A y no no_evaluable)
@@ -87,7 +134,7 @@ export function computeCategorySubtotal(category: ChecklistCategory): { achieved
   
   // Calcular pesos solo de ítems evaluables
   const evaluableWeights = evaluableItems
-    .map((it) => getItemWeight(it.id))
+    .map((it) => getItemWeight(it.id, customWeights))
     .filter((w) => w > 0);
   
   const denom = evaluableWeights.reduce((a, b) => a + b, 0);
@@ -95,7 +142,7 @@ export function computeCategorySubtotal(category: ChecklistCategory): { achieved
   
   let numer = 0;
   for (const it of evaluableItems) {
-    const w = getItemWeight(it.id);
+    const w = getItemWeight(it.id, customWeights);
     if (w <= 0) continue;
     const r = typeof it.rating === 'number' ? it.rating : 3;
     const percent = Math.max(0, Math.min(100, (r / 5) * 100));
@@ -108,7 +155,7 @@ export function computeCategorySubtotal(category: ChecklistCategory): { achieved
 }
 
 // Nueva función para calcular score global con transparencia
-export function computeFinalScoreWithTransparency(categories: ChecklistCategory[]): {
+export function computeFinalScoreWithTransparency(categories: ChecklistCategory[], customWeights?: Record<string, number>): {
   score: number;
   evaluableCount: number;
   nonEvaluableCount: number;
@@ -125,7 +172,7 @@ export function computeFinalScoreWithTransparency(categories: ChecklistCategory[
   
   for (const category of categories) {
     for (const item of category.items) {
-      const weight = getItemWeight(item.id);
+      const weight = getItemWeight(item.id, customWeights);
       if (weight <= 0) continue;
       
       if ((item as any).na || item.status === 'no_evaluable' || item.rating === 0) {
