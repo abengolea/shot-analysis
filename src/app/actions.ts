@@ -1964,6 +1964,22 @@ export async function startAnalysis(prevState: any, formData: FormData) {
 
         console.log('✅ Análisis híbrido guardado en Firestore:', analysisId);
 
+        // 🖼️ Extraer y subir keyframes en background (no bloqueante)
+        const { extractAndUploadKeyframesAsync } = await import('@/lib/keyframe-uploader');
+        extractAndUploadKeyframesAsync({
+            analysisId,
+            videoBuffers: {
+                front: videoBuffers[0],
+                back: videoBuffers[1],
+                left: videoBuffers[2],
+                right: videoBuffers[3]
+            },
+            userId
+        }).catch(err => {
+            console.error('❌ [Keyframes] Error en extracción asíncrona:', err);
+            // No afecta al resultado principal
+        });
+
         return {
             success: true,
             message: "Análisis completado exitosamente.",

@@ -17,7 +17,12 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { Accordion } from "@/components/ui/accordion";
+import { 
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger 
+} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -1418,24 +1423,42 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 </div>
               )}
 
-              {/* Keyframes por ángulo (solo si existen) */}
+              {/* Keyframes por ángulo con Accordion */}
               {(['front','back','left','right'] as const).some((k) => Array.isArray((localKeyframes as any)[k]) && (localKeyframes as any)[k].length > 0) && (
-                <div className="space-y-8">
-                  {([
-                    { key: 'front' as const, label: 'Frente', labelAdj: 'frontal' },
-                    { key: 'back' as const, label: 'Espalda', labelAdj: 'espalda' },
-                    { key: 'left' as const, label: 'Izquierda', labelAdj: 'izquierdo' },
-                    { key: 'right' as const, label: 'Derecha', labelAdj: 'derecho' },
-                  ]).map(({ key, label, labelAdj }) => {
-                    const arr = (localKeyframes as any)[key] as string[] | undefined;
-                    if (!Array.isArray(arr) || arr.length === 0) return null;
-                    return (
-                      <div key={key}>
-                        <h4 className="font-medium mb-2">{label}</h4>
-                        {renderKeyframes(arr, labelAdj, key)}
-                      </div>
-                    );
-                  })}
+                <div className="mt-6">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <Camera className="w-5 h-5" />
+                    Fotogramas Clave
+                  </h3>
+                  <Accordion type="single" collapsible className="w-full">
+                    {([
+                      { key: 'front' as const, label: 'Vista Frontal', labelAdj: 'frontal', icon: '👁️' },
+                      { key: 'back' as const, label: 'Vista Trasera', labelAdj: 'espalda', icon: '🔄' },
+                      { key: 'left' as const, label: 'Vista Lateral Izquierda', labelAdj: 'izquierdo', icon: '◀️' },
+                      { key: 'right' as const, label: 'Vista Lateral Derecha', labelAdj: 'derecho', icon: '▶️' },
+                    ]).map(({ key, label, labelAdj, icon }) => {
+                      const arr = (localKeyframes as any)[key] as string[] | undefined;
+                      if (!Array.isArray(arr) || arr.length === 0) return null;
+                      return (
+                        <AccordionItem key={key} value={key} className="border rounded-lg mb-2">
+                          <AccordionTrigger className="flex items-center justify-between w-full px-4 py-3 hover:bg-muted/50 transition-colors">
+                            <div className="flex items-center gap-3">
+                              <span className="text-2xl">{icon}</span>
+                              <div className="text-left">
+                                <p className="font-medium">{label}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  {arr.length} fotogramas • Click para expandir
+                                </p>
+                              </div>
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent className="px-4 py-4 bg-muted/20">
+                            {renderKeyframes(arr, labelAdj, key)}
+                          </AccordionContent>
+                        </AccordionItem>
+                      );
+                    })}
+                  </Accordion>
                 </div>
               )}
             </CardContent>
