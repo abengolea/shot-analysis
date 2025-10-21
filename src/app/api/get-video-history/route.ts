@@ -105,10 +105,12 @@ export async function DELETE(request: NextRequest) {
 
     // Eliminar de Firestore
     await adminDb.collection('video-analysis').doc(analysisId).delete();
-        // TODO: Eliminar video de Firebase Storage
+    
+    // TODO: Eliminar video de Firebase Storage
     // const videoRef = adminStorage.bucket().file(data.videoFileName);
     // await videoRef.delete();
-    //     return NextResponse.json({
+    
+    return NextResponse.json({
       success: true,
       message: 'Análisis eliminado exitosamente',
       analysisId: analysisId

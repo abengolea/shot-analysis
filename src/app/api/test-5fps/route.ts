@@ -68,20 +68,24 @@ export async function POST(request: NextRequest) {
     }
     
     // Procesar video a 5 FPS
-        const processedVideoPath = path.join(tempDir, 'video_5fps.mp4');
+    const processedVideoPath = path.join(tempDir, 'video_5fps.mp4');
     
     try {
       // Comando FFmpeg corregido
       const ffmpegCommand = `ffmpeg -i "${videoUrl}" -vf "fps=5,scale=1280:720" -c:v libx264 -preset fast -crf 23 -an "${processedVideoPath}" -y`;
-            const { stdout, stderr } = await execAsync(ffmpegCommand);
-            if (stderr)       // Verificar que el archivo se creó
+      const { stdout, stderr } = await execAsync(ffmpegCommand);
+      if (stderr) {
+        console.log('FFmpeg stderr:', stderr);
+      }
+      
+      // Verificar que el archivo se creó
       const fileExists = await fs.promises.access(processedVideoPath).then(() => true).catch(() => false);
       if (!fileExists) {
         throw new Error('El archivo procesado no se creó');
       }
       
       const stats = await fs.promises.stat(processedVideoPath);
-          } catch (error) {
+    } catch (error) {
       console.error('❌ Error procesando video:', error);
       throw new Error(`Error procesando video: ${error}`);
     }
