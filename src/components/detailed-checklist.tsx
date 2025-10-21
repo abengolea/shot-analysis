@@ -22,7 +22,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 
-
 function ScoreForm({ analysisId, currentScore }: { analysisId: string, currentScore?: number }) {
     return (
          <div className="flex items-end gap-2 p-4 border rounded-lg bg-muted/50">
@@ -48,7 +47,6 @@ function ScoreForm({ analysisId, currentScore }: { analysisId: string, currentSc
     );
 }
 
-
 function ChecklistItem({ 
     item, 
     categoryName,
@@ -59,6 +57,9 @@ function ChecklistItem({
     coachIsEditable = false,
     coachValue,
     onCoachChange,
+    getScoreColor,
+    getStatusColor,
+    renderStars,
 }: { 
     item: DetailedChecklistItem;
     categoryName: string;
@@ -69,13 +70,24 @@ function ChecklistItem({
     coachIsEditable?: boolean;
     coachValue?: { rating?: number; comment?: string };
     onCoachChange?: (itemId: string, next: { rating?: number; comment?: string }) => void;
+    getScoreColor?: (score: number) => string;
+    getStatusColor?: (status: string) => string;
+    renderStars?: (score: number) => JSX.Element;
 }) {
-  const [rating, setRating] = useState<number>(item.rating || 3);
+  const [rating, setRating] = useState<number | undefined>(item.rating);
   const [isNA, setIsNA] = useState<boolean>(Boolean((item as any).na));
   const [rating10, setRating10] = useState<number | undefined>(item.rating10);
   const [coachComment, setCoachComment] = useState(item.coachComment || "");
   const [showCoachMobile, setShowCoachMobile] = useState(false);
   const [showReview, setShowReview] = useState(false);
+  
+    const hasScoreData = (item as any).score !== undefined;
+  console.log(`🔍 ChecklistItem ${item.name}:`, {
+    hasScore: hasScoreData,
+    score: (item as any).score,
+    status: (item as any).status,
+    hasRenderFunctions: !!renderStars
+  });
   const isReviewed = Boolean(
     (typeof coachValue?.rating === 'number') ||
     (String(coachValue?.comment || '').trim() !== '')
@@ -83,10 +95,11 @@ function ChecklistItem({
 
   useEffect(() => {
     // Si está marcado como N/A, forzar rating neutro pero UI y backend deberán ignorarlo en el cálculo
-    onItemChange(categoryName, item.id, rating as DetailedChecklistItem['rating'], coachComment, rating10, isNA);
+    onItemChange(categoryName, item.id, rating, coachComment, rating10, isNA);
   }, [rating, rating10, coachComment, isNA]);
 
-  const ratingLabel = (r: number) => {
+  const ratingLabel = (r: number | undefined) => {
+    if (r === undefined) return 'Sin calificar';
     switch (r) {
       case 5: return 'Excelente';
       case 4: return 'Correcto';
@@ -103,11 +116,14 @@ function ChecklistItem({
         if (item.id === 'mano_no_dominante_liberacion') return 'Empuje fuerte (penaliza -30%)';
         return 'Incorrecto';
       }
-      default: return 'Mejorable';
+      case 0: return 'No evaluable';
+      default: return 'Sin calificar';
     }
   };
 
-  const ratingIcon = (r: number) => {
+  const ratingIcon = (r: number | undefined) => {
+    if (r === undefined) return <AlertCircle className="text-gray-500" />;
+    if (r === 0) return <AlertCircle className="text-gray-500" />;
     if (r >= 4) return <CheckCircle className="text-green-500" />;
     if (r === 3) return <AlertCircle className="text-yellow-500" />;
     return <XCircle className="text-red-500" />;
@@ -136,12 +152,33 @@ function ChecklistItem({
           )}
         </div>
       </div>
+      
+      {/* Visualización del score de la IA (si existe) */}
+      {(item as any).score !== undefined && getScoreColor && getStatusColor && renderStars && (
+        <div className="mb-3 p-3 border rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50">
+          <div className="flex items-center justify-between mb-2">
+            <span className={`text-2xl font-bold ${getScoreColor((item as any).score)}`}>
+              {(item as any).score}/100
+            </span>
+            <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor((item as any).status || 'no_evaluable')}`}>
+              {(item as any).status || 'no_evaluable'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            {renderStars((item as any).score)}
+            <span className="text-sm text-gray-600">
+              Puntuación IA
+            </span>
+          </div>
+        </div>
+      )}
+      
       <p className="text-sm text-muted-foreground">{item.description}</p>
 
       {/* Controles IA */}
       {!isNA && (
         <RadioGroup
-          value={String(rating)}
+          value={rating !== undefined ? String(rating) : ""}
           onValueChange={(value) => setRating(Number(value))}
           className="flex flex-col gap-2 sm:flex sm:flex-wrap sm:gap-4"
         >
@@ -287,9 +324,19 @@ interface DetailedChecklistProps {
     coachIsEditable?: boolean;
     coachFeedbackByItemId?: Record<string, { rating?: number; comment?: string }>;
     onCoachFeedbackChange?: (itemId: string, next: { rating?: number; comment?: string }) => void;
+    getScoreColor?: (score: number) => string;
+    getStatusColor?: (status: string) => string;
+    renderStars?: (score: number) => JSX.Element;
 }
 
-export function DetailedChecklist({ categories, onChecklistChange, analysisId, currentScore, editable = true, showCoachBox = false, coachInline = false, coachIsEditable = false, coachFeedbackByItemId, onCoachFeedbackChange }: DetailedChecklistProps) {
+export function DetailedChecklist({ categories, onChecklistChange, analysisId, currentScore, editable = true, showCoachBox = false, coachInline = false, coachIsEditable = false, coachFeedbackByItemId, onCoachFeedbackChange, getScoreColor, getStatusColor, renderStars }: DetailedChecklistProps) {
+  console.log('🔍 Debug - DetailedChecklist recibió:', {
+    categoriesType: typeof categories,
+    isArray: Array.isArray(categories),
+    categoriesLength: categories?.length || 0,
+    categoriesSample: categories?.slice(0, 1) || 'N/A'
+  });
+
   const totalItems = Array.isArray(categories)
     ? categories.reduce((sum, c) => sum + ((c.items && c.items.length) || 0), 0)
     : 0;
@@ -298,7 +345,7 @@ export function DetailedChecklist({ categories, onChecklistChange, analysisId, c
     : false;
   const showPlaceholder = totalItems === 0 || !hasAnyActiveItem;
 
-  return (
+    return (
     <Card>
       <CardHeader>
         <CardTitle className="font-headline flex items-center gap-2">
@@ -340,6 +387,9 @@ export function DetailedChecklist({ categories, onChecklistChange, analysisId, c
                        coachIsEditable={coachIsEditable}
                        coachValue={coachFeedbackByItemId?.[item.id]}
                        onCoachChange={onCoachFeedbackChange}
+                       getScoreColor={getScoreColor}
+                       getStatusColor={getStatusColor}
+                       renderStars={renderStars}
                      />
                    ))}
                  </div>

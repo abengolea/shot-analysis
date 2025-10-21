@@ -240,4 +240,3 @@ export function getProductPriceARS(productId: CreatePreferenceInput['productId']
   }
 }
 
-

@@ -22,6 +22,7 @@ import {
 import { analyzeVideoFrames } from './analyze-video-frames';
 import { adminDb } from '@/lib/firebase-admin';
 import type { Player } from '@/lib/types';
+import { extractAndUploadSmartKeyframesAsync } from '@/lib/smart-keyframes';
 // Usar Admin SDK (adminDb) directamente; no importar helpers del SDK cliente
 
 // Nota: no lanzar error a nivel de módulo para no romper SSR; validamos en tiempo de ejecución
@@ -100,9 +101,7 @@ const processUploadedVideoFlow = ai.defineFlow(
         : (`Sub-${String(ageGroup).replace('U', '')}` as any);
 
     // 4.5. VALIDAR CONTENIDO DEL VIDEO ANTES DEL ANÁLISIS
-    console.log('Validando contenido del video con análisis real de frames...');
-    
-    // Descargar el video desde GCS para análisis
+        // Descargar el video desde GCS para análisis
     const { Storage } = await import('@google-cloud/storage');
     const storage = new Storage();
     const bucketName = 'shot-analysis-storage';
@@ -158,8 +157,7 @@ const processUploadedVideoFlow = ai.defineFlow(
       
       // Limpiar documento pendiente
       await pendingDocRef.delete();
-      console.log(`Video rechazado y guardado como análisis fallido: ${docId}`);
-      return;
+            return;
     }
 
     if (contentValidation.recommendation === 'REVIEW') {
@@ -170,12 +168,19 @@ const processUploadedVideoFlow = ai.defineFlow(
     // 4.6. Load admin prompt config for this shot type (if any)
     let promptConfig: any | undefined = undefined;
     try {
-      const cfgRef = adminDb.collection('config').doc(
-        (pendingData.shotType || '').toLowerCase().includes('tres') ? 'prompts_tres'
-        : ((pendingData.shotType || '').toLowerCase().includes('media') || (pendingData.shotType || '').toLowerCase().includes('jump')) ? 'prompts_media'
-        : (pendingData.shotType || '').toLowerCase().includes('libre') ? 'prompts_libre'
-        : 'prompts_general'
-      );
+      // Helper function to get config doc ID with env prefix support
+      const getConfigDocId = (shotType: string) => {
+        const st = shotType.toLowerCase();
+        const env = process.env.NODE_ENV === 'production' ? 'prod' : 'dev';
+        const prefix = process.env.NEXT_PUBLIC_USE_ENV_PREFIX === 'true' ? `${env}_` : '';
+        
+        if (st.includes('tres')) return `${prefix}prompts_tres`;
+        if (st.includes('media') || st.includes('jump')) return `${prefix}prompts_media`;
+        if (st.includes('libre')) return `${prefix}prompts_libre`;
+        return `${prefix}prompts_general`;
+      };
+      
+      const cfgRef = adminDb.collection('config').doc(getConfigDocId(pendingData.shotType || ''));
       const cfgSnap = await cfgRef.get();
       const cfgData = cfgSnap.exists ? (cfgSnap.data() as any) : undefined;
       promptConfig = cfgData?.config;
@@ -243,7 +248,26 @@ const processUploadedVideoFlow = ai.defineFlow(
 
     console.log(`Analysis saved successfully for doc: ${docId}`);
 
-    // 7. Clean up the pending document
+    // 7. Extraer keyframes inteligentes (asíncrono, no bloquea)
+        // Preparar buffers de video para keyframes
+    const videoBuffers = {
+      back: videoBuffer, // El video principal (back)
+      front: undefined,
+      left: undefined,
+      right: undefined
+    };
+    
+    // Iniciar extracción de keyframes inteligentes en background
+    extractAndUploadSmartKeyframesAsync({
+      analysisId: docId,
+      videoBuffers,
+      userId
+    }).then(() => {
+          }).catch(err => {
+      console.error('❌ [Smart Keyframes] Error en extracción asíncrona:', err);
+    });
+
+    // 8. Clean up the pending document
     await pendingDocRef.delete();
     console.log(`Pending document deleted: ${docId}`);
   }

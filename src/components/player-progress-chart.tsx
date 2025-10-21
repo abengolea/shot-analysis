@@ -15,7 +15,7 @@ const chartConfig = {
 } satisfies import("@/components/ui/chart").ChartConfig
 
 interface PlayerProgressChartProps {
-    data: { month: string; score: number }[];
+    data: { month: string; score: number; fullDate?: string; analysisId?: string }[];
 }
 
 export function PlayerProgressChart({ data }: PlayerProgressChartProps) {

@@ -5,9 +5,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('[REALITY] Iniciando prueba de realidad del análisis...');
-    
-    const formData = await request.formData();
+        const formData = await request.formData();
     const file = formData.get('video') as File;
 
     if (!file) {

@@ -5,9 +5,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('[TEST] Iniciando validación de contenido...');
-    
-    const formData = await request.formData();
+        const formData = await request.formData();
     const file = formData.get('video') as File;
 
     if (!file) {
@@ -117,9 +115,7 @@ export async function POST(request: NextRequest) {
       nonBasketballIndicators: parsedResponse.isBasketball ? [] : ['No es contenido de baloncesto']
     };
 
-    console.log('[TEST] Resultado del análisis:', result);
-
-    return NextResponse.json({
+        return NextResponse.json({
       success: true,
       testType: 'validación de contenido',
       videoName: file.name,

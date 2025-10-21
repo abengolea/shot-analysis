@@ -362,4 +362,3 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
   );
 }
 
-

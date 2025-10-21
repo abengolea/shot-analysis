@@ -34,5 +34,3 @@ export function Logo({ size = "md", src = "/chas-logo.svg", alt = "chaaaas.com l
   );
 }
 
-
-

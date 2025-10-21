@@ -14,9 +14,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[TEST] Procesando video: ${videoUrl}`);
-    
-    // Simular el flujo de procesamiento
+        // Simular el flujo de procesamiento
     await processUploadedVideo({
       videoUrl,
       filePath,

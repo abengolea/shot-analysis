@@ -51,8 +51,14 @@ export function NotificationsBell() {
           return sorted;
         });
       };
-      unsubs.push(onSnapshot(q1, apply));
-      unsubs.push(onSnapshot(q2, apply));
+      unsubs.push(onSnapshot(q1, apply, (error) => {
+        console.error('Error en listener de mensajes (q1):', error);
+        // No hacer nada más, el listener se cerrará automáticamente
+      }));
+      unsubs.push(onSnapshot(q2, apply, (error) => {
+        console.error('Error en listener de mensajes (q2):', error);
+        // No hacer nada más, el listener se cerrará automáticamente
+      }));
       return () => { unsubs.forEach(u => u()); };
     } catch (e) {
       console.error('Error cargando mensajes:', e);
@@ -171,5 +177,4 @@ export function NotificationsBell() {
     </DropdownMenu>
   );
 }
-
 

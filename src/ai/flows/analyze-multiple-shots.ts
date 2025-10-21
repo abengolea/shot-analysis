@@ -47,9 +47,7 @@ export async function analyzeMultipleShots(
   input: AnalyzeMultipleShotsInput
 ): Promise<AnalyzeMultipleShotsOutput> {
   try {
-    console.log('[analyzeMultipleShots] Iniciando análisis de múltiples tiros para:', input.videoUrl);
-    
-    // Extraer segmentos de tiros del video
+        // Extraer segmentos de tiros del video
     const shotSegments = await extractFramesFromMultipleShots(input.videoBuffer);
     console.log(`[analyzeMultipleShots] Detectados ${shotSegments.length} segmentos de tiros`);
     

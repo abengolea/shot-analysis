@@ -238,4 +238,3 @@ export default async function AdminCoachDetailPage({ params }: { params: { id: s
   );
 }
 
-

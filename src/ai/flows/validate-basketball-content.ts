@@ -29,9 +29,7 @@ export async function validateBasketballContent(
   input: ValidateBasketballContentInput
 ): Promise<ValidateBasketballContentOutput> {
   try {
-    console.log('[validateBasketballContent] Iniciando validación con IA para:', input.videoUrl);
-    
-    // Usar el análisis real de IA para validar el contenido
+        // Usar el análisis real de IA para validar el contenido
     const aiAnalysis = await analyzeVideoContent(input);
     
     // Convertir el resultado del análisis de IA al formato de validación

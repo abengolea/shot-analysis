@@ -42,28 +42,86 @@ const toPct = (score: number): number => {
     return Number((Number(score)).toFixed(1));
 };
 
-// Helper to format chart data from analyses
-const getChartData = (analyses: ShotAnalysis[]) => {
+// Helper to format chart data from analyses with time filters
+const getChartData = (analyses: ShotAnalysis[], timeFilter: 'semanal' | 'mensual' | 'anual' = 'mensual') => {
     const playerAnalyses = analyses
         .filter(a => a.score !== undefined)
         .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     if (playerAnalyses.length === 0) return [];
     
-    const monthlyScores: { [key: string]: number[] } = {};
+    const now = new Date();
+    let filteredAnalyses = playerAnalyses;
 
-    playerAnalyses.forEach(analysis => {
-        const month = new Date(analysis.createdAt).toLocaleString('es-ES', { month: 'long', year: 'numeric' });
-        if (!monthlyScores[month]) {
-            monthlyScores[month] = [];
-        }
-        monthlyScores[month].push(toPct(analysis.score!));
-    });
+    // Aplicar filtro de tiempo
+    if (timeFilter === 'semanal') {
+        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        filteredAnalyses = playerAnalyses.filter(a => new Date(a.createdAt) >= oneWeekAgo);
+    } else if (timeFilter === 'mensual') {
+        const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        filteredAnalyses = playerAnalyses.filter(a => new Date(a.createdAt) >= oneMonthAgo);
+    } else if (timeFilter === 'anual') {
+        const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        filteredAnalyses = playerAnalyses.filter(a => new Date(a.createdAt) >= oneYearAgo);
+    }
 
-    return Object.entries(monthlyScores).map(([month, scores]) => ({
-        month: month.split(' ')[0].charAt(0).toUpperCase() + month.split(' ')[0].slice(1), // just month name, capitalized
-        score: Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)),
-    }));
+    if (filteredAnalyses.length === 0) return [];
+
+    // Agrupar por período según el filtro
+    if (timeFilter === 'semanal') {
+        // Mostrar cada análisis individual para vista semanal
+        return filteredAnalyses.map((analysis) => {
+            const date = new Date(analysis.createdAt);
+            const day = date.getDate();
+            const month = date.toLocaleString('es-ES', { month: 'short' });
+            return {
+                month: `${day} ${month}`,
+                score: toPct(analysis.score!),
+                fullDate: analysis.createdAt,
+                analysisId: analysis.id
+            };
+        });
+    } else if (timeFilter === 'mensual') {
+        // Agrupar por semana para vista mensual
+        const weeklyScores: { [key: string]: number[] } = {};
+        filteredAnalyses.forEach(analysis => {
+            const date = new Date(analysis.createdAt);
+            const weekStart = new Date(date);
+            weekStart.setDate(date.getDate() - date.getDay()); // Lunes de la semana
+            const weekKey = `${weekStart.getDate()}/${weekStart.getMonth() + 1}`;
+            
+            if (!weeklyScores[weekKey]) {
+                weeklyScores[weekKey] = [];
+            }
+            weeklyScores[weekKey].push(toPct(analysis.score!));
+        });
+
+        return Object.entries(weeklyScores).map(([week, scores]) => ({
+            month: `Sem ${week}`,
+            score: Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)),
+            fullDate: '',
+            analysisId: ''
+        }));
+    } else {
+        // Agrupar por mes para vista anual
+        const monthlyScores: { [key: string]: number[] } = {};
+        filteredAnalyses.forEach(analysis => {
+            const date = new Date(analysis.createdAt);
+            const month = date.toLocaleString('es-ES', { month: 'short', year: 'numeric' });
+            
+            if (!monthlyScores[month]) {
+                monthlyScores[month] = [];
+            }
+            monthlyScores[month].push(toPct(analysis.score!));
+        });
+
+        return Object.entries(monthlyScores).map(([month, scores]) => ({
+            month: month.split(' ')[0],
+            score: Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)),
+            fullDate: '',
+            analysisId: ''
+        }));
+    }
 };
 
 function FormattedDate({ dateString }: { dateString: string }) {
@@ -88,10 +146,15 @@ interface CoachPlayerProfileClientProps {
 
 export function CoachPlayerProfileClient({ player, analyses, evaluations, comments }: CoachPlayerProfileClientProps) {
   const { userProfile } = useAuth();
-  const chartData = getChartData(analyses);
+  const [timeFilter, setTimeFilter] = useState<'semanal' | 'mensual' | 'anual'>('mensual');
+  const chartData = getChartData(analyses, timeFilter);
   const [filter, setFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("overview");
   const latestAnalysisId = [...analyses].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]?.id;
+  
+        if (latestAnalysisId) {
+    const latestAnalysis = analyses.find(a => a.id === latestAnalysisId);
+              }
 
   const filteredAnalyses = filter === 'all' 
     ? analyses 
@@ -407,12 +470,37 @@ export function CoachPlayerProfileClient({ player, analyses, evaluations, commen
             <p className="text-muted-foreground mb-6">
               Visualiza el progreso a lo largo del tiempo y las tendencias de mejora.
             </p>
+            
+            {/* Filtros de tiempo */}
+            <div className="flex gap-2 mb-6">
+              <Button
+                variant={timeFilter === 'semanal' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setTimeFilter('semanal')}
+              >
+                Semanal
+              </Button>
+              <Button
+                variant={timeFilter === 'mensual' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setTimeFilter('mensual')}
+              >
+                Mensual
+              </Button>
+              <Button
+                variant={timeFilter === 'anual' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setTimeFilter('anual')}
+              >
+                Anual
+              </Button>
+            </div>
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Progreso de Puntuación</CardTitle>
+                <CardTitle>Progreso de Puntuación - {timeFilter === 'semanal' ? 'Última Semana' : timeFilter === 'mensual' ? 'Último Mes' : 'Último Año'}</CardTitle>
                 <CardDescription>
                   Evolución de las puntuaciones en el tiempo
                 </CardDescription>
@@ -432,35 +520,59 @@ export function CoachPlayerProfileClient({ player, analyses, evaluations, commen
 
             <Card>
               <CardHeader>
-                <CardTitle>Resumen de Mejoras</CardTitle>
+                <CardTitle>Resumen de Mejoras - Último Análisis</CardTitle>
                 <CardDescription>
-                  Áreas de mejora y fortalezas identificadas
+                  Áreas de mejora y fortalezas identificadas en el análisis más reciente
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div>
-                  <h4 className="font-semibold mb-2 text-green-600">Fortalezas Identificadas</h4>
-                  <ul className="space-y-1">
-                    {analyses.flatMap(a => a.strengths).slice(0, 5).map((strength, index) => (
-                      <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
-                        <div className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0" />
-                        {strength}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                
-                <div>
-                  <h4 className="font-semibold mb-2 text-orange-600">Áreas de Mejora</h4>
-                  <ul className="space-y-1">
-                    {analyses.flatMap(a => a.weaknesses).slice(0, 5).map((weakness, index) => (
-                      <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
-                        <div className="w-1.5 h-1.5 bg-orange-600 rounded-full mt-2 flex-shrink-0" />
-                        {weakness}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                {latestAnalysisId ? (
+                  <>
+                    <div>
+                      <h4 className="font-semibold mb-2 text-green-600">Fortalezas Identificadas</h4>
+                      {(() => {
+                        const latestAnalysis = analyses.find(a => a.id === latestAnalysisId);
+                        const strengths = latestAnalysis?.strengths;
+                                                return strengths && Array.isArray(strengths) && strengths.length > 0;
+                      })() ? (
+                        <ul className="space-y-1">
+                          {analyses.find(a => a.id === latestAnalysisId)!.strengths.map((strength, index) => (
+                            <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
+                              <div className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0" />
+                              {strength}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-muted-foreground italic">No se identificaron fortalezas específicas en el último análisis.</p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <h4 className="font-semibold mb-2 text-orange-600">Áreas de Mejora</h4>
+                      {(() => {
+                        const latestAnalysis = analyses.find(a => a.id === latestAnalysisId);
+                        const weaknesses = latestAnalysis?.weaknesses;
+                                                return weaknesses && Array.isArray(weaknesses) && weaknesses.length > 0;
+                      })() ? (
+                        <ul className="space-y-1">
+                          {analyses.find(a => a.id === latestAnalysisId)!.weaknesses.map((weakness, index) => (
+                            <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
+                              <div className="w-1.5 h-1.5 bg-orange-600 rounded-full mt-2 flex-shrink-0" />
+                              {weakness}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-muted-foreground italic">No se identificaron áreas de mejora específicas en el último análisis.</p>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground">No hay análisis disponibles para mostrar fortalezas y debilidades.</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

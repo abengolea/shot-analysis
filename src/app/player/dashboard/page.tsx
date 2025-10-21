@@ -29,7 +29,6 @@ import { useRouter } from 'next/navigation';
 import { PlayerProgressChart } from "@/components/player-progress-chart";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-
 function FormattedDate({ dateString }: { dateString: string }) {
     const [formattedDate, setFormattedDate] = useState('');
 
@@ -39,7 +38,6 @@ function FormattedDate({ dateString }: { dateString: string }) {
 
     return <>{formattedDate || '...'}</>;
 }
-
 
 export default function DashboardPage() {
   const { user, userProfile, loading } = useAuth();
@@ -57,20 +55,10 @@ export default function DashboardPage() {
   const [shotFilter, setShotFilter] = useState<string>("all"); // all, three, jump, free
 
   // Función para obtener análisis del usuario
-  // Cargar configuración de mantenimiento
+  // Cargar configuración de mantenimiento - DESHABILITADO PARA DESARROLLO
   useEffect(() => {
-    const fetchMaintenanceConfig = async () => {
-      try {
-        const response = await fetch('/api/admin/maintenance');
-        if (response.ok) {
-          const config = await response.json();
-          setMaintenanceConfig(config);
-        }
-      } catch (error) {
-        console.error('Error cargando configuración de mantenimiento:', error);
-      }
-    };
-    fetchMaintenanceConfig();
+    // Mantenimiento deshabilitado para desarrollo local
+    setMaintenanceConfig({ enabled: false, title: '', message: '' });
   }, []);
 
   useEffect(() => {
@@ -139,6 +127,38 @@ export default function DashboardPage() {
     }
   }, [loading, user, userProfile, router]);
 
+    useEffect(() => {
+    if (userAnalyses.length > 0) {
+            console.log('🔍 Tipos de tiro encontrados:', userAnalyses.map(a => ({ 
+        shotType: a.shotType, 
+        status: a.status, 
+        id: a.id,
+        score: a.score
+      })));
+      
+      // Verificar análisis por tipo y status
+      const statusCounts = userAnalyses.reduce((acc, a) => {
+        acc[a.status] = (acc[a.status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+            const threeAnalyses = userAnalyses.filter(a => a.shotType === 'Lanzamiento de Tres');
+      const jumpAnalyses = userAnalyses.filter(a => a.shotType === 'Lanzamiento de Media Distancia (Jump Shot)');
+      const freeAnalyses = userAnalyses.filter(a => a.shotType === 'Tiro Libre');
+      
+      console.log('🔍 Análisis de Tres (total):', threeAnalyses.length);
+      console.log('🔍 Análisis de Jump (total):', jumpAnalyses.length);
+      console.log('🔍 Análisis de Libres (total):', freeAnalyses.length);
+      
+      const threeAnalyzed = threeAnalyses.filter(a => a.status === 'analyzed');
+      const jumpAnalyzed = jumpAnalyses.filter(a => a.status === 'analyzed');
+      const freeAnalyzed = freeAnalyses.filter(a => a.status === 'analyzed');
+      
+      console.log('🔍 Análisis de Tres (analyzed):', threeAnalyzed.length);
+      console.log('🔍 Análisis de Jump (analyzed):', jumpAnalyzed.length);
+      console.log('🔍 Análisis de Libres (analyzed):', freeAnalyzed.length);
+    }
+  }, [userAnalyses]);
+
   // Evitar render mientras se decide o se redirige
   if (!user || !userProfile || (userProfile as any).role === 'admin') {
     return null;
@@ -175,15 +195,34 @@ export default function DashboardPage() {
 
   const getDerivedScore = (a: any): number | null => {
     if (!a) return null;
-    if (typeof a.score === 'number') return toPct(Number(a.score));
+    
+            // Primero intentar score directo
+    if (typeof a.score === 'number') {
+            return toPct(Number(a.score));
+    }
+    
+    // Intentar score del analysisResult
+    if (a.analysisResult && typeof a.analysisResult.score === 'number') {
+            return toPct(Number(a.analysisResult.score));
+    }
+    
+    // Intentar derivar desde checklist
     const cats = Array.isArray(a.detailedChecklist) ? a.detailedChecklist : (a.analysisResult && Array.isArray(a.analysisResult.detailedChecklist) ? a.analysisResult.detailedChecklist : []);
-    if (!cats.length) return null;
+    if (!cats.length) {
+            return null;
+    }
+    
     const vals = cats.flatMap((c: any) => c.items || [])
       .map((it: any) => (typeof it.rating === 'number' ? it.rating : mapStatusToRating(it.status)))
       .filter((v: any) => typeof v === 'number');
-    if (!vals.length) return null;
+    
+    if (!vals.length) {
+            return null;
+    }
+    
     const avg1to5 = vals.reduce((s: number, v: number) => s + v, 0) / vals.length;
-    return Number(((avg1to5 / 5) * 100).toFixed(1));
+    const result = Number(((avg1to5 / 5) * 100).toFixed(1));
+        return result;
   };
 
   // Obtener el último análisis (ya viene ordenado por fecha desc)
@@ -192,13 +231,47 @@ export default function DashboardPage() {
 
   // Último score por tipo en 0..100
   const lastScoreByType = (type: string) => {
-    const found = userAnalyses.find((a) => a.status === 'analyzed' && a.shotType === type);
+    // Buscar primero análisis con status 'analyzed'
+    let found = userAnalyses.find((a) => a.status === 'analyzed' && a.shotType === type);
+    
+    // Si no encuentra análisis 'analyzed', buscar cualquier análisis de ese tipo
+    if (!found) {
+      found = userAnalyses.find((a) => a.shotType === type);
+    }
+    
     return found ? getDerivedScore(found) : null;
   };
+
+  // Función para calcular score promedio de todos los análisis de un tipo
+  const getAverageScoreByType = (type: string) => {
+    const analyses = userAnalyses.filter(a => a.shotType === type);
+    if (analyses.length === 0) return null;
+    
+    const scores = analyses.map(a => getDerivedScore(a)).filter(s => s !== null) as number[];
+    if (scores.length === 0) return null;
+    
+    const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    return Number(average.toFixed(1));
+  };
+
   const pct = (score: number | null) => (score == null ? 'N/A' : `${Number(score).toFixed(1)} / 100`);
+  
+  // Obtener el ÚLTIMO análisis de cada tipo (no promedio)
   const lastThree = lastScoreByType('Lanzamiento de Tres');
   const lastJump = lastScoreByType('Lanzamiento de Media Distancia (Jump Shot)');
   const lastFree = lastScoreByType('Tiro Libre');
+  
+  // Calcular el Nivel Actual como promedio de las tres categorías
+  const calculateOverallLevel = () => {
+    const scores = [lastThree, lastJump, lastFree].filter(score => score !== null) as number[];
+        if (scores.length === 0) return null;
+    
+    const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    const result = Number(average.toFixed(1));
+        return result;
+  };
+  
+  const overallLevel = calculateOverallLevel();
 
   // Función para obtener el color del badge según el status
   const getStatusBadge = (status: string) => {
@@ -287,7 +360,7 @@ export default function DashboardPage() {
               }
             }}>
                 <PlusCircle className="mr-2 h-4 w-4" />
-                Analizar Nuevo Lanzamiento
+                Análisis Completo
             </Button>
         </div>
       </div>
@@ -312,25 +385,55 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {lastScore != null ? `${Number(lastScore).toFixed(1)} / 100` : (userProfile.role === 'player' && userProfile.playerLevel ? userProfile.playerLevel : 'N/A')}
+              {overallLevel != null ? `${overallLevel} / 100` : 'N/A'}
             </div>
             <p className="text-xs text-muted-foreground mb-2">
-              {lastScore != null
-                ? 'según tu último análisis'
-                : (userProfile.role === 'player' ? 'según tu último análisis' : 'no aplica para entrenadores')}
+              {overallLevel != null
+                ? 'promedio de las tres categorías'
+                : 'no hay análisis suficientes'}
             </p>
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div className="p-2 rounded border">
                 <div className="text-muted-foreground">Tres</div>
                 <div className="font-semibold">{pct(lastThree)}</div>
+                {lastThree !== null && (
+                  <div className="text-xs text-muted-foreground">
+                    último análisis
+                  </div>
+                )}
+                {userAnalyses.filter(a => a.shotType === 'Lanzamiento de Tres').length > 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    {userAnalyses.filter(a => a.shotType === 'Lanzamiento de Tres').length} total
+                  </div>
+                )}
               </div>
               <div className="p-2 rounded border">
                 <div className="text-muted-foreground">Jump</div>
                 <div className="font-semibold">{pct(lastJump)}</div>
+                {lastJump !== null && (
+                  <div className="text-xs text-muted-foreground">
+                    último análisis
+                  </div>
+                )}
+                {userAnalyses.filter(a => a.shotType === 'Lanzamiento de Media Distancia (Jump Shot)').length > 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    {userAnalyses.filter(a => a.shotType === 'Lanzamiento de Media Distancia (Jump Shot)').length} total
+                  </div>
+                )}
               </div>
               <div className="p-2 rounded border">
                 <div className="text-muted-foreground">Libres</div>
                 <div className="font-semibold">{pct(lastFree)}</div>
+                {lastFree !== null && (
+                  <div className="text-xs text-muted-foreground">
+                    último análisis
+                  </div>
+                )}
+                {userAnalyses.filter(a => a.shotType === 'Tiro Libre').length > 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    {userAnalyses.filter(a => a.shotType === 'Tiro Libre').length} total
+                  </div>
+                )}
               </div>
             </div>
             <div className="mt-3">

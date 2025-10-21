@@ -45,9 +45,7 @@ export async function analyzeBasketballStrict(
   input: StrictAnalysisInput
 ): Promise<StrictAnalysisOutput> {
   try {
-    console.log('[analyzeBasketballStrict] Iniciando análisis estricto para:', input.videoUrl);
-
-    // Configurar Gemini con parámetros anti-alucinación
+        // Configurar Gemini con parámetros anti-alucinación
     const genAI = new (await import('@google/generative-ai')).GoogleGenerativeAI(
       process.env.GEMINI_API_KEY || 
       process.env.GOOGLE_API_KEY || 

@@ -52,4 +52,3 @@ export default function UploadError({ error, reset }: { error: Error & { digest?
   );
 }
 
-

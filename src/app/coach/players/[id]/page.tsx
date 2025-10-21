@@ -5,9 +5,10 @@ import { adminDb } from "@/lib/firebase-admin";
 export default async function CoachPlayerProfilePage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  const playerSnap = await adminDb.collection('players').doc(params.id).get();
+  const { id } = await params;
+  const playerSnap = await adminDb.collection('players').doc(id).get();
   if (!playerSnap.exists) {
     notFound();
   }
@@ -26,9 +27,14 @@ export default async function CoachPlayerProfilePage({
     return val;
   };
   
-  const player = serialize({ id: params.id, ...(playerSnap.data() as any) });
-  const analysesSnap = await adminDb.collection('analyses').where('playerId', '==', params.id).orderBy('createdAt', 'desc').limit(100).get();
+  const player = serialize({ id, ...(playerSnap.data() as any) });
+  const analysesSnap = await adminDb.collection('analyses').where('playerId', '==', id).orderBy('createdAt', 'desc').limit(100).get();
   const analyses = analysesSnap.docs.map(d => serialize({ id: d.id, ...(d.data() as any) }));
+  
+      if (analyses.length > 0) {
+    const latest = analyses[0];
+                console.log('🔍 Server Debug - Latest analysis keys:', Object.keys(latest));
+  }
   const evaluations: any[] = [];
   const comments: any[] = [];
 

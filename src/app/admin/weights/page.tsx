@@ -99,7 +99,7 @@ const PARAMETER_LABELS: Record<keyof Weights, string> = {
   angulo_salida: 'Ángulo de salida',
   mantenimiento_equilibrio: 'Mantenimiento del equilibrio',
   equilibrio_aterrizaje: 'Equilibrio en aterrizaje',
-  duracion_follow_through: 'Duración del follow through',
+  duracion_follow_through: 'Duración del follow-through',
   consistencia_repetitiva: 'Consistencia técnica',
 };
 
@@ -395,8 +395,4 @@ export default function WeightsAdminPage() {
     </div>
   );
 }
-
-
-
-
 

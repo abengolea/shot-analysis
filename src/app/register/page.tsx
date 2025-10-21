@@ -2,7 +2,6 @@ import Link from "next/link";
 import { RegisterForm } from "@/components/register-form";
 import { Logo } from "@/components/logo";
 
-
 export default function RegisterPage() {
   return (
     <div className="mx-auto flex w-full max-w-md flex-col items-center justify-center py-12">

@@ -1,7 +1,7 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp, getApps, getApp, FirebaseOptions } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 // Your web app's Firebase configuration
@@ -30,5 +30,17 @@ if (isBrowser) {
 const auth: any = isBrowser && app ? getAuth(app) : undefined as any;
 const db: any = isBrowser && app ? getFirestore(app) : undefined as any;
 const storage: any = isBrowser && app ? getStorage(app) : undefined as any;
+
+// Configurar Firestore para manejar mejor los errores
+if (isBrowser && db) {
+  try {
+    // Configurar settings para mejorar la estabilidad
+    db.settings({
+      ignoreUndefinedProperties: true,
+    });
+  } catch (error) {
+    console.warn('No se pudo configurar Firestore settings:', error);
+  }
+}
 
 export { app, auth, db, storage };

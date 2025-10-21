@@ -30,7 +30,6 @@ import { UserMenu } from "./user-menu";
 import { NotificationsBell } from "./notifications-bell";
 import { useState, useEffect } from "react";
 
-
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);

@@ -70,9 +70,7 @@ export async function POST(request: NextRequest) {
     // Analizar poses de baloncesto
     const analysisResult = analyzeBasketballVideo(imageDataArray, mockPoseData);
 
-    console.log(`[POSE-ANALYSIS] Resultado del análisis:`, analysisResult);
-
-    return NextResponse.json({
+        return NextResponse.json({
       success: true,
       analysis: analysisResult,
       summary: {

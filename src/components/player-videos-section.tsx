@@ -53,22 +53,25 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
 
   const getScoreColor = (scoreRaw: number) => {
     const score = toPct(scoreRaw);
-    if (score >= 80) return "text-green-600";
-    if (score >= 60) return "text-yellow-600";
+    if (score >= 90) return "text-green-600";
+    if (score >= 70) return "text-green-600";
+    if (score >= 36) return "text-yellow-600";
     return "text-red-600";
   };
 
   const getScoreBadgeVariant = (scoreRaw: number) => {
     const score = toPct(scoreRaw);
-    if (score >= 80) return "default";
-    if (score >= 60) return "secondary";
+    if (score >= 90) return "default";
+    if (score >= 70) return "default";
+    if (score >= 36) return "secondary";
     return "destructive";
   };
 
   const getProgressColor = (scoreRaw: number) => {
     const score = toPct(scoreRaw);
-    if (score >= 80) return "bg-green-500";
-    if (score >= 60) return "bg-yellow-500";
+    if (score >= 90) return "bg-green-500";
+    if (score >= 70) return "bg-green-500";
+    if (score >= 36) return "bg-yellow-500";
     return "bg-red-500";
   };
 

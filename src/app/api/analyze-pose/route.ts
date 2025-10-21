@@ -28,9 +28,7 @@ export async function POST(request: NextRequest) {
       ageCategory
     });
 
-    console.log('[API] Resultado del análisis:', result.success ? 'Éxito' : 'Error');
-
-    return NextResponse.json(result);
+        return NextResponse.json(result);
 
   } catch (error: any) {
     console.error('[API] Error en análisis de pose:', error?.message || error);

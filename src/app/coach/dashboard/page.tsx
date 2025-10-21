@@ -44,6 +44,8 @@ export default function CoachDashboardPage() {
       const unsub = onSnapshot(q, (snap) => {
         const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as any[];
         setPlayers(list as any);
+      }, (error) => {
+        console.error('Error en listener de jugadores:', error);
       });
       return () => unsub();
     } catch (e) {
@@ -114,8 +116,12 @@ export default function CoachDashboardPage() {
           return Object.values(merged).sort((a, b) => (new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
         });
       };
-      unsubs.push(onSnapshot(q1, apply));
-      unsubs.push(onSnapshot(q2, apply));
+      unsubs.push(onSnapshot(q1, apply, (error) => {
+        console.error('Error en listener de mensajes coach (q1):', error);
+      }));
+      unsubs.push(onSnapshot(q2, apply, (error) => {
+        console.error('Error en listener de mensajes coach (q2):', error);
+      }));
       return () => { unsubs.forEach(u => u()); };
     } catch (e) {
       console.error('Error cargando mensajes:', e);

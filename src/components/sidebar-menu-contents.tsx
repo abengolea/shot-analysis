@@ -17,6 +17,8 @@ import {
   Trophy,
   Settings,
   MessageSquare,
+  FileText,
+  Sparkles,
 } from 'lucide-react';
 import {
   SidebarMenuItem,
@@ -235,6 +237,18 @@ export function SidebarMenuContents() {
           <Link href="/admin/revision-ia">
             <Shield />
             Revisión IA
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          asChild
+          isActive={pathname.startsWith("/admin/prompts")}
+          tooltip="Configurar Prompts IA"
+        >
+          <Link href="/admin/prompts">
+            <Sparkles />
+            Prompts IA
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>

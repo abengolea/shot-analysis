@@ -26,8 +26,7 @@ export async function analyzeVideoContent(
   input: AnalyzeVideoContentInput
 ): Promise<AnalyzeVideoContentOutput> {
   try {
-    console.log('[analyzeVideoContent] Iniciando análisis de contenido para:', input.videoUrl);
-    const result = await analyzeVideoContentFlow(input);
+        const result = await analyzeVideoContentFlow(input);
     console.log('[analyzeVideoContent] Resultado:', result);
     return result;
   } catch (e: any) {

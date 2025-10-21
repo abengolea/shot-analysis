@@ -371,4 +371,3 @@ export const mockConnectionRequests: ConnectionRequest[] = [
   }
 ];
 
-

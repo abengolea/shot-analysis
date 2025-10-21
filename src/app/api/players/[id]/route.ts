@@ -15,9 +15,7 @@ export async function GET(
       );
     }
 
-    console.log('🔍 Buscando jugador:', playerId);
-
-    // Obtener el jugador desde Firestore
+        // Obtener el jugador desde Firestore
     const playerDoc = await adminDb
       .collection('players')
       .doc(playerId)
@@ -36,9 +34,7 @@ export async function GET(
       ...playerData
     };
 
-    console.log(`✅ Jugador encontrado: ${playerId}`);
-
-    return NextResponse.json({
+        return NextResponse.json({
       player,
       success: true
     });

@@ -52,4 +52,3 @@ export default function PaymentsReturnPage({ searchParams }: { searchParams: Sea
   );
 }
 
-

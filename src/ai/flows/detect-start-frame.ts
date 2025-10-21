@@ -92,4 +92,3 @@ export const detectStartFrameFlow = ai.defineFlow(
   async (input) => detectStartFrame(input)
 );
 
-

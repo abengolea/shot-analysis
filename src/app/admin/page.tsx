@@ -138,6 +138,7 @@ export default function AdminHome() {
 		{ id: 'coaches', label: 'Entrenadores' },
 		{ id: 'payments', label: 'Pagos' },
 		{ id: 'subscriptions', label: 'Suscripciones' },
+		{ id: 'emails', label: 'Emails' },
 		{ id: 'stats', label: 'Estadísticas' },
 	], []);
 
@@ -188,8 +189,13 @@ export default function AdminHome() {
 							{/* Acciones de mantenimiento */}
 							<div className="mt-4 rounded border p-4 space-y-3">
 								<h2 className="text-lg font-medium">Mantenimiento</h2>
-								<p className="text-sm text-gray-600">Recalcular puntajes históricos a escala 0–100.</p>
+								<p className="text-sm text-gray-600">Configuración de pesos y recálculo de puntajes.</p>
 								<div className="flex flex-wrap gap-2">
+									<Link href="/admin/weights">
+										<button className="rounded border px-3 py-1 text-sm bg-blue-50 hover:bg-blue-100">
+											⚖️ Configurar Pesos
+										</button>
+									</Link>
 									<button
 										className="rounded border px-3 py-1 text-sm"
 										onClick={async () => {
@@ -491,7 +497,6 @@ export default function AdminHome() {
 				</div>
 			)}
 
-
 			{/* Jugadores */}
 			{activeTab === 'players' && (
 				<div className="space-y-3">
@@ -699,8 +704,311 @@ export default function AdminHome() {
 					</div>
 				</div>
 			)}
+
+			{/* Emails */}
+			{activeTab === 'emails' && (
+				<div className="space-y-6">
+					<EmailCampaignForm />
+				</div>
+			)}
 		</div>
 	);
 }
 
+// Componente para el formulario de envío de emails masivos
+function EmailCampaignForm() {
+	const [target, setTarget] = useState<'all' | 'players' | 'coaches'>('all');
+	const [subject, setSubject] = useState('');
+	const [message, setMessage] = useState('');
+	const [previewMode, setPreviewMode] = useState(false);
+	const [loading, setLoading] = useState(false);
+	const [result, setResult] = useState<any>(null);
+	const [subscribersInfo, setSubscribersInfo] = useState<any>(null);
+
+	// Cargar información de suscriptores al montar
+	useEffect(() => {
+		const loadSubscribers = async () => {
+			try {
+				const auth = getAuth();
+				const cu = auth.currentUser;
+				if (!cu) return;
+				const token = await getIdToken(cu, true);
+				const res = await fetch('/api/admin/emails/subscribers', {
+					headers: { 'Authorization': `Bearer ${token}` }
+				});
+				if (res.ok) {
+					const data = await res.json();
+					setSubscribersInfo(data);
+				}
+			} catch (e) {
+				console.error('Error cargando suscriptores:', e);
+			}
+		};
+		loadSubscribers();
+	}, []);
+
+	const handleSubmit = async (e: React.FormEvent) => {
+		e.preventDefault();
+		
+		if (!subject.trim() || !message.trim()) {
+			alert('Por favor completa todos los campos');
+			return;
+		}
+
+		const confirmMsg = `¿Estás seguro de enviar este email a ${
+			target === 'all' ? 'TODOS los usuarios' :
+			target === 'players' ? 'todos los JUGADORES' :
+			'todos los ENTRENADORES'
+		}?`;
+		
+		if (!confirm(confirmMsg)) return;
+
+		setLoading(true);
+		setResult(null);
+
+		try {
+			const auth = getAuth();
+			const cu = auth.currentUser;
+			if (!cu) throw new Error('Usuario no autenticado');
+			const token = await getIdToken(cu, true);
+
+			// Crear HTML del email
+			const html = `
+				<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+					<div style="text-align: center; margin-bottom: 30px;">
+						<h1 style="color: #2563eb; margin: 0;">Shot Analysis</h1>
+					</div>
+					<div style="background: #f9fafb; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+						${message.split('\n').map(line => `<p style="margin: 10px 0;">${line}</p>`).join('')}
+					</div>
+					<div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+						<p style="color: #6b7280; font-size: 14px; margin: 5px 0;">Shot Analysis - Análisis de Lanzamiento</p>
+						<p style="color: #9ca3af; font-size: 12px; margin: 5px 0;">
+							<a href="https://shotanalysis.com" style="color: #2563eb; text-decoration: none;">Visitar sitio web</a>
+						</p>
+					</div>
+				</div>
+			`;
+
+			const res = await fetch('/api/admin/emails/send-bulk', {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${token}`,
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					target,
+					subject,
+					html,
+					text: message
+				})
+			});
+
+			const data = await res.json();
+
+			if (res.ok) {
+				setResult({
+					success: true,
+					message: data.message,
+					stats: data
+				});
+				// Limpiar formulario
+				setSubject('');
+				setMessage('');
+			} else {
+				setResult({
+					success: false,
+					message: data.error || 'Error desconocido'
+				});
+			}
+
+		} catch (e: any) {
+			setResult({
+				success: false,
+				message: e?.message || 'Error enviando emails'
+			});
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const getRecipientCount = () => {
+		if (!subscribersInfo) return 0;
+		if (target === 'all') return subscribersInfo.total;
+		if (target === 'players') return subscribersInfo.players;
+		if (target === 'coaches') return subscribersInfo.coaches;
+		return 0;
+	};
+
+	return (
+		<div className="space-y-6">
+			<div className="rounded border p-6">
+				<h2 className="text-xl font-semibold mb-4">📧 Enviar Email Masivo</h2>
+				
+				{subscribersInfo && (
+					<div className="bg-blue-50 border border-blue-200 rounded p-4 mb-6">
+						<h3 className="font-medium text-blue-900 mb-2">Información de Suscriptores</h3>
+						<div className="text-sm text-blue-800 space-y-1">
+							<p>• Total usuarios activos: <strong>{subscribersInfo.total}</strong></p>
+							<p>• Jugadores: <strong>{subscribersInfo.players}</strong></p>
+							<p>• Entrenadores: <strong>{subscribersInfo.coaches}</strong></p>
+						</div>
+					</div>
+				)}
+
+				<form onSubmit={handleSubmit} className="space-y-4">
+					{/* Destinatarios */}
+					<div>
+						<label className="block text-sm font-medium mb-2">
+							Destinatarios ({getRecipientCount()} usuarios)
+						</label>
+						<div className="flex gap-4">
+							<label className="flex items-center gap-2">
+								<input
+									type="radio"
+									name="target"
+									value="all"
+									checked={target === 'all'}
+									onChange={(e) => setTarget(e.target.value as any)}
+									className="w-4 h-4"
+								/>
+								<span className="text-sm">Todos</span>
+							</label>
+							<label className="flex items-center gap-2">
+								<input
+									type="radio"
+									name="target"
+									value="players"
+									checked={target === 'players'}
+									onChange={(e) => setTarget(e.target.value as any)}
+									className="w-4 h-4"
+								/>
+								<span className="text-sm">Solo Jugadores</span>
+							</label>
+							<label className="flex items-center gap-2">
+								<input
+									type="radio"
+									name="target"
+									value="coaches"
+									checked={target === 'coaches'}
+									onChange={(e) => setTarget(e.target.value as any)}
+									className="w-4 h-4"
+								/>
+								<span className="text-sm">Solo Entrenadores</span>
+							</label>
+						</div>
+					</div>
+
+					{/* Asunto */}
+					<div>
+						<label className="block text-sm font-medium mb-2">
+							Asunto del Email *
+						</label>
+						<input
+							type="text"
+							value={subject}
+							onChange={(e) => setSubject(e.target.value)}
+							className="w-full rounded border px-3 py-2"
+							placeholder="Ej: Nuevas funcionalidades en Shot Analysis"
+							required
+						/>
+					</div>
+
+					{/* Mensaje */}
+					<div>
+						<label className="block text-sm font-medium mb-2">
+							Mensaje *
+						</label>
+						<textarea
+							value={message}
+							onChange={(e) => setMessage(e.target.value)}
+							className="w-full rounded border px-3 py-2 min-h-[200px] font-mono text-sm"
+							placeholder="Escribe tu mensaje aquí. Se enviará con formato HTML básico."
+							required
+						/>
+						<p className="text-xs text-gray-500 mt-1">
+							Usa saltos de línea para separar párrafos. El mensaje se enviará con el diseño de Shot Analysis.
+						</p>
+					</div>
+
+					{/* Vista previa */}
+					<div className="flex items-center gap-2">
+						<button
+							type="button"
+							onClick={() => setPreviewMode(!previewMode)}
+							className="text-sm text-blue-600 hover:underline"
+						>
+							{previewMode ? 'Ocultar' : 'Mostrar'} vista previa
+						</button>
+					</div>
+
+					{previewMode && (
+						<div className="border rounded p-4 bg-gray-50">
+							<h3 className="text-sm font-medium mb-2">Vista Previa del Email:</h3>
+							<div className="bg-white border rounded p-4">
+								<div style={{ fontFamily: 'Arial, sans-serif', maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
+									<div style={{ textAlign: 'center', marginBottom: '30px' }}>
+										<h1 style={{ color: '#2563eb', margin: 0 }}>Shot Analysis</h1>
+									</div>
+									<div style={{ background: '#f9fafb', borderRadius: '8px', padding: '20px', marginBottom: '20px' }}>
+										{message.split('\n').map((line, i) => (
+											<p key={i} style={{ margin: '10px 0' }}>{line}</p>
+										))}
+									</div>
+									<div style={{ textAlign: 'center', marginTop: '30px', paddingTop: '20px', borderTop: '1px solid #e5e7eb' }}>
+										<p style={{ color: '#6b7280', fontSize: '14px', margin: '5px 0' }}>Shot Analysis - Análisis de Lanzamiento</p>
+									</div>
+								</div>
+							</div>
+						</div>
+					)}
+
+					{/* Botón de envío */}
+					<div className="pt-4 border-t">
+						<button
+							type="submit"
+							disabled={loading || !subject.trim() || !message.trim()}
+							className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							{loading ? 'Enviando...' : `Enviar a ${getRecipientCount()} usuarios`}
+						</button>
+					</div>
+				</form>
+
+				{/* Resultado */}
+				{result && (
+					<div className={`mt-6 p-4 rounded border ${result.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+						<h3 className={`font-medium mb-2 ${result.success ? 'text-green-900' : 'text-red-900'}`}>
+							{result.success ? '✅ Emails enviados exitosamente' : '❌ Error al enviar emails'}
+						</h3>
+						<p className={`text-sm ${result.success ? 'text-green-800' : 'text-red-800'}`}>
+							{result.message}
+						</p>
+						{result.stats && (
+							<div className="mt-2 text-sm">
+								<p>• Total destinatarios: {result.stats.totalRecipients}</p>
+								<p>• Enviados exitosamente: {result.stats.successCount}</p>
+								{result.stats.failureCount > 0 && (
+									<p className="text-red-600">• Fallidos: {result.stats.failureCount}</p>
+								)}
+							</div>
+						)}
+					</div>
+				)}
+
+				{/* Advertencia */}
+				<div className="mt-6 bg-yellow-50 border border-yellow-200 rounded p-4">
+					<h3 className="font-medium text-yellow-900 mb-2">⚠️ Importante</h3>
+					<ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
+						<li>Los emails se envían a todos los usuarios con estado "activo"</li>
+						<li>Asegúrate de revisar el contenido antes de enviar</li>
+						<li>Esta acción no se puede deshacer</li>
+						<li>Actualmente los emails solo se registran en logs del servidor (ver consola)</li>
+						<li>Para envío real, configura un proveedor de email (SendGrid, AWS SES, etc.)</li>
+					</ul>
+				</div>
+			</div>
+		</div>
+	);
+}
 

@@ -21,7 +21,6 @@ import type { ShotAnalysis, Player } from "@/lib/types";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
-
 function CommentForm({ analysisId }: { analysisId: string }) {
     // TODO: Implementar funcionalidad de comentarios
     // const [state, formAction] = useActionState(moderateAndAddComment, { message: "" });
@@ -40,7 +39,6 @@ function CommentForm({ analysisId }: { analysisId: string }) {
         </div>
     );
 }
-
 
 export function AnalysisPageClient({ id }: { id: string }) {
   const { user } = useAuth();
@@ -64,30 +62,129 @@ export function AnalysisPageClient({ id }: { id: string }) {
         }
         
         const analysisData = await response.json();
-        const analysisResult = analysisData.analysis;
+        
+        // Validar que tenemos datos válidos
+        if (!analysisData || !analysisData.id) {
+          throw new Error('Datos de análisis inválidos');
+        }
         
         // Adaptar a tipo ShotAnalysis
         const shotAnalysis: ShotAnalysis = {
-          id: analysisResult.id,
-          playerId: analysisResult.playerId,
-          createdAt: analysisResult.createdAt,
-          videoUrl: analysisResult.videoUrl,
-          shotType: analysisResult.shotType,
-          analysisSummary: analysisResult.analysisSummary || '',
-          strengths: analysisResult.strengths || [],
-          weaknesses: analysisResult.weaknesses || [],
-          recommendations: analysisResult.recommendations || [],
-          keyframes: analysisResult.keyframes || { front: [], back: [], left: [], right: [] },
-          detailedChecklist: analysisResult.detailedChecklist || [],
-          score: analysisResult.score,
-          fluidezScore10: analysisResult.fluidezScore10,
+          id: analysisData.id,
+          playerId: analysisData.playerId,
+          createdAt: analysisData.createdAt,
+          videoUrl: analysisData.videoUrl,
+          videoBackUrl: analysisData.videoBackUrl,
+          videoFrontUrl: analysisData.videoFrontUrl,
+          videoLeftUrl: analysisData.videoLeftUrl,
+          videoRightUrl: analysisData.videoRightUrl,
+          shotType: analysisData.shotType,
+          analysisSummary: analysisData.analysisResult?.analysisSummary || analysisData.analysisSummary || '',
+          strengths: analysisData.analysisResult?.technicalAnalysis?.strengths || analysisData.analysisResult?.strengths || analysisData.strengths || [],
+          weaknesses: analysisData.analysisResult?.technicalAnalysis?.weaknesses || analysisData.analysisResult?.weaknesses || analysisData.weaknesses || [],
+          recommendations: analysisData.analysisResult?.technicalAnalysis?.recommendations || analysisData.analysisResult?.recommendations || analysisData.recommendations || [],
+          keyframes: analysisData.analysisResult?.keyframes || analysisData.keyframes || { front: [], back: [], left: [], right: [] },
+          detailedChecklist: (() => {
+            // Obtener los parámetros originales
+            const parameters = analysisData.analysisResult?.technicalAnalysis?.parameters || analysisData.analysisResult?.detailedChecklist || analysisData.detailedChecklist || [];
+            
+            // Si son parámetros individuales, aplicar lógica de conversión
+            if (Array.isArray(parameters) && parameters.length > 0 && parameters[0].score !== undefined) {
+              return [{
+                category: "TODOS LOS PARÁMETROS",
+                items: parameters.map((p: any) => ({
+                  id: p.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown',
+                  name: p.name || 'Parámetro desconocido',
+                  description: p.comment || '',
+                  score: p.score || 0, // PRESERVAR el score original
+                  status: (() => {
+                    const score = p.score || 0;
+                    if (score >= 70) return 'Correcto';
+                    if (score >= 36) return 'Mejorable';
+                    return 'Incorrecto';
+                  })(), // Forzar cálculo basado en score
+                  rating: (() => {
+                    const score = p.score || 0;
+                    if (score >= 90) return 5; // Excelente
+                    if (score >= 70) return 4; // Correcto
+                    if (score >= 50) return 3; // Mejorable
+                    if (score >= 30) return 2; // Incorrecto leve
+                    return 1; // Incorrecto
+                  })(),
+                  comment: p.comment || '',
+                  na: p.status === 'no_evaluable',
+                  razon: p.razon || '',
+                  evidencia: p.evidencia || '',
+                  timestamp: p.timestamp || ''
+                }))
+              }];
+            }
+            
+            // Si ya es un detailedChecklist procesado, devolverlo tal como está
+            return parameters;
+          })(),
+          score: analysisData.analysisResult?.score || analysisData.analysisResult?.overallScore || analysisData.score,
+          fluidezScore10: analysisData.fluidezScore10,
+          // Agregar verificación y otros campos del análisis
+          verification: analysisData.analysisResult?.verification || analysisData.verification,
+          shotSummary: analysisData.analysisResult?.shotSummary || analysisData.shotSummary,
+          shots: analysisData.analysisResult?.shots || analysisData.shots,
+          // ⚖️ Agregar metadatos del score calculado
+          scoreMetadata: analysisData.analysisResult?.scoreMetadata || null,
+          // 🔢 Calcular resumen de evaluación automáticamente
+          resumen_evaluacion: (() => {
+            const parameters = analysisData.analysisResult?.technicalAnalysis?.parameters || analysisData.analysisResult?.detailedChecklist || analysisData.detailedChecklist || [];
+            let parametros_evaluados = 0;
+            let parametros_no_evaluables = 0;
+            const lista_no_evaluables: string[] = [];
+            
+            // Contar UNO POR UNO cada parámetro
+            if (Array.isArray(parameters) && parameters.length > 0) {
+              // Si son parámetros individuales (tienen score directamente)
+              if (parameters[0].score !== undefined) {
+                parameters.forEach((p: any, index: number) => {
+                                    if (p.status === 'no_evaluable' || p.na === true) {
+                    parametros_no_evaluables++;
+                    lista_no_evaluables.push(`${p.name}: ${p.razon || p.comment || 'no evaluable'}`);
+                  } else {
+                    parametros_evaluados++;
+                  }
+                });
+              } else {
+                // Si es detailedChecklist procesado, contar desde items
+                const flatItems = parameters.flatMap((c: any) => c.items || []);
+                flatItems.forEach((item: any, index: number) => {
+                                    if (item.na === true || item.status === 'no_evaluable') {
+                    parametros_no_evaluables++;
+                    lista_no_evaluables.push(`${item.name}: ${item.razon || item.comment || 'no evaluable'}`);
+                  } else {
+                    parametros_evaluados++;
+                  }
+                });
+              }
+            }
+
+                                                                        console.log(`📋 Lista no evaluables:`, lista_no_evaluables);
+                        // FORZAR el uso del cálculo automático, ignorar el resumen de la IA
+                        console.log(`✅ Parámetros evaluables: ${parametros_evaluados} (calculado automáticamente)`);
+            console.log(`❌ Parámetros no evaluables: ${parametros_no_evaluables} (calculado automáticamente)`);
+            
+            return {
+              parametros_evaluados,
+              parametros_no_evaluables,
+              lista_no_evaluables,
+              score_global: analysisData.analysisResult?.score || analysisData.analysisResult?.overallScore || analysisData.score || 0,
+              nota: `Score calculado con ${parametros_evaluados} de 21 parámetros evaluables (${parametros_no_evaluables} no evaluables por limitaciones del video)`,
+              confianza_analisis: parametros_evaluados >= 15 ? 'alta' : parametros_evaluados >= 10 ? 'media' : 'baja'
+            };
+          })(),
         } as any;
-        
+
         setAnalysis(shotAnalysis);
-        setFormattedDate(new Date(analysisResult.createdAt).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric'}));
+        setFormattedDate(new Date(analysisData.createdAt).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric'}));
         
         // Obtener datos del jugador
-        const playerResponse = await fetch(`/api/players/${analysisResult.playerId}`);
+        const playerResponse = await fetch(`/api/players/${analysisData.playerId}`);
         if (playerResponse.ok) {
           const playerData = await playerResponse.json();
           setPlayer(playerData.player);
@@ -101,92 +198,80 @@ export function AnalysisPageClient({ id }: { id: string }) {
     };
 
     fetchAnalysis();
-  }, [id]); // Removido user?.uid de las dependencias
+  }, [id]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <Loader2 className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4" />
-          <p>Cargando análisis...</p>
-        </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin" />
       </div>
     );
   }
 
   if (error || !analysis) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-destructive mb-4">Error</h2>
-          <p className="text-muted-foreground mb-4">
-            {error || 'No se pudo cargar el análisis'}
-          </p>
-          <Button asChild>
+      <div className="container mx-auto px-4 py-8">
+        <Card className="border-red-200 bg-red-50">
+          <CardHeader>
+            <CardTitle className="text-red-900">Error</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-red-700">{error || 'Análisis no encontrado'}</p>
             <Link href="/player/dashboard">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Volver al Dashboard
+              <Button className="mt-4">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Volver al Dashboard
+              </Button>
             </Link>
-          </Button>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
-
-  if (!player) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-destructive mb-4">Error</h2>
-          <p className="text-muted-foreground mb-4">
-            No se pudo cargar la información del jugador
-          </p>
-          <Button asChild>
-            <Link href="/player/dashboard">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Volver al Dashboard
-            </Link>
-          </Button>
-        </div>
-      </div>
-    );
-  }
-  
-  const coach = null; // TODO: Implementar carga de coach
-  const comments: any[] = [];
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex items-center gap-4">
-        <Button variant="outline" size="icon" asChild>
-          <Link href={`/players/${player.id}`}>
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <Avatar className="h-16 w-16">
-          <AvatarImage src={player.avatarUrl} alt={player.name} />
-          <AvatarFallback>{player.name.charAt(0)}</AvatarFallback>
-        </Avatar>
-        <div>
-          <p className="text-sm text-muted-foreground">{player.name}</p>
-          <h1 className="font-headline text-2xl font-bold">
-            Análisis de {analysis.shotType}
-          </h1>
-          <p className="font-semibold text-muted-foreground">
-            {formattedDate || "..."}
-            {coach && (
-              <span className="ml-2 inline-flex items-center gap-1.5 font-normal">
-                <UserCheck className="h-4 w-4" />
-                Entrenador: {coach.name}
-              </span>
-            )}
-          </p>
-        </div>
+    <div className="container mx-auto px-4 py-8">
+      {/* Header con info del jugador */}
+      <div className="mb-6">
+        <Link href="/player/dashboard">
+          <Button variant="ghost" size="sm" className="mb-4">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Volver al Dashboard
+          </Button>
+        </Link>
+        
+        {player && (
+          <div className="flex items-center gap-4 mb-4">
+            <Avatar className="h-16 w-16">
+              <AvatarImage src={player.avatarUrl} alt={player.name} />
+              <AvatarFallback>{player.name.charAt(0)}</AvatarFallback>
+            </Avatar>
+            <div>
+              <h1 className="text-2xl font-bold">{player.name}</h1>
+              <p className="text-muted-foreground">{formattedDate}</p>
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="w-full">
-         <AnalysisView analysis={analysis} player={player} />
-      </div>
+      {/* Componente principal de análisis */}
+      <AnalysisView analysis={analysis} player={player || {} as Player} />
+
+      {/* Sección de comentarios (deshabilitada por ahora) */}
+      {/* <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Comentarios
+          </CardTitle>
+          <CardDescription>
+            Deja tus comentarios sobre este análisis
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CommentForm analysisId={analysis.id} />
+        </CardContent>
+      </Card> */}
     </div>
   );
 }

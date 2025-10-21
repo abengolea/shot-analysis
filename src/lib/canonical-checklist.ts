@@ -136,16 +136,10 @@ export const CANONICAL_CATEGORIES: CanonicalCategoryDef[] = [
     category: "Seguimiento / Post-liberación",
     items: [
       {
-        id: "mantenimiento_equilibrio",
-        name: "Mantenimiento del equilibrio",
+        id: "equilibrio_general",
+        name: "Equilibrio general",
         description:
-          "Tronco y postura estables; evitar desvíos laterales o hacia atrás tras la liberación.",
-      },
-      {
-        id: "equilibrio_aterrizaje",
-        name: "Equilibrio en el aterrizaje",
-        description:
-          "Caer con ambos pies alineados, sin cruzarse ni desestabilizarse.",
+          "Tronco y postura estables durante toda la ejecución y aterrizaje controlado con ambos pies alineados.",
       },
       {
         id: "duracion_follow_through",
@@ -154,10 +148,10 @@ export const CANONICAL_CATEGORIES: CanonicalCategoryDef[] = [
           "Mantener brazo y muñeca extendidos hasta final del recorrido; no bajarlos antes.",
       },
       {
-        id: "consistencia_repetitiva",
-        name: "Consistencia repetitiva",
+        id: "consistencia_general",
+        name: "Consistencia general",
         description:
-          "Repetir el mismo gesto técnico en todas las fases y tiros, sin variaciones que afecten precisión.",
+          "Repetir el mismo gesto técnico en todas las fases y tiros, manteniendo consistencia en el movimiento y técnica.",
       },
     ],
   },
@@ -176,5 +170,4 @@ export function buildCanonicalChecklist(): ChecklistCategory[] {
     })) as DetailedChecklistItem[],
   }));
 }
-
 

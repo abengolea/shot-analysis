@@ -5,9 +5,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('[TEST] Iniciando request...');
-    
-    const formData = await request.formData();
+        const formData = await request.formData();
     console.log('[TEST] FormData recibido');
     
     const file = formData.get('video') as File;
@@ -42,8 +40,7 @@ export async function POST(request: NextRequest) {
     
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-    console.log('[TEST] Iniciando prueba de realidad de Gemini...');
-    console.log('[TEST] Tipo de prueba:', testType);
+        console.log('[TEST] Tipo de prueba:', testType);
     console.log('[TEST] Archivo:', file.name, '(', file.size, 'bytes)');
 
     let result;
@@ -204,9 +201,7 @@ async function testBasketballVideo(model: any, file: File) {
 }
 
 async function testGeneralAnalysis(model: any, file: File) {
-  console.log('[TEST] Prueba general de análisis...');
-  
-  const prompt = `
+    const prompt = `
   Analiza este video y describe exactamente lo que ves.
   
   IMPORTANTE: Solo describe lo que realmente ves, NO inventes contenido.

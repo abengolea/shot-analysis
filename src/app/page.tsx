@@ -9,7 +9,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-
 const features = [
   {
     icon: <Video />,
@@ -38,7 +37,6 @@ const features = [
 ];
 
 // Testimonials removed
-
 
 export default function LandingPage() {
   return (

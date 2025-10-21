@@ -5,9 +5,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('[TECHNICAL-MULTIPLE] Iniciando análisis técnico múltiple...');
-    
-    const formData = await request.formData();
+        const formData = await request.formData();
     const file = formData.get('video') as File;
 
     if (!file) {
@@ -40,9 +38,7 @@ export async function POST(request: NextRequest) {
     const base64 = buffer.toString('base64');
     const mimeType = file.type || 'video/mp4';
 
-    console.log('[TECHNICAL-MULTIPLE] Ejecutando 3 análisis del mismo video...');
-
-    const prompt = `
+        const prompt = `
     Eres un entrenador experto de baloncesto. Analiza este video de lanzamiento y evalúa los 22 parámetros técnicos del tiro.
 
     🎯 SISTEMA DE PESOS ACTUALIZADO (para calcular score_global):

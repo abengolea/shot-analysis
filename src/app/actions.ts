@@ -558,9 +558,7 @@ function mapPlayerLevel(playerLevel: string): PlayerLevel {
 // Obtener usuario actual usando Firebase Admin SDK
 const getCurrentUser = async (userId: string) => {
     try {
-        console.log(`🔍 Obteniendo usuario actual con Admin SDK: ${userId}`);
-        
-        if (!adminDb) {
+                if (!adminDb) {
             throw new Error("Firebase Admin Firestore no está inicializado");
         }
         
@@ -569,8 +567,7 @@ const getCurrentUser = async (userId: string) => {
         
         if (playerDoc.exists) {
             const playerData = playerDoc.data();
-            console.log(`✅ Jugador encontrado: ${playerData?.name}`);
-            return { 
+                        return { 
                 id: userId, 
                 name: playerData?.name || 'Usuario',
                 playerLevel: playerData?.playerLevel || 'Por definir',
@@ -579,8 +576,7 @@ const getCurrentUser = async (userId: string) => {
             };
         }
         
-        console.log(`❌ Usuario no encontrado: ${userId}`);
-        return null;
+                return null;
     } catch (error) {
         console.error('❌ Error obteniendo usuario con Admin SDK:', error);
         return null;
@@ -591,11 +587,7 @@ const getCurrentUser = async (userId: string) => {
 export async function startAnalysisOld(prevState: any, formData: FormData) {
     try {
         console.log("🚀 Iniciando análisis OLD con Genkit (sin frames del cliente)...");
-        console.log("🔍 Variables de entorno:");
-        console.log("  - GOOGLE_API_KEY:", process.env.GOOGLE_API_KEY ? "✅ Configurado" : "❌ No configurado");
-        console.log("  - GEMINI_API_KEY:", process.env.GEMINI_API_KEY ? "✅ Configurado" : "❌ No configurado");
-
-        const userId = formData.get('userId') as string;
+                                const userId = formData.get('userId') as string;
         const coachId = (formData.get('coachId') as string | null) || null;
         if (!userId) return { message: "ID de usuario requerido.", error: true };
         const shotType = formData.get('shotType') as string;
@@ -786,9 +778,7 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
             videoPath = videoBackUrl || videoFrontUrl || videoLeftUrl || videoRightUrl || '';
             
             const videoCount = [videoBackUrl, videoFrontUrl, videoLeftUrl, videoRightUrl].filter(Boolean).length;
-            console.log(`✅ ${videoCount} videos recibidos del cliente`);
-            
-            if (!videoPath) {
+                        if (!videoPath) {
                 return { message: 'No se recibió ninguna URL de video válida.', error: true };
             }
         } else {
@@ -803,26 +793,21 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
             
             // Subir videos adicionales si existen
             if (videoLeft && videoLeft.size > 0) {
-                console.log('📹 Subiendo video izquierdo...');
-                videoLeftUrl = await uploadVideoToStorage(videoLeft, currentUser.id, { maxSeconds: 30 });
+                                videoLeftUrl = await uploadVideoToStorage(videoLeft, currentUser.id, { maxSeconds: 30 });
             }
             if (videoRight && videoRight.size > 0) {
-                console.log('📹 Subiendo video derecho...');
-                videoRightUrl = await uploadVideoToStorage(videoRight, currentUser.id, { maxSeconds: 30 });
+                                videoRightUrl = await uploadVideoToStorage(videoRight, currentUser.id, { maxSeconds: 30 });
             }
             if (primaryIsBack === false && formBack && formBack.size > 0) {
-                console.log('📹 Subiendo video trasero adicional...');
-                videoBackUrl = await uploadVideoToStorage(formBack, currentUser.id, { maxSeconds: 30 });
+                                videoBackUrl = await uploadVideoToStorage(formBack, currentUser.id, { maxSeconds: 30 });
             }
             if (primaryIsBack === true && formFront && formFront.size > 0) {
-                console.log('📹 Subiendo video frontal adicional...');
-                videoFrontUrl = await uploadVideoToStorage(formFront, currentUser.id, { maxSeconds: 30 });
+                                videoFrontUrl = await uploadVideoToStorage(formFront, currentUser.id, { maxSeconds: 30 });
             }
             videoPath = uploadedPrimaryUrl;
             
             const totalVideos = [videoBackUrl, videoFrontUrl, videoLeftUrl, videoRightUrl].filter(Boolean).length;
-            console.log(`✅ ${totalVideos} videos subidos exitosamente`);
-        }
+                    }
 
         // Guardar análisis
         const analysisData: any = {
@@ -916,9 +901,7 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
             base64Video4 = processedVideo4.toString('base64');
         }
 
-        console.log('✅ Videos preprocesados, iniciando análisis...');
-        
-        // Log de tamaños de videos para debugging
+                // Log de tamaños de videos para debugging
         console.log(`📊 Tamaños de videos base64:`, {
             video1: `${Math.round(base64Video1.length / 1024)}KB`,
             video2: base64Video2 ? `${Math.round(base64Video2.length / 1024)}KB` : 'N/A',
@@ -929,21 +912,14 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
         let analysisResult;
         try {
             analysisResult = await analyzeVideoSingleCall(base64Video1, base64Video2, base64Video3, base64Video4);
-            console.log('✅ Análisis completado exitosamente');
-        } catch (error) {
+                    } catch (error) {
             console.error('❌ Error en el análisis:', error);
             throw new Error(`Error en el análisis de video: ${error instanceof Error ? error.message : 'Error desconocido'}`);
         }
 
         // Convertir parámetros en categorías para el frontend
         const parameters = analysisResult.technicalAnalysis?.parameters || [];
-        
-        console.log('🔍 Debug - Parámetros recibidos de Gemini:', parameters.map((p: any) => ({
-            name: p.name,
-            score: p.score,
-            status: p.status
-        })));
-        
+
         // Función para crear un resumen descriptivo del análisis
         const createAnalysisSummary = (analysisResult: any): string => {
             const verification = analysisResult.verification || {};
@@ -1000,9 +976,8 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
                 'Extensión completa del brazo': 'extension_completa_brazo',
                 'Giro de la pelota': 'giro_pelota',
                 'Ángulo de salida': 'angulo_salida',
-                'Mantenimiento del equilibrio': 'mantenimiento_equilibrio',
-                'Equilibrio en aterrizaje': 'equilibrio_aterrizaje',
-                'Duración del follow through': 'duracion_follow_through',
+                'Equilibrio post-liberación y aterrizaje': 'equilibrio_post_liberacion',
+                'Duración del follow-through': 'duracion_follow_through',
                 'Consistencia del movimiento': 'consistencia_repetitiva',
                 'Consistencia técnica': 'consistencia_tecnica',
                 'Consistencia de resultados': 'consistencia_resultados'
@@ -1018,8 +993,20 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
                     id: getCanonicalId(p.name),
                     name: p.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
                     description: p.comment || '',
-                    status: p.status || 'Mejorable',
-                    rating: Math.round((p.score || 0) / 20) as 0 | 1 | 2 | 3 | 4 | 5,
+                    status: (() => {
+                        const score = p.score || 0;
+                        if (score >= 70) return 'Correcto';
+                        if (score >= 36) return 'Mejorable';
+                        return 'Incorrecto';
+                    })(), // Forzar cálculo basado en score, ignorar status de IA
+                    rating: (() => {
+                        const score = p.score || 0;
+                        if (score >= 90) return 5; // Excelente
+                        if (score >= 70) return 4; // Correcto
+                        if (score >= 50) return 3; // Mejorable
+                        if (score >= 30) return 2; // Incorrecto leve
+                        return 1; // Incorrecto
+                    })() as 0 | 1 | 2 | 3 | 4 | 5,
                     comment: p.comment || '',
                     na: p.status === 'no_evaluable',
                     razon: p.razon || '',
@@ -1046,26 +1033,7 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
             shots: analysisResult.shots,
         };
 
-        console.log('🔍 Debug - analysisResult structure:', {
-            hasTechnicalAnalysis: !!analysisResult.technicalAnalysis,
-            hasParameters: !!analysisResult.technicalAnalysis?.parameters,
-            parametersLength: analysisResult.technicalAnalysis?.parameters?.length || 0,
-            overallScore: analysisResult.technicalAnalysis?.overallScore,
-            strengths: analysisResult.technicalAnalysis?.strengths,
-            weaknesses: analysisResult.technicalAnalysis?.weaknesses,
-            recommendations: analysisResult.technicalAnalysis?.recommendations,
-            // VERIFICACIÓN
-            hasVerification: !!analysisResult.verification,
-            verification: analysisResult.verification,
-            // SHOTS
-            hasShots: !!analysisResult.shots,
-            shotsLength: analysisResult.shots?.length || 0,
-            // SHOT SUMMARY
-            hasShotSummary: !!analysisResult.shotSummary,
-            shotSummary: analysisResult.shotSummary
-        });
-
-        console.log('🔍 Debug - Videos procesados:', {
+                console.log('🔍 Debug - Videos procesados:', {
             video1: !!base64Video1,
             video2: !!base64Video2,
             video3: !!base64Video3,
@@ -1073,27 +1041,7 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
             totalVideos: [base64Video1, base64Video2, base64Video3, base64Video4].filter(Boolean).length
         });
         
-        console.log('🔍 Debug - Tamaños de videos base64:', {
-            video1Size: base64Video1?.length || 0,
-            video2Size: base64Video2?.length || 0,
-            video3Size: base64Video3?.length || 0,
-            video4Size: base64Video4?.length || 0
-        });
-
-        console.log('🔍 Debug - URLs de videos recibidas:', {
-            videoPath,
-            videoFrontUrl,
-            videoLeftUrl,
-            videoRightUrl,
-            videoBackUrl,
-            hasUploadedUrls,
-            uploadedBackUrl,
-            uploadedFrontUrl,
-            uploadedLeftUrl,
-            uploadedRightUrl
-        });
-
-        console.log('🔍 Debug - FormData recibido:', {
+                        console.log('🔍 Debug - FormData recibido:', {
             hasVideoBack: formData.has('video-back'),
             hasVideoFront: formData.has('video-front'),
             hasVideoLeft: formData.has('video-left'),
@@ -1104,23 +1052,8 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
             hasUploadedRightUrl: formData.has('uploadedRightUrl')
         });
 
-        console.log('🔍 Debug - adaptedAnalysisResult:', {
-            detailedChecklistLength: adaptedAnalysisResult.detailedChecklist?.length || 0,
-            overallScore: adaptedAnalysisResult.overallScore,
-            strengthsLength: adaptedAnalysisResult.strengths?.length || 0,
-            weaknessesLength: adaptedAnalysisResult.weaknesses?.length || 0,
-            recommendationsLength: adaptedAnalysisResult.recommendations?.length || 0,
-            hasVerification: !!adaptedAnalysisResult.verification,
-            verification: adaptedAnalysisResult.verification
-        });
-
-        console.log('🔍 Debug - detailedChecklist structure:', JSON.stringify(adaptedAnalysisResult.detailedChecklist, null, 2));
-        console.log('🔍 Debug - parameters from Gemini:', parameters.map((p: any) => ({ name: p.name, score: p.score, status: p.status })));
-        console.log('🔍 Debug - ALL parameter names:', parameters.map((p: any) => p.name));
-
         // Guardar análisis mejorado con metadatos adicionales
-        console.log('💾 Guardando análisis en Firestore...');
-        // Función para limpiar valores undefined
+                // Función para limpiar valores undefined
         const cleanForFirestore = (obj: any): any => {
             if (obj === null || obj === undefined) return null;
             if (typeof obj !== 'object') return obj;
@@ -1160,9 +1093,7 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
         });
 
         await db.collection('analyses').doc(analysisRef.id).update(updateData);
-        console.log('✅ Análisis guardado exitosamente en Firestore');
-
-        return {
+                return {
             message: "Video analizado exitosamente con IA.",
             analysisId: analysisRef.id,
             videoUrl: videoPath,
@@ -1220,9 +1151,7 @@ export async function registerAdrian(prevState: any, _formData: FormData) {
 // 🧪 FUNCIÓN DE ANÁLISIS DE PRUEBA CON PROMPT SIMPLIFICADO
 export async function startAnalysisTest(prevState: any, formData: FormData) {
     try {
-        console.log("🧪 Iniciando análisis de PRUEBA con prompt simplificado...");
-        
-        const userId = formData.get('userId') as string;
+                const userId = formData.get('userId') as string;
         const coachId = (formData.get('coachId') as string | null) || null;
         if (!userId) return { message: "ID de usuario requerido.", error: true };
         
@@ -1253,16 +1182,7 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
             return { message: "El video trasero es obligatorio para el análisis.", error: true };
         }
 
-        console.log('🔍 Debug - Archivos detectados:', {
-            hasUploadedUrls,
-            hasFormFiles,
-            formBack: formBack?.name || 'N/A',
-            formFront: formFront?.name || 'N/A',
-            videoLeft: videoLeft?.name || 'N/A',
-            videoRight: videoRight?.name || 'N/A'
-        });
-
-        if (!adminDb || !adminStorage) {
+                if (!adminDb || !adminStorage) {
             return { message: "Error de configuración del servidor.", error: true };
         }
 
@@ -1285,9 +1205,7 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
         const analysisRef = db.collection('analyses').doc();
         const analysisId = analysisRef.id;
 
-        console.log('📝 Creando análisis de prueba:', analysisId);
-
-        // Datos base del análisis
+                // Datos base del análisis
         const baseAnalysisData = {
             id: analysisId,
             playerId: userId,
@@ -1316,9 +1234,7 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
             videoLeftUrl = uploadedLeftUrl;
             videoRightUrl = uploadedRightUrl;
         } else {
-            console.log('📤 Procesando archivos directos...');
-            
-            // Verificar que al menos el video trasero esté disponible
+                        // Verificar que al menos el video trasero esté disponible
             if (!formBack && !formFront) {
                 return { message: "El video trasero es obligatorio para el análisis.", error: true };
             }
@@ -1334,15 +1250,13 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
                     const backFile = bucket.file(backFileName);
                     await backFile.save(Buffer.from(await formBack.arrayBuffer()));
                     videoBackUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(backFileName)}?alt=media`;
-                    console.log('✅ Video trasero subido:', backFileName);
-                } else if (formFront && formFront.size > 0) {
+                                    } else if (formFront && formFront.size > 0) {
                     // Si no hay video trasero, usar el frontal como principal
                     const frontFileName = `videos/${userId}/front-${timestamp}.mp4`;
                     const frontFile = bucket.file(frontFileName);
                     await frontFile.save(Buffer.from(await formFront.arrayBuffer()));
                     videoBackUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(frontFileName)}?alt=media`;
-                    console.log('✅ Video frontal usado como principal:', frontFileName);
-                }
+                                    }
 
                 // Video frontal (opcional)
                 if (formFront && formFront.size > 0 && formBack && formBack.size > 0) {
@@ -1350,8 +1264,7 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
                     const frontFile = bucket.file(frontFileName);
                     await frontFile.save(Buffer.from(await formFront.arrayBuffer()));
                     videoFrontUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(frontFileName)}?alt=media`;
-                    console.log('✅ Video frontal subido:', frontFileName);
-                }
+                                    }
 
                 // Video izquierdo (opcional)
                 if (videoLeft && videoLeft.size > 0) {
@@ -1359,8 +1272,7 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
                     const leftFile = bucket.file(leftFileName);
                     await leftFile.save(Buffer.from(await videoLeft.arrayBuffer()));
                     videoLeftUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(leftFileName)}?alt=media`;
-                    console.log('✅ Video izquierdo subido:', leftFileName);
-                }
+                                    }
 
                 // Video derecho (opcional)
                 if (videoRight && videoRight.size > 0) {
@@ -1368,8 +1280,7 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
                     const rightFile = bucket.file(rightFileName);
                     await rightFile.save(Buffer.from(await videoRight.arrayBuffer()));
                     videoRightUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(rightFileName)}?alt=media`;
-                    console.log('✅ Video derecho subido:', rightFileName);
-                }
+                                    }
 
             } catch (uploadError) {
                 console.error('❌ Error subiendo videos:', uploadError);
@@ -1392,12 +1303,10 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
         if (formBack && formBack.size > 0) {
             videoBuffer1 = Buffer.from(await formBack.arrayBuffer());
             fileName1 = formBack.name;
-            console.log('✅ Video trasero procesado directamente:', { size: videoBuffer1.length, name: fileName1 });
-        } else if (formFront && formFront.size > 0) {
+                    } else if (formFront && formFront.size > 0) {
             videoBuffer1 = Buffer.from(await formFront.arrayBuffer());
             fileName1 = formFront.name;
-            console.log('✅ Video frontal procesado como principal:', { size: videoBuffer1.length, name: fileName1 });
-        } else {
+                    } else {
             throw new Error('No hay videos disponibles para procesar');
         }
 
@@ -1412,26 +1321,21 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
         if (formFront && formFront.size > 0 && formBack && formBack.size > 0) {
             videoBuffer2 = Buffer.from(await formFront.arrayBuffer());
             fileName2 = formFront.name;
-            console.log('✅ Video frontal procesado:', { size: videoBuffer2.length, name: fileName2 });
-        }
+                    }
 
         // Video 3 - usar archivo directo si está disponible
         if (videoLeft && videoLeft.size > 0) {
             videoBuffer3 = Buffer.from(await videoLeft.arrayBuffer());
             fileName3 = videoLeft.name;
-            console.log('✅ Video izquierdo procesado:', { size: videoBuffer3.length, name: fileName3 });
-        }
+                    }
 
         // Video 4 - usar archivo directo si está disponible
         if (videoRight && videoRight.size > 0) {
             videoBuffer4 = Buffer.from(await videoRight.arrayBuffer());
             fileName4 = videoRight.name;
-            console.log('✅ Video derecho procesado:', { size: videoBuffer4.length, name: fileName4 });
-        }
+                    }
 
-        console.log('✅ Videos descargados, iniciando análisis con prompt simplificado...');
-        
-        // Log de tamaños de videos para debugging
+                // Log de tamaños de videos para debugging
         console.log(`📊 Tamaños de videos:`, {
             video1: `${Math.round(videoBuffer1.length / 1024)}KB`,
             video2: videoBuffer2 ? `${Math.round(videoBuffer2.length / 1024)}KB` : 'N/A',
@@ -1455,8 +1359,7 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
                 playerLevel,
                 shotType
             );
-            console.log('✅ Análisis con prompt simplificado completado exitosamente');
-        } catch (error) {
+                    } catch (error) {
             console.error('❌ Error en el análisis:', error);
             throw new Error(`Error en el análisis de video: ${error instanceof Error ? error.message : 'Error desconocido'}`);
         }
@@ -1467,8 +1370,20 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
                 id: param.name.toLowerCase().replace(/\s+/g, '_'),
                 name: param.name,
                 description: param.comment,
-                status: param.status,
-                rating: Math.round(param.score / 20), // Convertir 0-100 a 0-5
+                status: (() => {
+                    const score = param.score || 0;
+                    if (score >= 70) return 'Correcto';
+                    if (score >= 36) return 'Mejorable';
+                    return 'Incorrecto';
+                })(), // Forzar cálculo basado en score, ignorar status de IA
+                rating: (() => {
+                    const score = param.score || 0;
+                    if (score >= 90) return 5; // Excelente
+                    if (score >= 70) return 4; // Correcto
+                    if (score >= 50) return 3; // Mejorable
+                    if (score >= 30) return 2; // Incorrecto leve
+                    return 1; // Incorrecto
+                })(), // Convertir 0-100 a 1-5 con escala correcta
                 comment: param.comment,
                 na: param.status === 'no_evaluable',
                 razon: param.status === 'no_evaluable' ? param.comment : null,
@@ -1493,17 +1408,7 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
             parametersSample: analysisResult.technicalAnalysis?.parameters?.slice(0, 2) || 'N/A'
         });
 
-        console.log('🔍 Debug - adaptedAnalysisResult:', {
-            detailedChecklistLength: adaptedAnalysisResult.detailedChecklist?.length || 0,
-            overallScore: adaptedAnalysisResult.overallScore,
-            strengthsLength: adaptedAnalysisResult.strengths?.length || 0,
-            weaknessesLength: adaptedAnalysisResult.weaknesses?.length || 0,
-            recommendationsLength: adaptedAnalysisResult.recommendations?.length || 0,
-            hasVerification: !!adaptedAnalysisResult.verification,
-            verification: adaptedAnalysisResult.verification
-        });
-
-        // Función para limpiar valores undefined antes de guardar en Firestore
+                // Función para limpiar valores undefined antes de guardar en Firestore
         const cleanForFirestore = (obj: any): any => {
             if (obj === null || obj === undefined) return null;
             if (typeof obj !== 'object') return obj;
@@ -1544,9 +1449,7 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
         });
 
         await db.collection('analyses').doc(analysisRef.id).update(updateData);
-        console.log('✅ Análisis de prueba guardado exitosamente en Firestore');
-
-        revalidatePath('/player/dashboard');
+                revalidatePath('/player/dashboard');
         return { 
             message: `Análisis de prueba completado exitosamente.`, 
             error: false, 
@@ -1564,12 +1467,7 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
 // 🎯 FUNCIÓN PRINCIPAL DE ANÁLISIS: PROMPT OPTIMIZADO + PREPROCESAMIENTO FFMPEG + PESOS CONFIGURABLES
 export async function startAnalysis(prevState: any, formData: FormData) {
     try {
-        console.log("🎯 Iniciando análisis con pesos configurables...");
-        console.log("🔍 Variables de entorno:");
-        console.log("  - GOOGLE_API_KEY:", process.env.GOOGLE_API_KEY ? "✅ Configurado" : "❌ No configurado");
-        console.log("  - GEMINI_API_KEY:", process.env.GEMINI_API_KEY ? "✅ Configurado" : "❌ No configurado");
-
-        const userId = formData.get('userId') as string;
+                                        const userId = formData.get('userId') as string;
         const coachId = (formData.get('coachId') as string | null) || null;
         if (!userId) return { message: "ID de usuario requerido.", error: true };
         const shotType = formData.get('shotType') as string;
@@ -1615,34 +1513,22 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         if (videoFile1) {
             videoBackUrl = await uploadVideoToStorage(videoFile1, userId, { maxSeconds: 30 });
             videoUrl = videoBackUrl; // El back es el video principal
-            console.log('✅ Video back subido:', videoBackUrl);
-        }
+                    }
         
         if (videoFile2) {
             videoFrontUrl = await uploadVideoToStorage(videoFile2, userId, { maxSeconds: 30 });
             if (!videoUrl) videoUrl = videoFrontUrl; // Si no hay back, front es el principal
-            console.log('✅ Video front subido:', videoFrontUrl);
-        }
+                    }
         
         if (videoFile3) {
             videoLeftUrl = await uploadVideoToStorage(videoFile3, userId, { maxSeconds: 30 });
-            console.log('✅ Video left subido:', videoLeftUrl);
-        }
+                    }
         
         if (videoFile4) {
             videoRightUrl = await uploadVideoToStorage(videoFile4, userId, { maxSeconds: 30 });
-            console.log('✅ Video right subido:', videoRightUrl);
-        }
+                    }
 
-        console.log('📹 URLs de videos guardadas:', {
-            videoUrl: videoUrl ? 'Sí' : 'No',
-            videoBackUrl: videoBackUrl ? 'Sí' : 'No',
-            videoFrontUrl: videoFrontUrl ? 'Sí' : 'No',
-            videoLeftUrl: videoLeftUrl ? 'Sí' : 'No',
-            videoRightUrl: videoRightUrl ? 'Sí' : 'No'
-        });
-
-        // Guardar análisis inicial con URLs de videos
+                // Guardar análisis inicial con URLs de videos
         await adminDb.collection('analyses').doc(analysisId).set({
             id: analysisId,
             playerId: userId,
@@ -1748,28 +1634,13 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 videoBuffers[3] || null,
                 fileNames[3] || null
             );
-            console.log('✅ Análisis híbrido completado exitosamente');
-        } catch (error) {
+                    } catch (error) {
             console.error('❌ Error en el análisis híbrido:', error);
             throw new Error(`Error en el análisis de video: ${error instanceof Error ? error.message : 'Error desconocido'}`);
         }
 
-        console.log('🔍 Debug - analysisResult structure:', {
-            hasTechnicalAnalysis: !!analysisResult.technicalAnalysis,
-            hasParameters: !!analysisResult.technicalAnalysis?.parameters,
-            parametersLength: analysisResult.technicalAnalysis?.parameters?.length || 0,
-            hasStrengths: !!analysisResult.technicalAnalysis?.strengths,
-            hasWeaknesses: !!analysisResult.technicalAnalysis?.weaknesses,
-            hasRecommendations: !!analysisResult.technicalAnalysis?.recommendations,
-            overallScore: analysisResult.technicalAnalysis?.overallScore
-        });
-
-        console.log('🔍 Debug - analysisResult completo:', JSON.stringify(analysisResult, null, 2));
-
-        // ⚖️ CALCULAR SCORE GLOBAL CON PESOS CONFIGURABLES
-        console.log('⚖️ Calculando score global con pesos personalizados...');
-        
-        const { loadWeightsFromFirestore } = await import('@/lib/scoring');
+                // ⚖️ CALCULAR SCORE GLOBAL CON PESOS CONFIGURABLES
+                const { loadWeightsFromFirestore } = await import('@/lib/scoring');
         
         // Determinar tipo de tiro para cargar pesos correspondientes
         let shotTypeKey = 'tres';
@@ -1825,14 +1696,19 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 'giro_de_la_pelota': 'giro_pelota',
                 'angulo_de_salida': 'angulo_salida',
                 // SEGUIMIENTO
-                'mantenimiento_del_equilibrio': 'mantenimiento_equilibrio',
-                'equilibrio_en_aterrizaje': 'equilibrio_aterrizaje',
-                'equilibrio_en_el_aterrizaje': 'equilibrio_aterrizaje',
+                'equilibrio_post_liberacion_y_aterrizaje': 'equilibrio_general',
+                'mantenimiento_del_equilibrio': 'equilibrio_general',
+                'equilibrio_en_aterrizaje': 'equilibrio_general',
+                'equilibrio_en_el_aterrizaje': 'equilibrio_general',
+                'equilibrio_general': 'equilibrio_general',
                 'duracion_del_follow_through': 'duracion_follow_through',
+                'duracion_del_followthrough': 'duracion_follow_through',
                 // CONSISTENCIA
-                'consistencia_del_movimiento': 'consistencia_repetitiva',
-                'consistencia_tecnica': 'consistencia_repetitiva',
-                'consistencia_de_resultados': 'consistencia_repetitiva'
+                'consistencia_del_movimiento': 'consistencia_general',
+                'consistencia_tecnica': 'consistencia_general',
+                'consistencia_de_resultados': 'consistencia_general',
+                'consistencia_repetitiva': 'consistencia_general',
+                'consistencia_general': 'consistencia_general'
             };
             
             return mapping[normalized] || normalized;
@@ -1913,20 +1789,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                    technicalAnalysis: analysisResult.technicalAnalysis
                };
 
-               console.log('🔍 Debug - adaptedAnalysisResult después del mapeo:', {
-                   hasDetailedChecklist: !!adaptedAnalysisResult.detailedChecklist,
-                   detailedChecklistLength: adaptedAnalysisResult.detailedChecklist?.length || 0,
-                   hasStrengths: !!adaptedAnalysisResult.strengths,
-                   strengthsLength: adaptedAnalysisResult.strengths?.length || 0,
-                   hasWeaknesses: !!adaptedAnalysisResult.weaknesses,
-                   weaknessesLength: adaptedAnalysisResult.weaknesses?.length || 0,
-                   hasRecommendations: !!adaptedAnalysisResult.recommendations,
-                   recommendationsLength: adaptedAnalysisResult.recommendations?.length || 0,
-                   overallScore: adaptedAnalysisResult.overallScore,
-                   score: adaptedAnalysisResult.score
-               });
-
-        // Limpiar valores undefined para Firestore
+                       // Limpiar valores undefined para Firestore
         const cleanForFirestore = (obj: any): any => {
             if (obj === null || obj === undefined) return null;
             if (Array.isArray(obj)) return obj.map(cleanForFirestore);
@@ -1944,40 +1807,43 @@ export async function startAnalysis(prevState: any, formData: FormData) {
 
         const cleanedResult = cleanForFirestore(adaptedAnalysisResult);
 
-        console.log('🔍 Debug - adaptedAnalysisResult:', {
-            hasDetailedChecklist: !!adaptedAnalysisResult.detailedChecklist,
-            detailedChecklistLength: adaptedAnalysisResult.detailedChecklist?.length || 0,
-            hasStrengths: !!adaptedAnalysisResult.strengths,
-            strengthsLength: adaptedAnalysisResult.strengths?.length || 0,
-            hasWeaknesses: !!adaptedAnalysisResult.weaknesses,
-            weaknessesLength: adaptedAnalysisResult.weaknesses?.length || 0,
-            hasRecommendations: !!adaptedAnalysisResult.recommendations,
-            recommendationsLength: adaptedAnalysisResult.recommendations?.length || 0,
-            overallScore: adaptedAnalysisResult.overallScore
+                console.log('🔍 Intentando guardar en Firestore...', {
+            analysisId,
+            hasAdminDb: !!adminDb,
+            resultSize: JSON.stringify(cleanedResult).length
         });
-
+        
         await adminDb.collection('analyses').doc(analysisId).update({
             status: 'analyzed',
             analysisResult: cleanedResult,
             updatedAt: new Date().toISOString()
         });
 
-        console.log('✅ Análisis híbrido guardado en Firestore:', analysisId);
-
-        // 🖼️ Extraer y subir keyframes en background (no bloqueante)
-        const { extractAndUploadKeyframesAsync } = await import('@/lib/keyframe-uploader');
-        extractAndUploadKeyframesAsync({
-            analysisId,
-            videoBuffers: {
-                front: videoBuffers[0],
-                back: videoBuffers[1],
-                left: videoBuffers[2],
-                right: videoBuffers[3]
-            },
-            userId
+                // Keyframes tradicionales (asíncronos, no bloquean)
+                console.log('🔍 Debug - videoBuffers disponibles:', {
+            front: videoBuffers[0] ? `${(videoBuffers[0].length / 1024 / 1024).toFixed(2)}MB` : 'No disponible',
+            back: videoBuffers[1] ? `${(videoBuffers[1].length / 1024 / 1024).toFixed(2)}MB` : 'No disponible',
+            left: videoBuffers[2] ? `${(videoBuffers[2].length / 1024 / 1024).toFixed(2)}MB` : 'No disponible',
+            right: videoBuffers[3] ? `${(videoBuffers[3].length / 1024 / 1024).toFixed(2)}MB` : 'No disponible'
+        });
+        
+        // Start traditional keyframe extraction without waiting
+        import('@/lib/keyframe-uploader').then(({ extractAndUploadKeyframesAsync }) => {
+                        extractAndUploadKeyframesAsync({
+                analysisId,
+                videoBuffers: {
+                    front: videoBuffers[0],
+                    back: videoBuffers[1],
+                    left: videoBuffers[2],
+                    right: videoBuffers[3]
+                },
+                userId
+            }).then(() => {
+                            }).catch(err => {
+                console.error('❌ [Keyframes] Error en extracción asíncrona:', err);
+            });
         }).catch(err => {
-            console.error('❌ [Keyframes] Error en extracción asíncrona:', err);
-            // No afecta al resultado principal
+            console.error('❌ [Keyframes] Error al cargar módulo keyframe-uploader:', err);
         });
 
         return {

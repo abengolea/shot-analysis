@@ -133,8 +133,7 @@ export function RegisterForm() {
                         <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
                     )}
                 </div>
-                
-                
+
                  <div className="space-y-2">
                     <Label htmlFor="password">Contraseña</Label>
                     <div className="relative">

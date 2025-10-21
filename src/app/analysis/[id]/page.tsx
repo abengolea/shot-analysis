@@ -6,6 +6,8 @@ interface AnalysisPageProps {
   }
 }
 
-export default function AnalysisPage({ params }: AnalysisPageProps) {
-  return <AnalysisPageClient id={params.id} />
+export default async function AnalysisPage({ params }: AnalysisPageProps) {
+  const { id } = await params;
+  return <AnalysisPageClient id={id} />
 }
+

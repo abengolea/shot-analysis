@@ -23,9 +23,7 @@ export async function generateVideoKeyframes(
   analysisId: string
 ): Promise<ExtractedKeyframes> {
   try {
-    console.log('🎬 Generando keyframes simulados para:', videoUrl);
-    
-    // Crear keyframes simulados con diferentes momentos del tiro
+        // Crear keyframes simulados con diferentes momentos del tiro
     const keyframeMoments = [
       { time: '00:00:01', description: 'Inicio del movimiento' },
       { time: '00:00:02', description: 'Preparación del tiro' },
@@ -46,8 +44,7 @@ export async function generateVideoKeyframes(
       const keyframeUrl = `${baseUrl}/${userId}/${analysisId}/${fileName}`;
       
       extractedFrames.push(keyframeUrl);
-      console.log(`✅ Keyframe ${i + 1} generado: ${moment.description}`);
-    }
+          }
     
     // Simular 4 ángulos (por ahora todos iguales)
     const keyframes: ExtractedKeyframes = {
@@ -57,8 +54,7 @@ export async function generateVideoKeyframes(
       right: extractedFrames.slice(0, 3)
     };
     
-    console.log('🎯 Keyframes simulados generados exitosamente:', keyframes);
-    return keyframes;
+        return keyframes;
     
   } catch (error) {
     console.error('❌ Error generando keyframes simulados:', error);
@@ -74,9 +70,7 @@ export async function extractVideoKeyframes(
   videoPath: string,
   outputDir: string
 ): Promise<ExtractedKeyframes> {
-  console.log('⚠️ FFmpeg no disponible, usando keyframes simulados');
-  
-  // Generar keyframes simulados como fallback
+    // Generar keyframes simulados como fallback
   const analysisId = path.basename(outputDir).replace('keyframes_', '');
   return generateVideoKeyframes('placeholder', analysisId);
 }
@@ -104,8 +98,7 @@ export async function cleanupTempFiles(files: string[]): Promise<void> {
         await fs.unlink(file);
         console.log(`🗑️ Archivo temporal eliminado: ${file}`);
       } catch (unlinkError) {
-        console.log(`⚠️ No se pudo eliminar archivo temporal: ${file}`);
-      }
+              }
     }
   } catch (error) {
     console.error('❌ Error limpiando archivos temporales:', error);
@@ -120,9 +113,6 @@ export async function generateRealKeyframes(
   videoBuffer: Buffer,
   analysisId: string
 ): Promise<ExtractedKeyframes> {
-  console.log('🚧 Función de keyframes reales no implementada aún');
-  console.log('📝 Por ahora se usan keyframes simulados');
-  
-  // Retornar keyframes simulados como fallback
+      // Retornar keyframes simulados como fallback
   return generateVideoKeyframes('placeholder', analysisId);
 }

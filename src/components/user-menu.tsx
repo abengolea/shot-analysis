@@ -41,15 +41,17 @@ export function UserMenu() {
       };
       // Implementar dos contadores independientes y sumarlos
       let c1 = 0, c2 = 0;
-      unsubs.push(onSnapshot(q1, (snap) => { c1 = snap.size; setUnreadCount(c1 + c2); }));
-      unsubs.push(onSnapshot(q2, (snap) => { c2 = snap.size; setUnreadCount(c1 + c2); }));
+      unsubs.push(onSnapshot(q1, (snap) => { c1 = snap.size; setUnreadCount(c1 + c2); }, (error) => {
+        console.error('Error en listener de mensajes no leídos (q1):', error);
+      }));
+      unsubs.push(onSnapshot(q2, (snap) => { c2 = snap.size; setUnreadCount(c1 + c2); }, (error) => {
+        console.error('Error en listener de mensajes no leídos (q2):', error);
+      }));
       return () => { unsubs.forEach(u => u()); };
     } catch (e) {
       console.error('Error suscribiendo a mensajes no leídos:', e);
     }
   }, [user]);
-
-  
 
   const handleSignOut = async () => {
     await signOutUser();

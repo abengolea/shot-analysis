@@ -39,6 +39,15 @@ const nextConfig: NextConfig = {
         path: false,
         canvas: false,
       };
+
+      // Configuración para FFmpeg.wasm Web Workers
+      config.output = {
+        ...config.output,
+        environment: {
+          ...config.output.environment,
+          worker: 'Worker',
+        },
+      };
     }
     
     // Resolver problemas con Konva
@@ -46,6 +55,23 @@ const nextConfig: NextConfig = {
       ...config.resolve.alias,
       'canvas': false,
       '@mediapipe/pose': path.resolve(__dirname, 'shims/mediapipe-pose-shim.js'),
+    };
+
+    // Manejar archivos de worker de FFmpeg
+    config.module = {
+      ...config.module,
+      rules: [
+        ...config.module.rules,
+        {
+          test: /\.worker\.(js|ts)$/,
+          use: {
+            loader: 'worker-loader',
+            options: {
+              inline: 'no-fallback',
+            },
+          },
+        },
+      ],
     };
     
     return config;

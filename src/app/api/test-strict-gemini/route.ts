@@ -11,8 +11,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No se proporcionó URL de video' }, { status: 400 });
     }
 
-    console.log('[API] Probando análisis estricto de Gemini:', videoUrl);
-    console.log('[API] Tipo de prueba:', testType);
+        console.log('[API] Tipo de prueba:', testType);
 
     // Análisis estricto anti-alucinación
     const result = await analyzeBasketballStrict({
@@ -20,9 +19,7 @@ export async function POST(request: NextRequest) {
       testType
     });
 
-    console.log('[API] Resultado del análisis estricto:', result.success ? 'Éxito' : 'Error');
-
-    // Determinar si está alucinando basado en el resultado
+        // Determinar si está alucinando basado en el resultado
     const isHallucinating = detectHallucination(result, testType);
 
     return NextResponse.json({

@@ -17,9 +17,7 @@ export async function GET(
       );
     }
 
-    console.log('🔍 Buscando análisis específico:', analysisId);
-
-    // Obtener el análisis específico desde Firestore
+        // Obtener el análisis específico desde Firestore
     const analysisDoc = await adminDb
       .collection('analyses')
       .doc(analysisId)
@@ -38,12 +36,7 @@ export async function GET(
       ...analysisData
     };
 
-    console.log(`✅ Análisis encontrado: ${analysisId}`);
-
-    return NextResponse.json({
-      analysis,
-      success: true
-    });
+                return NextResponse.json(analysis);
 
   } catch (error) {
     console.error('❌ Error al obtener análisis:', error);

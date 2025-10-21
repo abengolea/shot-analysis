@@ -51,8 +51,7 @@ export async function GET(request: NextRequest) {
         .limit(500)
         .get();
     } else {
-      console.log('🔍 Buscando análisis para usuario:', userId);
-      analysesSnapshot = await adminDb
+            analysesSnapshot = await adminDb
         .collection('analyses')
         .where('playerId', '==', userId)
         .orderBy('createdAt', 'desc')
@@ -106,9 +105,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    console.log(`✅ Encontrados ${analyses.length} análisis para usuario ${userId}`);
-
-    return NextResponse.json({
+        return NextResponse.json({
       analyses,
       count: analyses.length
     });

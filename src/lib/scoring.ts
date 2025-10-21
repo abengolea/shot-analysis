@@ -3,42 +3,41 @@ import { adminDb } from "./firebase-admin";
 
 // Pesos exactos por ítem del checklist de Tiro de Tres (default). Deben sumar 100.
 export const ITEM_WEIGHTS_TRES: Record<string, number> = {
-  // Fluidez (50%)
-  tiro_un_solo_tiempo: 25,
-  sincronia_piernas: 25,
+  // Fluidez (30%)
+  tiro_un_solo_tiempo: 15,
+  sincronia_piernas: 15,
 
-  // Preparación (17%)
-  alineacion_pies: 2,
-  alineacion_cuerpo: 2,
+  // Preparación (24%)
+  alineacion_pies: 4,
+  alineacion_cuerpo: 4,
   muneca_cargada: 4,
   flexion_rodillas: 4,
-  hombros_relajados: 3,
-  enfoque_visual: 2,
+  hombros_relajados: 4,
+  enfoque_visual: 4,
 
-  // Ascenso (17%)
-  mano_no_dominante_ascenso: 3,
-  codos_cerca_cuerpo: 2,
-  trayectoria_hasta_set_point: 3,
-  subida_recta_balon: 3,
-  set_point: 2,
+  // Ascenso (24%)
+  mano_no_dominante_ascenso: 4,
+  codos_cerca_cuerpo: 4,
+  trayectoria_hasta_set_point: 4,
+  subida_recta_balon: 4,
+  set_point: 4,
   tiempo_lanzamiento: 4,
 
-  // Liberación (10%)
-  mano_no_dominante_liberacion: 2,
-  extension_completa_brazo: 4,
-  giro_pelota: 2,
-  angulo_salida: 2,
+  // Liberación (14%)
+  mano_no_dominante_liberacion: 3.5,
+  extension_completa_brazo: 3.5,
+  giro_pelota: 3.5,
+  angulo_salida: 3.5,
 
-  // Seguimiento / Post-liberación (6%) - Ajustado para sumar 100%
-  mantenimiento_equilibrio: 2,
-  equilibrio_aterrizaje: 1,
-  duracion_follow_through: 1,
-  consistencia_repetitiva: 2, // Reducido de 5 a 2 para que total = 100%
+  // Seguimiento / Post-liberación (8%)
+  equilibrio_general: 3, // Unificado: mantenimiento_equilibrio (2) + equilibrio_aterrizaje (1)
+  duracion_follow_through: 2.5,
+  consistencia_general: 2.5, // Unificado: consistencia_repetitiva
 };
 
 export const CATEGORY_TO_ITEM_IDS: Record<string, string[]> = {
-  "Fluidez (50%)": ["tiro_un_solo_tiempo", "sincronia_piernas"],
-  "Preparación (17%)": [
+  "Fluidez (30%)": ["tiro_un_solo_tiempo", "sincronia_piernas"],
+  "Preparación (24%)": [
     "alineacion_pies",
     "alineacion_cuerpo",
     "muneca_cargada",
@@ -46,7 +45,7 @@ export const CATEGORY_TO_ITEM_IDS: Record<string, string[]> = {
     "hombros_relajados",
     "enfoque_visual",
   ],
-  "Ascenso (17%)": [
+  "Ascenso (24%)": [
     "mano_no_dominante_ascenso",
     "codos_cerca_cuerpo",
     "trayectoria_hasta_set_point",
@@ -54,17 +53,16 @@ export const CATEGORY_TO_ITEM_IDS: Record<string, string[]> = {
     "set_point",
     "tiempo_lanzamiento",
   ],
-  "Liberación (10%)": [
+  "Liberación (14%)": [
     "mano_no_dominante_liberacion",
     "extension_completa_brazo",
     "giro_pelota",
     "angulo_salida",
   ],
-  "Seguimiento / Post-liberación (6%)": [
-    "mantenimiento_equilibrio",
-    "equilibrio_aterrizaje",
+  "Seguimiento / Post-liberación (8%)": [
+    "equilibrio_general",
     "duracion_follow_through",
-    "consistencia_repetitiva",
+    "consistencia_general",
   ],
 };
 
@@ -90,16 +88,14 @@ export async function loadWeightsFromFirestore(shotType: string = 'tres'): Promi
     const docSnap = await docRef.get();
 
     if (!docSnap.exists) {
-      console.log(`📊 No hay pesos personalizados para ${shotType}, usando por defecto`);
-      cachedWeights[shotType] = ITEM_WEIGHTS_TRES;
+            cachedWeights[shotType] = ITEM_WEIGHTS_TRES;
       return ITEM_WEIGHTS_TRES;
     }
 
     const data = docSnap.data();
     const weights = data?.weights || ITEM_WEIGHTS_TRES;
     
-    console.log(`✅ Pesos cargados desde Firestore para ${shotType}`);
-    cachedWeights[shotType] = weights;
+        cachedWeights[shotType] = weights;
     
     return weights;
   } catch (error) {
@@ -210,6 +206,4 @@ export function computeFinalScoreWithTransparency(categories: ChecklistCategory[
     nonEvaluableReasons
   };
 }
-
-
 

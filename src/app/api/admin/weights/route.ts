@@ -67,9 +67,7 @@ export async function POST(request: NextRequest) {
       createdAt: now,
     }, { merge: true });
 
-    console.log(`✅ Pesos guardados para ${shotType}:`, weights);
-
-    return NextResponse.json({
+        return NextResponse.json({
       success: true,
       lastModified: now,
     });
@@ -82,8 +80,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
-
-
-
 

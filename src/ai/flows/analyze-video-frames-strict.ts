@@ -33,9 +33,7 @@ export async function analyzeVideoFramesStrict(
   input: AnalyzeVideoFramesStrictInput
 ): Promise<AnalyzeVideoFramesStrictOutput> {
   try {
-    console.log('[analyzeVideoFramesStrict] Iniciando análisis estricto de frames para:', input.videoUrl);
-    
-    // Extraer frames del video
+        // Extraer frames del video
     const frames = await extractKeyframesFromBuffer(input.videoBuffer, 16);
     console.log(`[analyzeVideoFramesStrict] Extraídos ${frames.length} frames`);
     

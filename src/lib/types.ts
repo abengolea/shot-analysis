@@ -48,8 +48,8 @@ export type DetailedChecklistItem = {
   description: string;
   // Sistema de evaluación actualizado
   status: 'Correcto' | 'Mejorable' | 'Incorrecto' | 'no_evaluable';
-  // Rating puede ser 0 para no_evaluable
-  rating: 0 | 1 | 2 | 3 | 4 | 5;
+  // Rating puede ser 0 para no_evaluable, o undefined si no hay calificación
+  rating?: 0 | 1 | 2 | 3 | 4 | 5;
   // Timestamp cuando se observó el parámetro
   timestamp?: string;
   // Evidencia de lo que se observó visualmente
@@ -91,6 +91,38 @@ export type ShotAnalysis = {
   score?: number;
   // Puntuación 1..10 de la categoría principal "Fluidez / Armonía (transferencia energética)"
   fluidezScore10?: number;
+  // Campos de verificación de video real
+  verification?: {
+    isReal: boolean;
+    confidence: number;
+    description: string;
+    canSeeBasket?: boolean;
+    cameraAngle?: string;
+    basketVisible?: boolean;
+    shotResultsVisible?: boolean;
+    environment?: string;
+    videoQuality?: string;
+    specificColors?: string;
+    uniqueObjects?: string;
+    specificEnvironment?: string;
+    specificActions?: string;
+    playerCharacteristics?: {
+      height?: string;
+      build?: string;
+      skinTone?: string;
+      hairColor?: string;
+      clothing?: string;
+      uniqueFeatures?: string[];
+      dominantHand?: string;
+    };
+  };
+  shotSummary?: {
+    totalShots?: number;
+    lateralShots?: number;
+    frontalShots?: number;
+    additionalShots?: number;
+  };
+  shots?: any[];
 };
 
 export type Drill = {

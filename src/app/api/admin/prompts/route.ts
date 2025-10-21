@@ -3,10 +3,14 @@ import { adminAuth, adminDb } from '@/lib/firebase-admin';
 
 function docIdForShotType(shotType?: string): string {
   const st = (shotType || '').toLowerCase();
-  if (st.includes('tres')) return 'prompts_tres';
-  if (st.includes('media') || st.includes('jump')) return 'prompts_media';
-  if (st.includes('libre')) return 'prompts_libre';
-  return 'prompts_general';
+  // Agregar prefijo según ambiente para separar configs de dev/prod
+  const env = process.env.NODE_ENV === 'production' ? 'prod' : 'dev';
+  const prefix = process.env.NEXT_PUBLIC_USE_ENV_PREFIX === 'true' ? `${env}_` : '';
+  
+  if (st.includes('tres')) return `${prefix}prompts_tres`;
+  if (st.includes('media') || st.includes('jump')) return `${prefix}prompts_media`;
+  if (st.includes('libre')) return `${prefix}prompts_libre`;
+  return `${prefix}prompts_general`;
 }
 
 async function requireAdmin(req: NextRequest): Promise<boolean> {
@@ -71,5 +75,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Error interno' }, { status: 500 });
   }
 }
-
 

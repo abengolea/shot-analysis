@@ -23,9 +23,7 @@ export async function validateBasketballSimple(
   input: ValidateBasketballSimpleInput
 ): Promise<ValidateBasketballSimpleOutput> {
   try {
-    console.log('[validateBasketballSimple] Iniciando validación simple para:', input.videoUrl);
-    
-    // Extraer solo 3 frames para análisis rápido
+        // Extraer solo 3 frames para análisis rápido
     const frames = await extractKeyframesFromBuffer(input.videoBuffer, 3);
     console.log(`[validateBasketballSimple] Extraídos ${frames.length} frames del video`);
     

@@ -10,12 +10,8 @@ const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID || "shotanalisys";
 // Bucket real (dominio nuevo)
 const storageBucket = process.env.FIREBASE_ADMIN_STORAGE_BUCKET || "shotanalisys.firebasestorage.app";
 
-console.log("🔍 Firebase Admin - Variables de entorno:");
 console.log("  - FIREBASE_ADMIN_PROJECT_ID:", process.env.FIREBASE_ADMIN_PROJECT_ID);
 console.log("  - FIREBASE_ADMIN_STORAGE_BUCKET:", process.env.FIREBASE_ADMIN_STORAGE_BUCKET);
-console.log("  - FIREBASE_ADMIN_CLIENT_EMAIL:", process.env.FIREBASE_ADMIN_CLIENT_EMAIL ? "✅ Configurado" : "❌ No configurado");
-console.log("  - FIREBASE_ADMIN_PRIVATE_KEY:", process.env.FIREBASE_ADMIN_PRIVATE_KEY ? "✅ Configurado" : "❌ No configurado");
-
 // Initialize Firebase Admin SDK for the server
 let adminApp: AdminApp | undefined;
 let _adminAuth: AdminAuth | undefined;
@@ -51,38 +47,21 @@ try {
       console.log("✅ Firebase Admin App creado (service account)");
     } else {
       adminApp = getAdminApp();
-      console.log("✅ Firebase Admin App obtenido existente");
-    }
+          }
   } else {
-    // Fallback a credenciales por defecto del entorno (App Hosting / GCP ADC)
-    console.warn("⚠️ Service account incompleto. Intentando Application Default Credentials (ADC)...");
-    const firebaseAdminConfig = {
-      credential: credential.applicationDefault(),
-      projectId,
-      storageBucket,
-    } as any;
-    if (getAdminApps().length === 0) {
-      adminApp = initializeAdminApp(firebaseAdminConfig);
-      console.log("✅ Firebase Admin App creado con ADC");
-    } else {
-      adminApp = getAdminApp();
-      console.log("✅ Firebase Admin App obtenido existente");
-    }
+    // En desarrollo local, no inicializar Firebase Admin
+        console.log("ℹ️ El upload funcionará solo con Firebase Client SDK");
+    adminApp = undefined;
   }
 
   if (adminApp) {
     _adminAuth = getAdminAuth(adminApp);
     _adminDb = getAdminFirestore(adminApp);
     _adminStorage = getAdminStorage(adminApp);
-    console.log("✅ Servicios de Firebase Admin inicializados");
-    
-    // Verificar que adminStorage esté disponible
+        // Verificar que adminStorage esté disponible
     if (_adminStorage) {
       const bucket = _adminStorage.bucket();
-      console.log("✅ Admin Storage disponible, bucket:", bucket.name);
-      console.log("🔍 Verificando bucket name:", bucket.name);
-      
-      // Aviso si el bucket no es el estándar
+                  // Aviso si el bucket no es el estándar
       if (bucket.name !== storageBucket) {
         console.warn("⚠️ Bucket en uso distinto al configurado:", storageBucket, "Actual:", bucket.name);
       }

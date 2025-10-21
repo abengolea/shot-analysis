@@ -54,4 +54,3 @@ export function MetricsTracker() {
   return null;
 }
 
-

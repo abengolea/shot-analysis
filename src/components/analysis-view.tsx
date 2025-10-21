@@ -51,6 +51,8 @@ import {
   ListChecks,
   Users,
   Star,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { DrillCard } from "./drill-card";
 import { DetailedChecklist } from "./detailed-checklist";
@@ -71,13 +73,11 @@ interface AnalysisViewProps {
 export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const { userProfile } = useAuth();
   const { toast } = useToast();
-  console.log('🎯 AnalysisView recibió:', analysis);
-  console.log('👤 Player recibido:', player);
-  
-  // Funciones auxiliares para visualización
+      // Funciones auxiliares para visualización
   const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-green-600';
-    if (score >= 60) return 'text-yellow-600';
+    if (score >= 90) return 'text-green-600';
+    if (score >= 70) return 'text-green-600';
+    if (score >= 36) return 'text-yellow-600';
     return 'text-red-600';
   };
 
@@ -106,15 +106,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       </div>
     );
   };
-  
-  // Debug específico para detailedChecklist
-  console.log('🔍 Debug - AnalysisView detailedChecklist:', {
-    hasDetailedChecklist: !!analysis.detailedChecklist,
-    detailedChecklistType: typeof analysis.detailedChecklist,
-    detailedChecklistLength: analysis.detailedChecklist?.length || 0,
-    detailedChecklistSample: analysis.detailedChecklist?.slice(0, 2) || 'N/A'
-  });
-  
+
   // Asegurar que keyframes tenga la estructura correcta
   const safeKeyframes = analysis.keyframes || {
     front: [],
@@ -125,6 +117,54 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   const [localKeyframes, setLocalKeyframes] = useState<typeof safeKeyframes>(safeKeyframes);
 
+  // Estado para indicar si los keyframes se están cargando
+  const [keyframesLoading, setKeyframesLoading] = useState(false);
+
+  // Estado para smart keyframes
+  const [smartKeyframes, setSmartKeyframes] = useState<{
+    front: Array<{ index: number; timestamp: number; description: string; importance: number; phase: string; imageBuffer: string }>;
+    back: Array<{ index: number; timestamp: number; description: string; importance: number; phase: string; imageBuffer: string }>;
+    left: Array<{ index: number; timestamp: number; description: string; importance: number; phase: string; imageBuffer: string }>;
+    right: Array<{ index: number; timestamp: number; description: string; importance: number; phase: string; imageBuffer: string }>;
+  }>({
+    front: [],
+    back: [],
+    left: [],
+    right: []
+  });
+
+  // Estado para indicar si los smart keyframes se están cargando
+  const [smartKeyframesLoading, setSmartKeyframesLoading] = useState(false);
+
+  // Función para cargar smart keyframes desde el API
+  const loadSmartKeyframes = useCallback(async () => {
+    if (!analysis.id) return;
+    
+    try {
+      setSmartKeyframesLoading(true);
+            const response = await fetch(`/api/analyses/${analysis.id}/smart-keyframes`);
+      if (!response.ok) {
+        if (response.status === 404) {
+                    setSmartKeyframesLoading(false);
+          return;
+        }
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+            setSmartKeyframes(data);
+      setSmartKeyframesLoading(false);
+    } catch (error) {
+      console.error('❌ Error cargando smart keyframes:', error);
+      setSmartKeyframesLoading(false);
+    }
+  }, [analysis.id]);
+
+  // Cargar smart keyframes al montar el componente
+  useEffect(() => {
+    loadSmartKeyframes();
+  }, [loadSmartKeyframes]);
+
   // Sincronizar estado local si llegan keyframes desde el análisis después del primer render
   useEffect(() => {
     const kf = analysis.keyframes;
@@ -132,6 +172,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     const expectedKeys: Array<'front'|'back'|'left'|'right'> = ['front','back','left','right'];
     const anyIncoming = expectedKeys.some((k) => Array.isArray((kf as any)[k]) && (kf as any)[k].length > 0);
     const anyLocal = expectedKeys.some((k) => Array.isArray((localKeyframes as any)[k]) && (localKeyframes as any)[k].length > 0);
+    
     if (anyIncoming && !anyLocal) {
       setLocalKeyframes({
         front: Array.isArray((kf as any).front) ? (kf as any).front : [],
@@ -139,14 +180,32 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         left: Array.isArray((kf as any).left) ? (kf as any).left : [],
         right: Array.isArray((kf as any).right) ? (kf as any).right : [],
       });
+      setKeyframesLoading(false); // Keyframes cargados
+    } else if (!anyIncoming && !anyLocal) {
+      // Si no hay keyframes en el análisis ni localmente, pero hay videos disponibles, mostrar loading
+      const hasVideos = expectedKeys.some((k) => {
+        const videoKey = k === 'front' ? 'videoFrontUrl' : 
+                        k === 'back' ? 'videoBackUrl' : 
+                        k === 'left' ? 'videoLeftUrl' : 'videoRightUrl';
+        return !!(analysis as any)[videoKey];
+      });
+      if (hasVideos) {
+        setKeyframesLoading(true);
+      }
     }
-  }, [analysis.keyframes]); // Solo analysis.keyframes como dependencia
+  }, [analysis.keyframes, localKeyframes, analysis]); // Incluir analysis para detectar videos
 
-  // Solo mostrar ángulos que tengan keyframes disponibles (preferir estado local)
+  // Solo mostrar ángulos que tengan keyframes disponibles (preferir smart keyframes, luego tradicionales)
   const knownAngles: Array<'front'|'back'|'left'|'right'> = ['front','back','left','right'];
   const hasAngleAvailable = (angle: 'front'|'back'|'left'|'right'): boolean => {
+    // Verificar smart keyframes primero
+    const smartKfs = (smartKeyframes as any)[angle];
+    const hasSmartKfs = Array.isArray(smartKfs) && smartKfs.length > 0;
+    
+    // Verificar keyframes tradicionales como fallback
     const kfs = (localKeyframes as any)[angle];
     const hasKfs = Array.isArray(kfs) && kfs.length > 0;
+    
     const anyObj = analysis as any;
     const hasVideo = angle === 'front'
       ? Boolean(anyObj?.videoUrl || anyObj?.videoFrontUrl)
@@ -155,53 +214,27 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         : angle === 'left'
           ? Boolean(anyObj?.videoLeftUrl)
           : Boolean(anyObj?.videoRightUrl);
-    console.log(`🔍 Ángulo ${angle}: kfs=${hasKfs} video=${hasVideo}`);
-    return hasKfs || hasVideo;
+    
+        return hasSmartKfs || hasKfs || hasVideo;
   };
   const availableAngles = knownAngles.filter((a) => hasAngleAvailable(a));
 
-  console.log('📹 Ángulos disponibles:', availableAngles);
-  console.log('🔍 localKeyframes completo:', localKeyframes);
-  console.log('🔍 localKeyframes.front:', localKeyframes.front);
-  console.log('🔍 localKeyframes.back:', localKeyframes.back);
-  console.log('🔍 localKeyframes.left:', localKeyframes.left);
-  console.log('🔍 localKeyframes.right:', localKeyframes.right);
-
-  // Verificar si el análisis es parcial (menos de 4 ángulos)
-  const isPartialAnalysis = availableAngles.length < 4;
+              // Verificar si el análisis es parcial (menos de 2 ángulos)
+  // Solo mostrar como parcial si hay menos de 2 videos, no 4
+  const isPartialAnalysis = availableAngles.length < 2;
   const missingAngles = knownAngles.filter((angle) => !availableAngles.includes(angle));
 
-  console.log('⚠️ ¿Es análisis parcial?', isPartialAnalysis);
-  console.log('❌ Ángulos faltantes:', missingAngles);
-
-  // Estado del checklist (usar directamente lo que venga en analysis)
+      // Estado del checklist (usar directamente lo que venga en analysis)
   const normalizeChecklist = (input: any): ChecklistCategory[] => {
-    console.log('🔍 Debug - normalizeChecklist input:', {
-      inputType: typeof input,
-      isArray: Array.isArray(input),
-      inputLength: input?.length || 0,
-      inputSample: input?.slice(0, 1) || 'N/A'
-    });
-    
-    // Debug detallado de la estructura
-    if (Array.isArray(input) && input.length > 0) {
-      console.log('🔍 Debug - Estructura detallada del primer item:', {
-        firstItem: input[0],
-        firstItemKeys: Object.keys(input[0] || {}),
-        hasItems: 'items' in input[0],
-        hasId: 'id' in input[0],
-        hasName: 'name' in input[0]
-      });
-    }
+            if (Array.isArray(input) && input.length > 0) {
+          }
 
     // Si es un array de items individuales (no categorías), convertirlo
     let items: DetailedChecklistItem[] = [];
     if (Array.isArray(input)) {
       if (input.length > 0 && 'name' in input[0]) {
         // Es un array de items individuales (puede tener 'id' o no)
-        console.log('🔍 Debug - Detectado array de items individuales, convirtiendo...');
-        
-        // Función para normalizar IDs (convertir nombre a id)
+                // Función para normalizar IDs (convertir nombre a id)
         const normalizeIdFromName = (name: string): string => {
           return name
             .toLowerCase()
@@ -219,36 +252,20 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             status: item.status || 'no_evaluable',
             comment: item.comment || '',
             evidencia: item.evidencia || '',
-            rating: 3, // Rating por defecto
+            rating: item.rating, // Usar el rating de la IA, undefined si no existe
             description: item.comment || '' // Usar comment como description
           };
-          console.log(`🔍 Debug - Mapeando item ${index}:`, {
-            original: { name: item.name, score: item.score, status: item.status },
-            mapped: { name: mappedItem.name, score: mappedItem.score, status: mappedItem.status }
-          });
-          return mappedItem;
+                    return mappedItem;
         }) as DetailedChecklistItem[];
       } else if (input.length > 0 && 'items' in input[0]) {
         // Es un array de categorías, extraer todos los items
-        console.log('🔍 Debug - Detectado array de categorías, extrayendo items...');
-        for (const cat of input) {
+                for (const cat of input) {
           if (cat.items && Array.isArray(cat.items)) {
             items.push(...cat.items);
           }
         }
       }
     }
-
-    console.log('🔍 Debug - Items finales antes de normalizar:', {
-      itemsLength: items.length,
-      itemsSample: items.slice(0, 2),
-      firstItemKeys: items[0] ? Object.keys(items[0]) : []
-    });
-
-    console.log('🔍 Debug - Items extraídos:', {
-      itemsLength: items.length,
-      itemsSample: items.slice(0, 2)
-    });
 
     // Función para normalizar IDs (remover acentos, convertir a formato canónico)
     const normalizeId = (id: string): string => {
@@ -288,6 +305,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         'mantenimiento_del_equilibrio': 'mantenimiento_equilibrio',
         'equilibrio_en_aterrizaje': 'equilibrio_aterrizaje',
         'duracion_del_follow_through': 'duracion_follow_through',
+        'duracion_del_followthrough': 'duracion_follow_through',
         'consistencia_del_movimiento': 'consistencia_repetitiva',
         'consistencia_tecnica': 'consistencia_repetitiva',
         'consistencia_de_resultados': 'consistencia_repetitiva'
@@ -301,17 +319,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     for (const item of items) {
       const originalId = String(item.id || '').trim();
       const mappedId = mapGeminiToCanonical(originalId);
-      console.log('🔍 Debug - Procesando item:', {
-        originalId,
-        mappedId,
-        itemKeys: Object.keys(item || {}),
-        hasScore: 'score' in item,
-        scoreValue: (item as any).score,
-        hasStatus: 'status' in item,
-        statusValue: (item as any).status,
-        itemSample: item
-      });
-      if (!mappedId) continue;
+            if (!mappedId) continue;
       const s = (item.status as unknown as string | undefined);
       const normalizedRating =
         typeof item.rating === 'number'
@@ -340,12 +348,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         const canonicalId = def.id.trim().toLowerCase();
         const fromIA = iaItemById[canonicalId];
         
-        console.log('🔍 Debug - Buscando coincidencia:', {
-          canonicalId,
-          found: !!fromIA,
-          availableKeys: Object.keys(iaItemById).slice(0, 5)
-        });
-        if (fromIA) {
+                if (fromIA) {
           return {
             id: def.id,
             name: def.name, // mantener nombre canónico
@@ -373,33 +376,14 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       return { category: cat.category, items } as ChecklistCategory;
     });
     
-    console.log('🔍 Debug - normalizeChecklist output:', {
-      canonicalLength: canonical.length,
-      canonicalSample: canonical.slice(0, 1),
-      iaItemByIdKeys: Object.keys(iaItemById),
-      iaItemByIdSample: Object.values(iaItemById).slice(0, 2)
-    });
-    
-    return canonical;
+        return canonical;
   };
 
   const [checklistState, setChecklistState] = useState<ChecklistCategory[]>(() => {
-    console.log('🔍 Debug - Initializing checklistState with:', {
-      hasDetailedChecklist: !!analysis.detailedChecklist,
-      isArray: Array.isArray(analysis.detailedChecklist),
-      length: analysis.detailedChecklist?.length || 0,
-      sample: analysis.detailedChecklist?.slice(0, 2) || 'N/A'
-    });
-    
-    if (analysis.detailedChecklist && Array.isArray(analysis.detailedChecklist)) {
+        if (analysis.detailedChecklist && Array.isArray(analysis.detailedChecklist)) {
       const normalized = normalizeChecklist(analysis.detailedChecklist);
-      console.log('🔍 Debug - Normalized checklist:', {
-        normalizedLength: normalized.length,
-        normalizedSample: normalized.slice(0, 1)
-      });
       return normalized;
     }
-    console.log('🔍 Debug - Returning empty checklist array');
     return [];
   });
 
@@ -508,7 +492,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       .map((it: any) => (typeof it.rating === 'number' ? it.rating : mapStatusToRating(it.status)))
       .filter((v: any) => typeof v === 'number');
   }
-  const derivedSummary: string = analysis.analysisSummary || analysisResult.analysisSummary || 'Análisis en progreso...';
+  const derivedSummary: string = analysis.analysisSummary || analysisResult.analysisSummary || 'Análisis completado';
   // Preferir valores del análisis; si no, usar los derivados del checklist; si tampoco, usar analysisResult
   const strengthsFromChecklist = checklistStrengths || [];
   const weaknessesFromChecklist = checklistWeaknesses || [];
@@ -571,6 +555,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const [selectedAngle, setSelectedAngle] = useState<'front' | 'back' | 'left' | 'right' | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [currentKeyframes, setCurrentKeyframes] = useState<string[]>([]);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const canEdit = userProfile?.role === 'coach' && userProfile.id === (player?.coachId || '');
   const [completing, setCompleting] = useState(false);
@@ -703,11 +689,90 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   };
 
   const openKeyframeModal = (keyframeUrl: string, angleKey: 'front'|'back'|'left'|'right', index: number) => {
+        console.log(`🔍 Keyframes disponibles para ${angleKey}:`, (localKeyframes as any)[angleKey]);
+    console.log(`🧠 Smart keyframes disponibles para ${angleKey}:`, (smartKeyframes as any)[angleKey]);
+    
     setSelectedKeyframe(keyframeUrl);
     setSelectedAngle(angleKey);
     setSelectedIndex(index);
+    
+    // Guardar la serie completa de keyframes para navegación
+    // Priorizar smart keyframes, luego keyframes tradicionales
+    const smartAngleKeyframes = (smartKeyframes as any)[angleKey] as Array<{ imageBuffer: string }> | undefined;
+    const traditionalAngleKeyframes = (localKeyframes as any)[angleKey] as string[] | undefined;
+    
+    let angleKeyframes: string[] = [];
+    
+    if (Array.isArray(smartAngleKeyframes) && smartAngleKeyframes.length > 0) {
+      // Usar smart keyframes (data URLs)
+      angleKeyframes = smartAngleKeyframes.map(kf => kf.imageBuffer);
+          } else if (Array.isArray(traditionalAngleKeyframes) && traditionalAngleKeyframes.length > 0) {
+      // Usar keyframes tradicionales (URLs)
+      angleKeyframes = traditionalAngleKeyframes;
+          }
+    
+        if (angleKeyframes.length > 0) {
+      setCurrentKeyframes(angleKeyframes);
+          } else {
+            setCurrentKeyframes([]);
+    }
+    
     setIsModalOpen(true);
   };
+
+  // Funciones de navegación entre keyframes
+  const navigateToKeyframe = (direction: 'prev' | 'next') => {
+    console.log(`🔄 Navegando ${direction}:`, {
+      selectedIndex,
+      currentKeyframesLength: currentKeyframes.length,
+      currentKeyframes: currentKeyframes
+    });
+    
+    if (selectedIndex === null || currentKeyframes.length === 0) {
+            return;
+    }
+    
+    let newIndex = selectedIndex;
+    if (direction === 'prev') {
+      newIndex = Math.max(0, selectedIndex - 1);
+    } else {
+      newIndex = Math.min(currentKeyframes.length - 1, selectedIndex + 1);
+    }
+    
+    console.log(`📍 Nuevo índice: ${newIndex} (era ${selectedIndex})`);
+    
+    if (newIndex !== selectedIndex && currentKeyframes[newIndex]) {
+            setSelectedKeyframe(currentKeyframes[newIndex]);
+      setSelectedIndex(newIndex);
+      // Limpiar canvas al cambiar de keyframe
+      clearCanvas();
+    } else {
+          }
+  };
+
+  // Variables calculadas para navegación
+  const canNavigatePrev = selectedIndex !== null && selectedIndex > 0;
+  const canNavigateNext = selectedIndex !== null && selectedIndex < currentKeyframes.length - 1;
+  
+      // Navegación con teclado
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isModalOpen) return;
+      
+      if (event.key === 'ArrowLeft' && canNavigatePrev) {
+        event.preventDefault();
+        navigateToKeyframe('prev');
+      } else if (event.key === 'ArrowRight' && canNavigateNext) {
+        event.preventDefault();
+        navigateToKeyframe('next');
+      }
+    };
+
+    if (isModalOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isModalOpen, canNavigatePrev, canNavigateNext, navigateToKeyframe]);
 
   const saveComment = async () => {
     if (!canEdit || !selectedKeyframe) return;
@@ -765,7 +830,6 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     } catch {}
   };
 
-  
   const [attemptsDirty, setAttemptsDirty] = useState(false);
   const [savingAttempts, setSavingAttempts] = useState(false);
   const [showAttempts, setShowAttempts] = useState(true);
@@ -833,7 +897,6 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       setIsLoadingDrills(false);
     }
   };
-
 
   const handleChecklistChange = (
     categoryName: string,
@@ -907,20 +970,55 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     return { reviewed, agreed, changed, avgCoach, diffs };
   }, [checklistState, coachFeedbackByItemId]);
 
-
-  const renderKeyframes = (keyframes: string[], angleLabel: string, angleKey: 'front'|'back'|'left'|'right') => {
-    console.log(`🎨 Renderizando keyframes para ${angleLabel}:`, keyframes);
-    
-    if (!keyframes || keyframes.length === 0) {
-      console.log(`❌ No hay keyframes para ${angleLabel}`);
-      return <div className="text-center py-4 text-muted-foreground">No hay fotogramas disponibles</div>;
+  // Función para renderizar smart keyframes (data URLs)
+  const renderSmartKeyframes = (keyframes: Array<{ index: number; timestamp: number; description: string; importance: number; phase: string; imageBuffer: string }>, angleLabel: string, angleKey: 'front'|'back'|'left'|'right') => {
+        if (!keyframes || keyframes.length === 0) {
+            return <div className="text-center py-4 text-muted-foreground">No hay fotogramas disponibles</div>;
     }
     
     return (
       <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-6 justify-items-center">
         {keyframes.map((keyframe, index) => {
-          console.log(`🖼️ Renderizando keyframe ${index} para ${angleLabel}:`, keyframe);
-          return (
+                    return (
+            <div key={`${angleKey}-${index}`} className="space-y-2 text-center">
+              {/* Botón con imagen */}
+              <button 
+                onClick={() => openKeyframeModal(keyframe.imageBuffer, angleKey, index)} 
+                className="relative overflow-hidden rounded-lg border aspect-square focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-all hover:scale-105 w-24 h-24 md:w-28 md:h-28"
+              >
+                {/* Imagen usando data URL */}
+                <img
+                  src={keyframe.imageBuffer}
+                  alt={`Fotograma ${angleLabel} ${index + 1}`}
+                  className="aspect-square object-cover w-full h-full"
+                  onError={(e) => {
+                    console.error(`❌ Error cargando smart keyframe ${keyframe.imageBuffer}:`, e);
+                  }}
+                  onLoad={() => {
+                                      }}
+                />
+              </button>
+              
+              {/* Solo el número del frame */}
+              <div className="text-center text-xs text-muted-foreground">
+                <div className="font-medium">Frame {index + 1}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderKeyframes = (keyframes: string[], angleLabel: string, angleKey: 'front'|'back'|'left'|'right') => {
+        if (!keyframes || keyframes.length === 0) {
+            return <div className="text-center py-4 text-muted-foreground">No hay fotogramas disponibles</div>;
+    }
+    
+    return (
+      <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-6 justify-items-center">
+        {keyframes.map((keyframe, index) => {
+                    return (
             <div key={`${angleKey}-${index}`} className="space-y-2 text-center">
               {/* DEBUG: Mostrar URL */}
               <div className="text-xs text-gray-500 truncate max-w-32" title={keyframe}>
@@ -944,8 +1042,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     console.error(`❌ Error cargando imagen Next.js ${keyframe}:`, e);
                   }}
                   onLoad={() => {
-                    console.log(`✅ Imagen Next.js cargada exitosamente: ${keyframe}`);
-                  }}
+                                      }}
                 />
               </button>
               
@@ -1159,13 +1256,13 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     <div className="space-y-1">
                       <p className="text-sm text-blue-700 font-medium">Parámetros Evaluables</p>
                       <p className="text-2xl font-bold text-green-700">
-                        {(safeAnalysis as any).scoreMetadata.evaluableCount}
+                        {(safeAnalysis as any).resumen_evaluacion?.parametros_evaluados || (safeAnalysis as any).scoreMetadata?.evaluableCount || 0}
                       </p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-sm text-blue-700 font-medium">No Evaluables</p>
                       <p className="text-2xl font-bold text-amber-600">
-                        {(safeAnalysis as any).scoreMetadata.nonEvaluableCount}
+                        {(safeAnalysis as any).resumen_evaluacion?.parametros_no_evaluables || (safeAnalysis as any).scoreMetadata?.nonEvaluableCount || 0}
                       </p>
                     </div>
                   </div>
@@ -1293,15 +1390,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                                    (safeAnalysis as any).videoLeftUrl || 
                                    (safeAnalysis as any).videoRightUrl;
                 
-                console.log('🎥 Debug - Videos disponibles:', {
-                  videoUrl: (safeAnalysis as any).videoUrl ? 'Sí' : 'No',
-                  videoFrontUrl: (safeAnalysis as any).videoFrontUrl ? 'Sí' : 'No',
-                  videoBackUrl: (safeAnalysis as any).videoBackUrl ? 'Sí' : 'No',
-                  videoLeftUrl: (safeAnalysis as any).videoLeftUrl ? 'Sí' : 'No',
-                  videoRightUrl: (safeAnalysis as any).videoRightUrl ? 'Sí' : 'No',
-                });
-
-                if (!hasAnyVideo) {
+                                if (!hasAnyVideo) {
                   return (
                     <div className="text-center py-8 text-muted-foreground">
                       <p>No hay videos disponibles para este análisis.</p>
@@ -1423,42 +1512,60 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 </div>
               )}
 
-              {/* Keyframes por ángulo con Accordion */}
-              {(['front','back','left','right'] as const).some((k) => Array.isArray((localKeyframes as any)[k]) && (localKeyframes as any)[k].length > 0) && (
+              {/* Keyframes inteligentes por ángulo con Accordion */}
+              {(smartKeyframesLoading || (['front','back','left','right'] as const).some((k) => Array.isArray((smartKeyframes as any)[k]) && (smartKeyframes as any)[k].length > 0)) && (
                 <div className="mt-6">
                   <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                     <Camera className="w-5 h-5" />
-                    Fotogramas Clave
+                    Fotogramas
+                    {smartKeyframesLoading && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Procesando con IA...</span>
+                      </div>
+                    )}
                   </h3>
-                  <Accordion type="single" collapsible className="w-full">
-                    {([
-                      { key: 'front' as const, label: 'Vista Frontal', labelAdj: 'frontal', icon: '👁️' },
-                      { key: 'back' as const, label: 'Vista Trasera', labelAdj: 'espalda', icon: '🔄' },
-                      { key: 'left' as const, label: 'Vista Lateral Izquierda', labelAdj: 'izquierdo', icon: '◀️' },
-                      { key: 'right' as const, label: 'Vista Lateral Derecha', labelAdj: 'derecho', icon: '▶️' },
-                    ]).map(({ key, label, labelAdj, icon }) => {
-                      const arr = (localKeyframes as any)[key] as string[] | undefined;
-                      if (!Array.isArray(arr) || arr.length === 0) return null;
-                      return (
-                        <AccordionItem key={key} value={key} className="border rounded-lg mb-2">
-                          <AccordionTrigger className="flex items-center justify-between w-full px-4 py-3 hover:bg-muted/50 transition-colors">
-                            <div className="flex items-center gap-3">
-                              <span className="text-2xl">{icon}</span>
-                              <div className="text-left">
-                                <p className="font-medium">{label}</p>
-                                <p className="text-sm text-muted-foreground">
-                                  {arr.length} fotogramas • Click para expandir
-                                </p>
+                  {smartKeyframesLoading && !(['front','back','left','right'] as const).some((k) => Array.isArray((smartKeyframes as any)[k]) && (smartKeyframes as any)[k].length > 0) ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" />
+                      <p className="text-lg font-medium">Procesando fotogramas clave con IA...</p>
+                      <p className="text-sm">Esto puede tomar unos minutos dependiendo del tamaño de los videos</p>
+                    </div>
+                  ) : (
+                    <Accordion type="single" collapsible className="w-full">
+                      {([
+                        { key: 'front' as const, label: 'Vista Frontal', labelAdj: 'frontal', icon: '👁️' },
+                        { key: 'back' as const, label: 'Vista Trasera', labelAdj: 'espalda', icon: '🔄' },
+                        { key: 'left' as const, label: 'Vista Lateral Izquierda', labelAdj: 'izquierdo', icon: '◀️' },
+                        { key: 'right' as const, label: 'Vista Lateral Derecha', labelAdj: 'derecho', icon: '▶️' },
+                      ]).map(({ key, label, labelAdj, icon }) => {
+                        // Usar solo keyframes inteligentes
+                        const smartArr = (smartKeyframes as any)[key] as Array<{ index: number; timestamp: number; description: string; importance: number; phase: string; imageBuffer: string }> | undefined;
+                        const hasSmartKeyframes = Array.isArray(smartArr) && smartArr.length > 0;
+                        
+                        if (!hasSmartKeyframes) return null;
+                        
+                        return (
+                          <AccordionItem key={key} value={key} className="border rounded-lg mb-2">
+                            <AccordionTrigger className="flex items-center justify-between w-full px-4 py-3 hover:bg-muted/50 transition-colors">
+                              <div className="flex items-center gap-3">
+                                <span className="text-2xl">{icon}</span>
+                                <div className="text-left">
+                                  <p className="font-medium">{label}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {smartArr!.length} fotogramas inteligentes • Click para expandir
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                          </AccordionTrigger>
-                          <AccordionContent className="px-4 py-4 bg-muted/20">
-                            {renderKeyframes(arr, labelAdj, key)}
-                          </AccordionContent>
-                        </AccordionItem>
-                      );
-                    })}
-                  </Accordion>
+                            </AccordionTrigger>
+                            <AccordionContent className="px-4 py-4 bg-muted/20">
+                              {renderSmartKeyframes(smartArr!, labelAdj, key)}
+                            </AccordionContent>
+                          </AccordionItem>
+                        );
+                      })}
+                    </Accordion>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -1549,13 +1656,13 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   <div className="space-y-1">
                     <p className="text-sm text-blue-700 font-medium">Parámetros Evaluables</p>
                     <p className="text-2xl font-bold text-green-700">
-                      {(safeAnalysis as any).scoreMetadata.evaluableCount}
+                      {(safeAnalysis as any).resumen_evaluacion?.parametros_evaluados || (safeAnalysis as any).scoreMetadata?.evaluableCount || 0}
                     </p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-blue-700 font-medium">No Evaluables</p>
                     <p className="text-2xl font-bold text-amber-600">
-                      {(safeAnalysis as any).scoreMetadata.nonEvaluableCount}
+                      {(safeAnalysis as any).resumen_evaluacion?.parametros_no_evaluables || (safeAnalysis as any).scoreMetadata?.nonEvaluableCount || 0}
                     </p>
                   </div>
                 </div>
@@ -1569,10 +1676,6 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             </Card>
           )}
           
-          {console.log('🔍 Debug - About to render DetailedChecklist with:', {
-            categoriesLength: checklistState.length,
-            categoriesSample: checklistState.slice(0, 1)
-          })}
           {(() => {
             try {
               return (
@@ -1703,17 +1806,52 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       </Tabs>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className={isExpanded ? "max-w-7xl" : "max-w-4xl"}>
           <DialogHeader>
-            <DialogTitle>Análisis del Fotograma</DialogTitle>
+            <DialogTitle className="flex items-center justify-between">
+              <span>
+                Análisis del Fotograma
+                {selectedAngle && (
+                  <span className="ml-2 text-sm text-muted-foreground font-normal">
+                    ({selectedAngle === 'front' ? 'Vista Frontal' : 
+                      selectedAngle === 'back' ? 'Vista Trasera' :
+                      selectedAngle === 'left' ? 'Vista Lateral Izquierda' :
+                      'Vista Lateral Derecha'})
+                  </span>
+                )}
+              </span>
+              {selectedIndex !== null && currentKeyframes.length > 0 && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => navigateToKeyframe('prev')}
+                    disabled={!canNavigatePrev}
+                    className="h-8 w-8 p-0"
+                  >
+                    ◀
+                  </Button>
+                  <span>{selectedIndex + 1} de {currentKeyframes.length}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => navigateToKeyframe('next')}
+                    disabled={!canNavigateNext}
+                    className="h-8 w-8 p-0"
+                  >
+                    ▶
+                  </Button>
+                </div>
+              )}
+            </DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className={isExpanded ? "grid grid-cols-1 gap-6" : "grid grid-cols-1 md:grid-cols-2 gap-6"}>
             <div className="relative">
               <Image
                 src={selectedKeyframe || "https://placehold.co/600x600.png"}
                 alt="Fotograma seleccionado"
-                width={600}
-                height={600}
+                width={isExpanded ? 800 : 600}
+                height={isExpanded ? 800 : 600}
                 className="rounded-lg border"
               />
               {/* overlays guardados */}
@@ -1723,8 +1861,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               {/* canvas de dibujo */}
               <canvas
                 ref={canvasRef}
-                width={600}
-                height={600}
+                width={isExpanded ? 800 : 600}
+                height={isExpanded ? 800 : 600}
                 className="absolute inset-0 rounded-lg"
                 style={{ cursor: toolRef.current === 'pencil' ? 'crosshair' : toolRef.current === 'eraser' ? 'cell' : 'default' }}
                 onMouseDown={beginDraw}
@@ -1733,7 +1871,24 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 onMouseLeave={endDraw}
               />
               <div className="absolute top-2 left-2 flex flex-col gap-2 rounded-lg border bg-background/80 p-2 shadow-lg backdrop-blur-sm">
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'move'; }}><Move /></Button>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-8 w-8" 
+                  onClick={() => { toolRef.current = 'move'; }}
+                  title="Herramienta de movimiento"
+                >
+                  <Move />
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-8 w-8" 
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  title={isExpanded ? "Minimizar" : "Expandir"}
+                >
+                  {isExpanded ? <Minimize2 /> : <Maximize2 />}
+                </Button>
                 {canEdit && (
                   <>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'pencil'; }}><Pencil /></Button>
@@ -1744,6 +1899,30 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   </>
                 )}
               </div>
+              
+              {/* Botones de navegación grandes */}
+              {currentKeyframes.length > 1 && (
+                <>
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    className="absolute left-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full shadow-lg"
+                    onClick={() => navigateToKeyframe('prev')}
+                    disabled={!canNavigatePrev}
+                  >
+                    ◀
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full shadow-lg"
+                    onClick={() => navigateToKeyframe('next')}
+                    disabled={!canNavigateNext}
+                  >
+                    ▶
+                  </Button>
+                </>
+              )}
             </div>
             <div className="flex flex-col gap-4">
               <Card>

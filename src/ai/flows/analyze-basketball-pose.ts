@@ -83,9 +83,7 @@ export async function analyzeBasketballPose(
   input: PoseAnalysisInput
 ): Promise<PoseAnalysisOutput> {
   try {
-    console.log('[analyzeBasketballPose] Iniciando análisis con OpenPose para:', input.videoUrl);
-
-    // Crear directorio temporal para procesamiento
+        // Crear directorio temporal para procesamiento
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openpose-'));
     const inputVideoPath = path.join(tempDir, 'input.mp4');
     const outputDir = path.join(tempDir, 'output');

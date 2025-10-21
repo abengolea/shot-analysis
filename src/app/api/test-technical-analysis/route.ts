@@ -5,9 +5,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('[TECHNICAL] Iniciando análisis técnico de lanzamiento...');
-    
-    const formData = await request.formData();
+        const formData = await request.formData();
     const file = formData.get('video') as File;
 
     if (!file) {

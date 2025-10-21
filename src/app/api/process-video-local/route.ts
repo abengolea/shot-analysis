@@ -14,9 +14,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[LOCAL] Procesando video: ${videoUrl}`);
-
-    // 1. VALIDAR CONTENIDO DEL VIDEO
+        // 1. VALIDAR CONTENIDO DEL VIDEO
     const url = videoUrl.toLowerCase();
     const isPartyVideo = url.includes('party') || 
                         url.includes('fiesta') || 

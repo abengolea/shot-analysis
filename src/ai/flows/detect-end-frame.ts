@@ -92,4 +92,3 @@ export const detectEndFrameFlow = ai.defineFlow(
   async (input) => detectEndFrame(input)
 );
 
-
