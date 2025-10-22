@@ -53,7 +53,9 @@ export async function analyzeVideoReal(videoBuffer1: Buffer, fileName1: string, 
   try {
         // 1. PREPROCESAMIENTO DE VIDEOS
     console.log('⚙️ Preprocesando video 1...');
+    console.log('📊 Video 1 info:', { size: videoBuffer1.length, name: fileName1 });
     const { optimizedVideo: optimizedVideo1, videoInfo: videoInfo1 } = await preprocessVideo(videoBuffer1, fileName1);
+    console.log('✅ Video 1 preprocesado:', { size: optimizedVideo1.length });
     
     let optimizedVideo2: Buffer | undefined;
     let videoInfo2: any;
@@ -77,11 +79,25 @@ export async function analyzeVideoReal(videoBuffer1: Buffer, fileName1: string, 
     
     // 2. ANÁLISIS ÚNICO CON GEMINI (1 LLAMADA CON RETRY)
     console.log('🤖 Analizando con Gemini (1 llamada única)...');
+    console.log('📊 Preparando videos para Gemini:', { 
+      video1: optimizedVideo1.length, 
+      video2: optimizedVideo2?.length || 0, 
+      video3: optimizedVideo3?.length || 0 
+    });
+    
     const base64Video1 = optimizedVideo1.toString('base64');
     const base64Video2 = optimizedVideo2 ? optimizedVideo2.toString('base64') : undefined;
     const base64Video3 = optimizedVideo3 ? optimizedVideo3.toString('base64') : undefined;
     
+    console.log('📊 Videos convertidos a base64:', { 
+      video1: base64Video1.length, 
+      video2: base64Video2?.length || 0, 
+      video3: base64Video3?.length || 0 
+    });
+    
+    console.log('🚀 Llamando a Gemini...');
     const analysisResult = await analyzeVideoSingleCall(base64Video1, base64Video2, base64Video3);
+    console.log('✅ Gemini respondió:', { hasResult: !!analysisResult });
     
     // 3. AGREGAR INFORMACIÓN DE OPTIMIZACIÓN
     return {
@@ -105,6 +121,7 @@ export async function preprocessVideo(videoBuffer: Buffer, fileName: string): Pr
     size: (videoBuffer.length / 1024 / 1024).toFixed(2) + ' MB',
     fileName
   });
+  console.log('🔍 Iniciando preprocesamiento...');
 
   try {
     // Crear archivo temporal
