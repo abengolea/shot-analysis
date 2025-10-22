@@ -6,10 +6,20 @@ import { z } from "zod";
 import { adminAuth, adminDb, adminStorage } from '@/lib/firebase-admin';
 import { sendCustomEmail } from '@/lib/email-service';
 import { extractAndUploadSmartKeyframesAsync } from '@/lib/smart-keyframes';
+import { isMaintenanceMode } from '@/lib/maintenance';
 
 // Función de análisis con keyframes inteligentes (basada en startAnalysis original)
 export async function startAnalysisWithSmartKeyframes(prevState: any, formData: FormData) {
     try {
+        // Verificar si el sistema está en modo mantenimiento
+        const maintenanceEnabled = await isMaintenanceMode();
+        if (maintenanceEnabled) {
+            return { 
+                message: "El sistema está en mantenimiento. El análisis de lanzamientos está temporalmente deshabilitado.", 
+                error: true 
+            };
+        }
+
                                         const userId = formData.get('userId') as string;
         const coachId = (formData.get('coachId') as string | null) || null;
         if (!userId) return { message: "ID de usuario requerido.", error: true };

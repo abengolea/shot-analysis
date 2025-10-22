@@ -39,6 +39,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { storage } from "@/lib/firebase";
 import { getDownloadURL, ref as storageRef, uploadBytesResumable, UploadTask } from "firebase/storage";
 import { Switch } from "@/components/ui/switch";
+import { getMaintenanceConfig } from "@/lib/maintenance";
 // import { optimizeVideoClient, shouldOptimizeVideo, type OptimizationStats } from "@/lib/ffmpeg-client";
 
 interface VideoFrame {
@@ -98,6 +99,7 @@ export default function UploadPage() {
   const [dontShowTipsAgain, setDontShowTipsAgain] = useState(false);
   const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
+  const [maintenanceConfig, setMaintenanceConfig] = useState<{title: string; message: string} | null>(null);
   
   // Estados para los videos (sin frames)
   const [selectedVideo, setSelectedVideo] = useState<File | null>(null); // frontal
@@ -278,6 +280,25 @@ export default function UploadPage() {
     };
     fetchWallet();
   }, [user]);
+
+  // Verificar estado de mantenimiento
+  useEffect(() => {
+    const checkMaintenance = async () => {
+      try {
+        const response = await fetch('/api/admin/maintenance');
+        if (response.ok) {
+          const config = await response.json();
+          if (config.enabled) {
+            setMaintenanceConfig({ title: config.title, message: config.message });
+            setMaintenanceOpen(true);
+          }
+        }
+      } catch (error) {
+        console.error('Error verificando mantenimiento:', error);
+      }
+    };
+    checkMaintenance();
+  }, []);
 
   // Abrir recomendaciones automáticamente la primera vez
   useEffect(() => {
@@ -868,13 +889,11 @@ export default function UploadPage() {
       <AlertDialog open={maintenanceOpen} onOpenChange={() => {}}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>🔧 SITIO EN MANTENIMIENTO</AlertDialogTitle>
+            <AlertDialogTitle>{maintenanceConfig?.title || '🔧 SITIO EN MANTENIMIENTO'}</AlertDialogTitle>
             <AlertDialogDescription>
-              Estamos ajustando variables importantes del sistema.
-              <br /><br />
-              <strong>El análisis de lanzamientos está temporalmente deshabilitado.</strong>
-              <br /><br />
-              Volveremos pronto con mejoras. ¡Gracias por tu paciencia!
+              <div className="whitespace-pre-line">
+                {maintenanceConfig?.message || 'Estamos ajustando variables importantes del sistema.\n\nEl análisis de lanzamientos está temporalmente deshabilitado.\n\nVolveremos pronto con mejoras. ¡Gracias por tu paciencia!'}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

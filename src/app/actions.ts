@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { adminAuth, adminDb, adminStorage } from '@/lib/firebase-admin';
 import { sendCustomEmail } from '@/lib/email-service';
+import { isMaintenanceMode } from '@/lib/maintenance';
 // Acción: añadir entrenador desde el formulario de registro de coaches
 const AddCoachSchema = z.object({
     name: z.string().min(2, "Nombre demasiado corto"),
@@ -586,6 +587,15 @@ const getCurrentUser = async (userId: string) => {
 // FUNCIÓN ANTIGUA DE ANÁLISIS CON GENKIT (BACKUP)
 export async function startAnalysisOld(prevState: any, formData: FormData) {
     try {
+        // Verificar si el sistema está en modo mantenimiento
+        const maintenanceEnabled = await isMaintenanceMode();
+        if (maintenanceEnabled) {
+            return { 
+                message: "El sistema está en mantenimiento. El análisis de lanzamientos está temporalmente deshabilitado.", 
+                error: true 
+            };
+        }
+
         console.log("🚀 Iniciando análisis OLD con Genkit (sin frames del cliente)...");
                                 const userId = formData.get('userId') as string;
         const coachId = (formData.get('coachId') as string | null) || null;
@@ -1151,6 +1161,15 @@ export async function registerAdrian(prevState: any, _formData: FormData) {
 // 🧪 FUNCIÓN DE ANÁLISIS DE PRUEBA CON PROMPT SIMPLIFICADO
 export async function startAnalysisTest(prevState: any, formData: FormData) {
     try {
+        // Verificar si el sistema está en modo mantenimiento
+        const maintenanceEnabled = await isMaintenanceMode();
+        if (maintenanceEnabled) {
+            return { 
+                message: "El sistema está en mantenimiento. El análisis de lanzamientos está temporalmente deshabilitado.", 
+                error: true 
+            };
+        }
+
                 const userId = formData.get('userId') as string;
         const coachId = (formData.get('coachId') as string | null) || null;
         if (!userId) return { message: "ID de usuario requerido.", error: true };
@@ -1467,6 +1486,15 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
 // 🎯 FUNCIÓN PRINCIPAL DE ANÁLISIS: PROMPT OPTIMIZADO + PREPROCESAMIENTO FFMPEG + PESOS CONFIGURABLES
 export async function startAnalysis(prevState: any, formData: FormData) {
     try {
+        // Verificar si el sistema está en modo mantenimiento
+        const maintenanceEnabled = await isMaintenanceMode();
+        if (maintenanceEnabled) {
+            return { 
+                message: "El sistema está en mantenimiento. El análisis de lanzamientos está temporalmente deshabilitado.", 
+                error: true 
+            };
+        }
+
                                         const userId = formData.get('userId') as string;
         const coachId = (formData.get('coachId') as string | null) || null;
         if (!userId) return { message: "ID de usuario requerido.", error: true };
