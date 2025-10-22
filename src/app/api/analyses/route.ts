@@ -79,6 +79,8 @@ export async function GET(request: NextRequest) {
         .orderBy('createdAt', 'desc')
         .get();
       
+      console.log(`📊 Colección 'analyses': ${analysesSnapshot.docs.length} documentos encontrados`);
+      
       const analysesFromAnalyses = analysesSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
@@ -91,6 +93,8 @@ export async function GET(request: NextRequest) {
         .where('userId', '==', userId)
         .orderBy('createdAt', 'desc')
         .get();
+      
+      console.log(`📊 Colección 'video-analysis': ${videoAnalysisSnapshot.docs.length} documentos encontrados`);
       
       const analysesFromVideoAnalysis = videoAnalysisSnapshot.docs.map(doc => {
         const data = doc.data();
