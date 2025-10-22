@@ -144,15 +144,38 @@ export async function preprocessVideo(videoBuffer: Buffer, fileName: string): Pr
     // Comando FFmpeg para optimización ULTRA (10s, 4 FPS, 360p)
     const ffmpegCommand = `ffmpeg -i "${inputPath}" -t 10 -r 4 -vf "scale=360:-1" -c:v libx264 -preset fast -crf 30 -c:a aac -b:a 32k -movflags +faststart "${outputPath}" -y`;
     
-        await execAsync(ffmpegCommand);
+    try {
+      await execAsync(ffmpegCommand);
+    } catch (ffmpegError) {
+      console.warn('⚠️ FFmpeg no disponible, usando video original:', ffmpegError.message);
+      // Si FFmpeg falla, usar el video original sin optimizar
+      fs.copyFileSync(inputPath, outputPath);
+    }
 
     // Leer video optimizado
     const optimizedBuffer = fs.readFileSync(outputPath);
     
     // Obtener información del video optimizado
-    const infoCommand = `ffprobe -v quiet -print_format json -show_format -show_streams "${outputPath}"`;
-    const { stdout: infoOutput } = await execAsync(infoCommand);
-    const videoInfo = JSON.parse(infoOutput);
+    let videoInfo;
+    try {
+      const infoCommand = `ffprobe -v quiet -print_format json -show_format -show_streams "${outputPath}"`;
+      const { stdout: infoOutput } = await execAsync(infoCommand);
+      videoInfo = JSON.parse(infoOutput);
+    } catch (ffprobeError) {
+      console.warn('⚠️ FFprobe no disponible, usando información básica:', ffprobeError.message);
+      // Información básica si FFprobe no está disponible
+      videoInfo = {
+        format: {
+          duration: "10.0",
+          size: optimizedBuffer.length.toString()
+        },
+        streams: [{
+          width: 360,
+          height: 240,
+          r_frame_rate: "4/1"
+        }]
+      };
+    }
 
     // Limpiar archivos temporales
     try {
