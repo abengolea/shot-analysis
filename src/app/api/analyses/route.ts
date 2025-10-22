@@ -117,8 +117,8 @@ export async function GET(request: NextRequest) {
       
       // Ordenar por fecha de creación (más reciente primero)
       analyses.sort((a, b) => {
-        const dateA = new Date(a.createdAt).getTime();
-        const dateB = new Date(b.createdAt).getTime();
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
         return dateB - dateA;
       });
       
