@@ -25,10 +25,13 @@ try {
   const hasRealServiceAccount = Boolean(
     rawClientEmail && privateKey &&
     !rawClientEmail.includes('REEMPLAZAR') &&
-    !rawPrivateKey.includes('REEMPLAZAR')
+    !rawPrivateKey.includes('REEMPLAZAR') &&
+    !rawClientEmail.includes('xxxxx') &&
+    !rawPrivateKey.includes('TU_CLAVE_PRIVADA_AQUI')
   );
 
   if (hasRealServiceAccount) {
+    // Usar credenciales explícitas
     const firebaseAdminConfig = {
       credential: credential.cert({
         projectId,
@@ -47,11 +50,27 @@ try {
       console.log("✅ Firebase Admin App creado (service account)");
     } else {
       adminApp = getAdminApp();
-          }
+    }
   } else {
-    // En desarrollo local, no inicializar Firebase Admin
-        console.log("ℹ️ El upload funcionará solo con Firebase Client SDK");
-    adminApp = undefined;
+    // Intentar usar Application Default Credentials (ADC)
+    console.log("🔍 Firebase Admin - Intentando usar Application Default Credentials (ADC)");
+    console.log("  - projectId:", projectId);
+    console.log("  - storageBucket:", storageBucket);
+
+    if (getAdminApps().length === 0) {
+      try {
+        adminApp = initializeAdminApp({
+          projectId,
+          storageBucket,
+        });
+        console.log("✅ Firebase Admin App creado (ADC)");
+      } catch (adcError) {
+        console.warn("⚠️ ADC no disponible, Firebase Admin deshabilitado:", adcError.message);
+        adminApp = undefined;
+      }
+    } else {
+      adminApp = getAdminApp();
+    }
   }
 
   if (adminApp) {
@@ -74,8 +93,22 @@ try {
   console.error("❌ Error al inicializar Firebase Admin SDK:", error);
 }
 
-// Exportar como no opcionales para simplificar tipos en rutas; en runtime usar ADC o fallar temprano
-export const adminAuth: AdminAuth = _adminAuth as unknown as AdminAuth;
-export const adminDb: AdminFirestore = _adminDb as unknown as AdminFirestore;
-export const adminStorage: AdminStorage = _adminStorage as unknown as AdminStorage;
+// Exportar con fallbacks para evitar crashes
+export const adminAuth: AdminAuth | null = _adminAuth || null;
+export const adminDb: AdminFirestore | null = _adminDb || null;
+export const adminStorage: AdminStorage | null = _adminStorage || null;
 export { adminApp };
+
+// Función helper para verificar si Firebase Admin está disponible
+export const isFirebaseAdminAvailable = (): boolean => {
+  return Boolean(adminApp && _adminAuth && _adminDb && _adminStorage);
+};
+
+// Función helper para obtener error descriptivo
+export const getFirebaseAdminError = (): string => {
+  if (!adminApp) return "Firebase Admin App no inicializado";
+  if (!_adminAuth) return "Firebase Admin Auth no disponible";
+  if (!_adminDb) return "Firebase Admin Firestore no disponible";
+  if (!_adminStorage) return "Firebase Admin Storage no disponible";
+  return "Firebase Admin disponible";
+};

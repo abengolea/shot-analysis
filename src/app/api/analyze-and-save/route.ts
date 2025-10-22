@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeBasketballShotCombined } from '@/ai/flows/analyze-basketball-shot';
 import { analyzeVideoReal } from '@/lib/gemini-video-real';
-import { adminStorage, adminDb } from '@/lib/firebase-admin';
+import { adminStorage, adminDb, isFirebaseAdminAvailable, getFirebaseAdminError } from '@/lib/firebase-admin';
 import { z } from 'zod';
 
 const AnalyzeAndSaveSchema = z.object({
@@ -83,8 +83,16 @@ async function performAnalysis(request: NextRequest) {
     );
 
         // 2. GUARDAR VIDEOS EN FIREBASE STORAGE PARA HISTORIAL
-        if (!adminStorage) {
-      throw new Error('Firebase Storage no inicializado');
+        if (!isFirebaseAdminAvailable()) {
+      console.error('❌ Firebase Admin no disponible:', getFirebaseAdminError());
+      return NextResponse.json(
+        { 
+          error: 'Base de datos no disponible', 
+          details: getFirebaseAdminError(),
+          suggestion: 'Por favor, contacta al administrador del sistema'
+        },
+        { status: 503 }
+      );
     }
 
     const bucket = adminStorage.bucket();

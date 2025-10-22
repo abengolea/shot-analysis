@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { adminAuth, adminDb, isFirebaseAdminAvailable, getFirebaseAdminError } from '@/lib/firebase-admin';
 import { FieldPath } from 'firebase-admin/firestore';
 
 export const dynamic = 'force-dynamic';
@@ -29,6 +29,19 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId');
     const adminFlag = searchParams.get('admin');
     const queueFlag = searchParams.get('queue');
+
+    // Verificar que Firebase Admin esté disponible
+    if (!isFirebaseAdminAvailable()) {
+      console.error('❌ Firebase Admin no disponible:', getFirebaseAdminError());
+      return NextResponse.json(
+        { 
+          error: 'Base de datos no disponible', 
+          details: getFirebaseAdminError(),
+          suggestion: 'Por favor, contacta al administrador del sistema'
+        },
+        { status: 503 }
+      );
+    }
 
     const requestIsAdmin = adminFlag === '1' || adminFlag === 'true' ? await isAdminRequest(request) : false;
     if (!userId && !requestIsAdmin) {
