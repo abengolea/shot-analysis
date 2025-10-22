@@ -228,7 +228,7 @@ export default function AnalyzeAndSavePage() {
 
               <Button 
                 type="submit" 
-                disabled={loading || !videoFile}
+                disabled={loading || !videoFile1}
                 className="w-full"
               >
                 {loading ? (

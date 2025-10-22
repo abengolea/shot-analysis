@@ -6,6 +6,7 @@ try {
 	// eslint-disable-next-line @typescript-eslint/no-var-requires
 	ort = require("onnxruntime-node");
 } catch (e) {
+	// Module not available, use fallback
 	ort = null;
 }
 

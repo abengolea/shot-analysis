@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractKeyframesFromBuffer } from '@/lib/ffmpeg';
-import { analyzeBasketballVideo, ShotAnalysisResult } from '@/lib/pose-detection';
+// import { analyzeBasketballVideo, ShotAnalysisResult } from '@/lib/pose-detection';
 
 export const dynamic = 'force-dynamic';
 
