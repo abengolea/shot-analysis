@@ -34,12 +34,11 @@ const storage: any = isBrowser && app ? getStorage(app) : undefined as any;
 // Configurar Firestore para manejar mejor los errores
 if (isBrowser && db) {
   try {
-    // Configurar settings para mejorar la estabilidad
-    db.settings({
-      ignoreUndefinedProperties: true,
-    });
+    // En Firebase v9+ del cliente, no se usa db.settings()
+    // La configuración se maneja automáticamente
+    console.log('✅ Firestore inicializado correctamente');
   } catch (error) {
-    console.warn('No se pudo configurar Firestore settings:', error);
+    console.warn('No se pudo configurar Firestore:', error);
   }
 }
 

@@ -244,10 +244,10 @@ export function AnalysisPageClient({ id }: { id: string }) {
           <div className="flex items-center gap-4 mb-4">
             <Avatar className="h-16 w-16">
               <AvatarImage src={player.avatarUrl} alt={player.name} />
-              <AvatarFallback>{player.name.charAt(0)}</AvatarFallback>
+              <AvatarFallback>{player.name?.charAt(0) || 'U'}</AvatarFallback>
             </Avatar>
             <div>
-              <h1 className="text-2xl font-bold">{player.name}</h1>
+              <h1 className="text-2xl font-bold">{player.name || 'Jugador'}</h1>
               <p className="text-muted-foreground">{formattedDate}</p>
             </div>
           </div>
