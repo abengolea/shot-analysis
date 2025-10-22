@@ -42,26 +42,71 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ iaQueue });
     }
 
-    let analysesSnapshot: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>;
+    let analyses: any[] = [];
+    
     if (requestIsAdmin) {
       console.log('🔍 Listando TODOS los análisis (admin)');
-      analysesSnapshot = await adminDb
+      const analysesSnapshot = await adminDb
         .collection('analyses')
         .orderBy('createdAt', 'desc')
         .limit(500)
         .get();
+      
+      analyses = analysesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as any[];
     } else {
-            analysesSnapshot = await adminDb
+      console.log(`🔍 Buscando análisis para userId: ${userId}`);
+      
+      // Buscar en colección 'analyses' (nuevos análisis)
+      const analysesSnapshot = await adminDb
         .collection('analyses')
         .where('playerId', '==', userId)
         .orderBy('createdAt', 'desc')
         .get();
+      
+      const analysesFromAnalyses = analysesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        source: 'analyses' // Marcar origen para debugging
+      })) as any[];
+      
+      // Buscar en colección 'video-analysis' (análisis legacy)
+      const videoAnalysisSnapshot = await adminDb
+        .collection('video-analysis')
+        .where('userId', '==', userId)
+        .orderBy('createdAt', 'desc')
+        .get();
+      
+      const analysesFromVideoAnalysis = videoAnalysisSnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          playerId: data.userId, // Mapear userId a playerId para consistencia
+          shotType: data.shotType || 'Tipo no especificado',
+          status: data.analysis ? 'analyzed' : 'uploaded',
+          createdAt: data.createdAt,
+          videoUrl: data.videoUrl,
+          analysis: data.analysis,
+          metadata: data.metadata,
+          originalFileName: data.originalFileName,
+          source: 'video-analysis' // Marcar origen para debugging
+        };
+      }) as any[];
+      
+      // Combinar ambos resultados
+      analyses = [...analysesFromAnalyses, ...analysesFromVideoAnalysis];
+      
+      // Ordenar por fecha de creación (más reciente primero)
+      analyses.sort((a, b) => {
+        const dateA = new Date(a.createdAt).getTime();
+        const dateB = new Date(b.createdAt).getTime();
+        return dateB - dateA;
+      });
+      
+      console.log(`📊 Análisis encontrados: ${analysesFromAnalyses.length} en 'analyses', ${analysesFromVideoAnalysis.length} en 'video-analysis', ${analyses.length} total`);
     }
-
-    let analyses = analysesSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as any[];
 
     // Enriquecer con datos del jugador (solo para admin)
     if (requestIsAdmin) {
