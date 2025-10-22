@@ -31,7 +31,7 @@ try {
   );
 
   if (hasRealServiceAccount) {
-    // Usar credenciales explícitas
+    // Usar credenciales explícitas como en local
     const firebaseAdminConfig = {
       credential: credential.cert({
         projectId,
@@ -52,22 +52,17 @@ try {
       adminApp = getAdminApp();
     }
   } else {
-    // Intentar usar Application Default Credentials (ADC)
-    console.log("🔍 Firebase Admin - Intentando usar Application Default Credentials (ADC)");
+    // Fallback a ADC si no hay credenciales
+    console.log("🔍 Firebase Admin - Usando Application Default Credentials (ADC)");
     console.log("  - projectId:", projectId);
     console.log("  - storageBucket:", storageBucket);
 
     if (getAdminApps().length === 0) {
-      try {
-        adminApp = initializeAdminApp({
-          projectId,
-          storageBucket,
-        });
-        console.log("✅ Firebase Admin App creado (ADC)");
-      } catch (adcError) {
-        console.warn("⚠️ ADC no disponible, Firebase Admin deshabilitado:", adcError.message);
-        adminApp = undefined;
-      }
+      adminApp = initializeAdminApp({
+        projectId,
+        storageBucket,
+      });
+      console.log("✅ Firebase Admin App creado (ADC)");
     } else {
       adminApp = getAdminApp();
     }
