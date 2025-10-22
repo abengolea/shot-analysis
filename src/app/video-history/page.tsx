@@ -17,6 +17,7 @@ interface VideoAnalysis {
 
 export default function VideoHistoryPage() {
   const [userId, setUserId] = useState('');
+  const [email, setEmail] = useState(''); // Nuevo campo para email
   const [playerId, setPlayerId] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [analyses, setAnalyses] = useState<VideoAnalysis[]>([]);
@@ -25,8 +26,8 @@ export default function VideoHistoryPage() {
   const [selectedAnalysis, setSelectedAnalysis] = useState<VideoAnalysis | null>(null);
 
   const loadHistory = async () => {
-    if (!userId) {
-      setError('Por favor ingresa un userId');
+    if (!userId && !email) {
+      setError('Por favor ingresa un userId o email');
       return;
     }
 
@@ -35,9 +36,16 @@ export default function VideoHistoryPage() {
 
     try {
       const params = new URLSearchParams({
-        userId: userId,
         limit: '20'
       });
+
+      if (userId) {
+        params.append('userId', userId);
+      }
+      
+      if (email) {
+        params.append('email', email);
+      }
 
       if (playerId) {
         params.append('playerId', playerId);
@@ -51,6 +59,12 @@ export default function VideoHistoryPage() {
       }
 
       setAnalyses(data.analyses);
+      
+      // Mostrar información de búsqueda
+      if (data.searchMethod) {
+        console.log(`🔍 Búsqueda realizada por ${data.searchMethod}: ${data.searchValue}`);
+      }
+      
     } catch (err: any) {
       setError(err.message || 'Error desconocido');
     } finally {
@@ -87,10 +101,10 @@ export default function VideoHistoryPage() {
   };
 
   useEffect(() => {
-    if (userId) {
+    if (userId || email) {
       loadHistory();
     }
-  }, [userId, playerId]);
+  }, [userId, email, playerId]);
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -102,7 +116,7 @@ export default function VideoHistoryPage() {
           
           {/* Filtros */}
           <div className="mb-6 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   User ID (Entrenador)
@@ -112,6 +126,19 @@ export default function VideoHistoryPage() {
                   value={userId}
                   onChange={(e) => setUserId(e.target.value)}
                   placeholder="ej: entrenador123"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Email (Alternativo)
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="ej: usuario@email.com"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -145,7 +172,7 @@ export default function VideoHistoryPage() {
             
             <button
               onClick={loadHistory}
-              disabled={!userId || isLoading}
+              disabled={(!userId && !email) || isLoading}
               className="bg-blue-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
             >
               {isLoading ? '🔄 Cargando...' : '🔍 Cargar Historial'}
