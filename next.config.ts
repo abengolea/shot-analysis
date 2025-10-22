@@ -45,7 +45,7 @@ const nextConfig: NextConfig = {
         ...config.output,
         environment: {
           ...config.output.environment,
-          worker: 'Worker',
+          // Removed invalid 'worker' property
         },
       };
     }
