@@ -1,5 +1,15 @@
 // Versión con MediaPipe para pose detection (sin dependencias nativas)
-import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+let PoseLandmarker: any = null;
+let FilesetResolver: any = null;
+
+try {
+  const mediapipe = require('@mediapipe/tasks-vision');
+  PoseLandmarker = mediapipe.PoseLandmarker;
+  FilesetResolver = mediapipe.FilesetResolver;
+  console.log('✅ MediaPipe disponible');
+} catch (e) {
+  console.warn('⚠️ MediaPipe no disponible, usando fallback:', e.message);
+}
 
 // Tipos para keypoints
 export type KPName =
@@ -48,6 +58,16 @@ function mapKeypoints(landmarks: any[]): Keypoint[] {
 
 // Función principal para extraer poses con MediaPipe
 export async function extractPosesFromFolderMediaPipe(folderPath: string, fps: number = 12): Promise<ShotPoseSample> {
+    // Fallback si MediaPipe no está disponible
+    if (!PoseLandmarker || !FilesetResolver) {
+      console.warn('⚠️ MediaPipe no disponible, retornando datos vacíos');
+      return {
+        videoId: 'fallback',
+        fps: fps,
+        frames: []
+      };
+    }
+
     try {
     // Inicializar MediaPipe
     const vision = await FilesetResolver.forVisionTasks(

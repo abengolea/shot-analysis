@@ -114,9 +114,15 @@ export async function preprocessVideo(videoBuffer: Buffer, fileName: string): Pr
     const { promisify } = require('util');
     const execAsync = promisify(exec);
 
-    const tempDir = path.join(process.cwd(), 'temp');
+    // Usar directorio temporal del sistema si es posible
+    const tempDir = process.env.TEMP || process.env.TMP || path.join(process.cwd(), 'temp');
     if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
+      try {
+        fs.mkdirSync(tempDir, { recursive: true });
+      } catch (error) {
+        console.warn('⚠️ No se pudo crear directorio temporal, usando directorio actual:', error.message);
+        return { optimizedVideo: videoBuffer, videoInfo: { format: { duration: "10.0" } } };
+      }
     }
 
     const inputPath = path.join(tempDir, `input_${Date.now()}.mp4`);

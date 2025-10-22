@@ -1,22 +1,36 @@
 import { RekognitionClient, DetectLabelsCommand, StartLabelDetectionCommand, GetLabelDetectionCommand } from '@aws-sdk/client-rekognition';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 
-// Configuración de AWS
-const rekognitionClient = new RekognitionClient({
-  region: process.env.AWS_REGION || 'us-east-1',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-  },
-});
+// Configuración de AWS con fallback
+let rekognitionClient: RekognitionClient | null = null;
+let s3Client: S3Client | null = null;
 
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION || 'us-east-1',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-  },
-});
+try {
+  const hasCredentials = process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY;
+  
+  if (hasCredentials) {
+    rekognitionClient = new RekognitionClient({
+      region: process.env.AWS_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+      },
+    });
+
+    s3Client = new S3Client({
+      region: process.env.AWS_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+      },
+    });
+    console.log('✅ AWS SDK configurado correctamente');
+  } else {
+    console.warn('⚠️ AWS credentials no configuradas, AWS SDK deshabilitado');
+  }
+} catch (e) {
+  console.warn('⚠️ Error configurando AWS SDK:', e.message);
+}
 
 export interface BasketballAnalysisResult {
   verificacion_inicial: {
@@ -81,6 +95,11 @@ export class AWSRekognitionService {
    * Sube un video a S3 y retorna la URL
    */
   async uploadVideoToS3(videoBuffer: Buffer, fileName: string): Promise<string> {
+    if (!s3Client) {
+      console.warn('⚠️ S3 no disponible, simulando upload');
+      return `s3://${this.bucketName}/videos/${fileName}`;
+    }
+
     try {
       const command = new PutObjectCommand({
         Bucket: this.bucketName,

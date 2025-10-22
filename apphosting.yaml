@@ -37,6 +37,10 @@ env:
     value: "AIzaSyBGVlvWqL2FZmOMvNQu8lzxcOQtbmTTEcM"
   - variable: FIREBASE_ADMIN_PROJECT_ID
     value: "shotanalisys"
+  - variable: FIREBASE_ADMIN_PRIVATE_KEY
+    value: "-----BEGIN PRIVATE KEY-----\nTU_CLAVE_PRIVADA_AQUI\n-----END PRIVATE KEY-----\n"
+  - variable: FIREBASE_ADMIN_CLIENT_EMAIL
+    value: "firebase-adminsdk-xxxxx@shotanalisys.iam.gserviceaccount.com"
 
 # Declaración explícita del backend de App Hosting
 backends:

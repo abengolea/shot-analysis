@@ -5,8 +5,10 @@ let ort: any = null;
 try {
 	// eslint-disable-next-line @typescript-eslint/no-var-requires
 	ort = require("onnxruntime-node");
+	console.log('✅ ONNX Runtime disponible');
 } catch (e) {
 	// Module not available, use fallback
+	console.warn('⚠️ ONNX Runtime no disponible, usando heurística:', e.message);
 	ort = null;
 }
 
