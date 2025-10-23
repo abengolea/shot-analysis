@@ -1,0 +1,142 @@
+[33mcommit 7d1eef26f30c07196fab5f71ea4255b005ea8e24[m
+Author: Adrian Bengolea <adrian.bengolea@gmail.com>
+Date:   Tue Oct 21 20:08:11 2025 -0300
+
+     PRODUCTION READY: Fix scoring system, parameter counting, and clean all debug logs
+    
+     Fixed Issues:
+    - Corrected parameter counting (21 evaluables vs 19)
+    - Fixed score-to-status conversion consistency
+    - Fixed score-to-rating conversion (1-5 scale)
+    - Fixed display of numerical scores in detailed checklist
+    - Fixed resumen_evaluacion calculation and display
+    
+     Improvements:
+    - Unified scoring logic across all components
+    - Automatic calculation overrides AI inconsistencies
+    - Clean production-ready code (removed all debug logs)
+    - Consistent status/rating mapping
+    
+     Files Updated:
+    - 316 files reviewed, 180 files cleaned
+    - All .tsx and .ts files processed
+    - Ready for production deployment
+
+COMPARATIVA_EMAILS.md
+SETUP_EMAILS.md
+docs/AWS_REKOGNITION_SETUP.md
+docs/EMAIL_MASIVO_ADMIN.md
+docs/IMPLEMENTAR_EMAILS_REAL.md
+docs/PROMPT_CONFIG_ENVIRONMENTS.md
+docs/SETUP_AWS_SES.md
+env.aws.example
+env.email.example
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00001.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00002.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00003.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00004.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00005.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00006.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00007.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00008.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00009.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00010.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00011.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00012.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00013.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00014.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00015.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00016.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00017.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00018.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00019.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00020.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00021.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00022.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00023.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00024.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00025.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00026.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00027.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00028.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00029.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00030.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00031.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00032.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00033.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00034.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00035.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00036.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00037.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00038.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00039.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00040.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00041.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00042.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00043.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00044.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00045.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00046.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00047.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00048.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00049.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00050.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00051.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00052.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00053.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00054.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00055.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00056.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00057.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00058.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00059.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00060.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00061.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00062.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00063.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00064.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00065.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00066.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00067.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00068.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00069.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00070.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00071.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00072.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00073.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00074.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00075.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00076.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00077.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00078.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00079.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00080.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00081.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00082.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00083.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00084.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00085.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00086.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00087.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00088.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00089.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00090.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00091.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00092.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00093.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00094.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00095.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00096.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00097.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00098.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00099.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00100.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00101.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00102.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00103.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00104.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00105.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00106.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00107.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6baf7aed/frame_00108.jpg
+frames_pose-636906ad-17c4-4457-8cac-47bc6b
