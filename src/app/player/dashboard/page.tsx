@@ -63,9 +63,14 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const fetchAnalyses = async () => {
-      if (!user?.uid) return;
+      console.log('🔍 [DASHBOARD] fetchAnalyses llamado, user.uid:', user?.uid);
+      if (!user?.uid) {
+        console.log('❌ [DASHBOARD] No hay user.uid, saliendo');
+        return;
+      }
       
       try {
+        console.log('🔍 [DASHBOARD] Llamando a /api/analyses con userId:', user.uid);
         setAnalysesLoading(true);
         const response = await fetch(`/api/analyses?userId=${user.uid}`);
         if (response.ok) {
