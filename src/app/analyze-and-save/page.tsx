@@ -19,6 +19,7 @@ export default function AnalyzeAndSavePage() {
   const [shotType, setShotType] = useState('');
   const [playerId, setPlayerId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [currentStep, setCurrentStep] = useState<'idle' | 'optimizing' | 'analyzing'>('idle');
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -56,6 +57,7 @@ export default function AnalyzeAndSavePage() {
     }
 
     setLoading(true);
+    setCurrentStep('optimizing');
     setError(null);
     setResult(null);
 
@@ -68,6 +70,11 @@ export default function AnalyzeAndSavePage() {
       formData.append('playerLevel', playerLevel);
       formData.append('shotType', shotType);
       formData.append('playerId', playerId);
+
+      // Simular paso de optimización (FFmpeg)
+      setTimeout(() => {
+        setCurrentStep('analyzing');
+      }, 2000);
 
       const response = await fetch('/api/analyze-and-save', {
         method: 'POST',
@@ -98,6 +105,7 @@ export default function AnalyzeAndSavePage() {
       });
     } finally {
       setLoading(false);
+      setCurrentStep('idle');
     }
   };
 
@@ -234,7 +242,7 @@ export default function AnalyzeAndSavePage() {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Analizando...
+                    {currentStep === 'optimizing' ? 'Optimizando videos...' : 'Analizando...'}
                   </>
                 ) : (
                   <>
@@ -257,9 +265,19 @@ export default function AnalyzeAndSavePage() {
           </CardHeader>
           <CardContent>
             {loading && (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin" />
-                <span className="ml-2">Procesando... (puede tomar hasta 2 minutos)</span>
+              <div className="flex flex-col items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin mb-4" />
+                <div className="text-center">
+                  <h3 className="text-lg font-semibold mb-2">
+                    {currentStep === 'optimizing' ? 'Optimizando videos...' : 'Analizando tu video...'}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {currentStep === 'optimizing' 
+                      ? 'Reduciendo tamaño y optimizando para análisis (30-60 segundos)'
+                      : 'Este proceso puede tardar entre 30 segundos y 2 minutos según el tamaño del video. No cierres esta ventana.'
+                    }
+                  </p>
+                </div>
               </div>
             )}
 
