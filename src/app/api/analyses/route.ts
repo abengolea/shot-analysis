@@ -27,68 +27,28 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    console.log('🔍 [ANALYSES] Buscando en Firestore...');
+    console.log('🔍 [ANALYSES] Firebase Admin disponible, buscando...');
 
-    // Buscar en colección 'analyses'
+    // Buscar solo en colección 'analyses' por ahora
     const analysesSnapshot = await adminDb
       .collection('analyses')
       .where('playerId', '==', userId)
       .orderBy('createdAt', 'desc')
       .get();
     
-    console.log(`📊 [ANALYSES] Colección 'analyses': ${analysesSnapshot.docs.length} documentos`);
+    console.log(`📊 [ANALYSES] Encontrados: ${analysesSnapshot.docs.length} documentos`);
     
-    const analysesFromAnalyses = analysesSnapshot.docs.map(doc => ({
+    const analyses = analysesSnapshot.docs.map(doc => ({
       id: doc.id,
-      ...doc.data(),
-      source: 'analyses'
+      ...doc.data()
     }));
 
-    // Buscar en colección 'video-analysis'
-    const videoAnalysisSnapshot = await adminDb
-      .collection('video-analysis')
-      .where('userId', '==', userId)
-      .orderBy('createdAt', 'desc')
-      .get();
-    
-    console.log(`📊 [ANALYSES] Colección 'video-analysis': ${videoAnalysisSnapshot.docs.length} documentos`);
-    
-    const analysesFromVideoAnalysis = videoAnalysisSnapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        playerId: data.userId,
-        shotType: data.shotType || 'Tipo no especificado',
-        status: data.analysis ? 'analyzed' : 'uploaded',
-        createdAt: data.createdAt,
-        videoUrl: data.videoUrl,
-        analysis: data.analysis,
-        metadata: data.metadata,
-        originalFileName: data.originalFileName,
-        source: 'video-analysis'
-      };
-    });
-
-    // Combinar resultados
-    const allAnalyses = [...analysesFromAnalyses, ...analysesFromVideoAnalysis];
-    
-    // Ordenar por fecha
-    allAnalyses.sort((a, b) => {
-      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return dateB - dateA;
-    });
-
-    console.log(`✅ [ANALYSES] Total encontrados: ${allAnalyses.length}`);
+    console.log(`✅ [ANALYSES] Retornando ${analyses.length} análisis`);
     
     return NextResponse.json({
-      analyses: allAnalyses,
-      count: allAnalyses.length,
-      userId: userId,
-      sources: {
-        analyses: analysesFromAnalyses.length,
-        videoAnalysis: analysesFromVideoAnalysis.length
-      }
+      analyses: analyses,
+      count: analyses.length,
+      userId: userId
     });
 
   } catch (error) {

@@ -50,3 +50,4 @@ export async function isMaintenanceMode(): Promise<boolean> {
   const config = await getMaintenanceConfig();
   return config?.enabled || false;
 }
+
