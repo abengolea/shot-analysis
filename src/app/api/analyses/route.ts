@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 
 async function isAdminRequest(request: NextRequest): Promise<boolean> {
   try {
+    if (!adminAuth || !adminDb) return false;
     const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
     if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) return false;
     const token = authHeader.split(' ')[1];
@@ -22,14 +23,6 @@ async function isAdminRequest(request: NextRequest): Promise<boolean> {
 
 export async function GET(request: NextRequest) {
   try {
-    if (!adminDb) {
-      return NextResponse.json({ error: 'Admin SDK no inicializado (FIREBASE_ADMIN_* o ADC faltante)' }, { status: 500 });
-    }
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-    const adminFlag = searchParams.get('admin');
-    const queueFlag = searchParams.get('queue');
-
     // Verificar que Firebase Admin esté disponible
     if (!isFirebaseAdminAvailable()) {
       console.error('❌ Firebase Admin no disponible:', getFirebaseAdminError());
@@ -42,6 +35,10 @@ export async function GET(request: NextRequest) {
         { status: 503 }
       );
     }
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+    const adminFlag = searchParams.get('admin');
+    const queueFlag = searchParams.get('queue');
 
     const requestIsAdmin = adminFlag === '1' || adminFlag === 'true' ? await isAdminRequest(request) : false;
     if (!userId && !requestIsAdmin) {
