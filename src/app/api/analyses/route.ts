@@ -44,11 +44,10 @@ export async function GET(request: NextRequest) {
       source: 'analyses'
     }));
 
-    // Buscar en colección 'video-analysis'
+    // Buscar en colección 'video-analysis' (sin orderBy para evitar error de índice)
     const videoAnalysisSnapshot = await adminDb
       .collection('video-analysis')
       .where('userId', '==', userId)
-      .orderBy('createdAt', 'desc')
       .get();
     
     console.log(`📊 [ANALYSES] Colección 'video-analysis': ${videoAnalysisSnapshot.docs.length} documentos`);
