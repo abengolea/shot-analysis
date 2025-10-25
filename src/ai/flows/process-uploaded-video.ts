@@ -248,24 +248,30 @@ const processUploadedVideoFlow = ai.defineFlow(
 
     console.log(`Analysis saved successfully for doc: ${docId}`);
 
-    // 7. Extraer keyframes inteligentes (asíncrono, no bloquea)
-        // Preparar buffers de video para keyframes
-    const videoBuffers = {
-      back: videoBuffer, // El video principal (back)
-      front: undefined,
-      left: undefined,
-      right: undefined
-    };
+    // 7. Extraer keyframes inteligentes (SÍNCRONO para asegurar que se generen)
+    console.log('🔍 [Smart Keyframes] Iniciando extracción síncrona...');
     
-    // Iniciar extracción de keyframes inteligentes en background
-    extractAndUploadSmartKeyframesAsync({
-      analysisId: docId,
-      videoBuffers,
-      userId
-    }).then(() => {
-          }).catch(err => {
-      console.error('❌ [Smart Keyframes] Error en extracción asíncrona:', err);
-    });
+    try {
+      // Preparar buffers de video para keyframes
+      const videoBuffers = {
+        back: videoBuffer, // El video principal (back)
+        front: undefined,
+        left: undefined,
+        right: undefined
+      };
+      
+      // Extraer keyframes de forma síncrona
+      await extractAndUploadSmartKeyframesAsync({
+        analysisId: docId,
+        videoBuffers,
+        userId
+      });
+      
+      console.log('✅ [Smart Keyframes] Extracción completada exitosamente');
+    } catch (err) {
+      console.error('❌ [Smart Keyframes] Error en extracción síncrona:', err);
+      // No fallar el análisis completo si fallan los keyframes
+    }
 
     // 8. Clean up the pending document
     await pendingDocRef.delete();
