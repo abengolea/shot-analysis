@@ -15,8 +15,8 @@ function getFfmpegPath(): string | null {
   }
 }
 
-// Usar FFmpeg del sistema primero, luego ffmpeg-static como fallback
-const RESOLVED_FFMPEG = 'ffmpeg'; // Usar FFmpeg del sistema instalado
+// Usar ffmpeg-static primero (incluye binario), luego FFmpeg del sistema como fallback
+const RESOLVED_FFMPEG = getFfmpegPath() || 'ffmpeg';
 
 export type StandardizeOptions = {
   maxSeconds?: number;
