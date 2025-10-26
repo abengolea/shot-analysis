@@ -39,7 +39,7 @@ export async function GET(
     
     // 3. Descargar video desde Storage
     const storage = new Storage();
-    const bucketName = 'shot-analysis-storage';
+    const bucketName = 'shotanalisys.firebasestorage.app';
     
     // Extraer el nombre del archivo de la URL
     const fileName = videoUrl.split('/').pop()?.split('?')[0];
