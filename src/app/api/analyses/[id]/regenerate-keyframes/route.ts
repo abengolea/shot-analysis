@@ -3,7 +3,7 @@ import { adminDb } from '@/lib/firebase-admin';
 import { extractAndUploadSmartKeyframesAsync } from '@/lib/smart-keyframes';
 import { Storage } from '@google-cloud/storage';
 
-export async function POST(
+export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
