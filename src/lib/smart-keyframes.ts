@@ -39,7 +39,9 @@ export async function extractSmartKeyframesFromBuffer(
 ): Promise<SmartKeyframe[]> {
     // Simplificar: usar directamente la extracción tradicional que funciona
   try {
+    console.log('🔍 [Smart Keyframes] Intentando extraer keyframes...');
     const frames = await extractKeyframesFromBuffer(inputBuffer, numFrames);
+    console.log(`✅ [Smart Keyframes] Se extrajeron ${frames.length} frames exitosamente`);
     
     const smartKeyframes: SmartKeyframe[] = [];
         for (let i = 0; i < frames.length; i++) {

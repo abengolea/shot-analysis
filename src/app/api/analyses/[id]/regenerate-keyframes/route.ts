@@ -12,26 +12,19 @@ export async function GET(
     
     console.log('🔄 [REGENERATE-KEYFRAMES] Iniciando regeneración para:', analysisId);
     
-    // 1. Verificar si el análisis existe en 'analyses' o 'video-analysis'
-    let analysisDoc = await adminDb.collection('analyses').doc(analysisId).get();
-    let analysisData = analysisDoc.exists ? analysisDoc.data() : null;
+    // 1. Verificar si el análisis existe
+    const analysisDoc = await adminDb.collection('analyses').doc(analysisId).get();
     
     if (!analysisDoc.exists) {
-      // Intentar en 'video-analysis'
-      analysisDoc = await adminDb.collection('video-analysis').doc(analysisId).get();
-      if (analysisDoc.exists) {
-        analysisData = analysisDoc.data();
-      }
-    }
-    
-    if (!analysisDoc.exists || !analysisData) {
       return NextResponse.json({
         success: false,
-        error: 'Analysis not found in any collection',
+        error: 'Analysis not found',
         analysisId,
-        checked: ['analyses', 'video-analysis']
+        hint: 'The analysis may still be processing or failed during processing'
       }, { status: 404 });
     }
+    
+    const analysisData = analysisDoc.data();
     
     // 2. Verificar si tiene video
     const videoUrl = analysisData?.videoUrl || analysisData?.videoBackUrl;
