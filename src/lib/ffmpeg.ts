@@ -3,20 +3,21 @@ import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
 
-function getFfmpegPath(): string | null {
-  try {
-    const modName = 'ffmpeg-static';
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require(modName);
-    const p = (mod?.path || mod) as string | undefined;
-    return p || null;
-  } catch {
-    return null;
+// Resolver FFmpeg dinámicamente para manejar imports en runtime
+let RESOLVED_FFMPEG: string = 'ffmpeg'; // Default
+
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const ffmpegStatic = require('ffmpeg-static');
+  if (ffmpegStatic && (ffmpegStatic.path || ffmpegStatic)) {
+    RESOLVED_FFMPEG = ffmpegStatic.path || ffmpegStatic;
+    console.log('✅ [FFmpeg] Usando ffmpeg-static:', RESOLVED_FFMPEG);
   }
+} catch (e) {
+  console.warn('⚠️ [FFmpeg] No se encontró ffmpeg-static, usando comando del sistema');
 }
 
-// Usar ffmpeg-static primero (incluye binario), luego FFmpeg del sistema como fallback
-const RESOLVED_FFMPEG = getFfmpegPath() || 'ffmpeg';
+export const FFMPEG_PATH = RESOLVED_FFMPEG;
 
 export type StandardizeOptions = {
   maxSeconds?: number;
