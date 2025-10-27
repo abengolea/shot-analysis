@@ -30,17 +30,28 @@ export async function GET(request: NextRequest) {
     const hasSmartKeyframes = !!analysisData?.smartKeyframes;
     const keyframesExtractedAt = analysisData?.keyframesExtractedAt;
     
-    // 3. Buscar logs de procesamiento
-    const logsQuery = await adminDb.collection('processing_logs')
-      .where('analysisId', '==', analysisId)
-      .orderBy('timestamp', 'desc')
-      .limit(50)
-      .get();
-    
-    const logs = logsQuery.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    // 3. Buscar logs de procesamiento (sin orderBy para evitar índice)
+    let logs: any[] = [];
+    try {
+      const logsQuery = await adminDb.collection('processing_logs')
+        .where('analysisId', '==', analysisId)
+        .limit(50)
+        .get();
+      
+      logs = logsQuery.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      // Ordenar en memoria
+      logs.sort((a, b) => {
+        const timeA = a.timestamp || a.createdAt || 0;
+        const timeB = b.timestamp || b.createdAt || 0;
+        return timeB - timeA;
+      });
+    } catch (e) {
+      console.warn('Could not fetch processing logs:', e);
+    }
     
     // 4. Verificar subcolecciones de keyframes
     const keyframesCounts = {
