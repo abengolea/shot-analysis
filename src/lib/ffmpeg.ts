@@ -12,9 +12,12 @@ try {
   if (ffmpegStatic && (ffmpegStatic.path || ffmpegStatic)) {
     RESOLVED_FFMPEG = ffmpegStatic.path || ffmpegStatic;
     console.log('✅ [FFmpeg] Usando ffmpeg-static:', RESOLVED_FFMPEG);
+  } else {
+    console.log('⚠️ [FFmpeg] ffmpeg-static no tiene path válido, usando:', RESOLVED_FFMPEG);
   }
 } catch (e) {
-  console.warn('⚠️ [FFmpeg] No se encontró ffmpeg-static, usando comando del sistema');
+  console.warn('⚠️ [FFmpeg] No se encontró ffmpeg-static:', e.message);
+  console.warn('⚠️ [FFmpeg] Usando comando del sistema:', RESOLVED_FFMPEG);
 }
 
 export const FFMPEG_PATH = RESOLVED_FFMPEG;
