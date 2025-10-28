@@ -43,20 +43,38 @@ export async function GET(
     const bucketName = 'shotanalisys.firebasestorage.app';
     
     // Extraer la ruta completa del video en el bucket
-    // La videoUrl puede ser: https://firebasestorage... o gs://...
+    // La videoUrl puede ser una signed URL o una GCS path
     let storagePath = '';
-    if (videoUrl.includes('firebasestorage.googleapis.com')) {
-      // URL pública: https://firebasestorage.googleapis.com/v0/b/bucket/o/path?alt=media
-      const match = videoUrl.match(/\/o\/(.*)\?/);
-      storagePath = match ? decodeURIComponent(match[1]) : '';
+    
+    console.log('🔍 [REGENERATE-KEYFRAMES] Video URL recibida:', videoUrl);
+    
+    if (videoUrl.includes('storage.googleapis.com')) {
+      // Signed URL: https://storage.googleapis.com/bucket/path?GoogleAccessId=...
+      const url = new URL(videoUrl);
+      storagePath = url.pathname;
+      // Remover el primer "/" si existe
+      if (storagePath.startsWith('/')) {
+        storagePath = storagePath.substring(1);
+      }
+      // Si contiene el nombre del bucket al inicio, removerlo
+      const bucketPrefix = `${bucketName}/`;
+      if (storagePath.startsWith(bucketPrefix)) {
+        storagePath = storagePath.substring(bucketPrefix.length);
+      }
     } else if (videoUrl.startsWith('gs://')) {
       // GCS URI: gs://bucket/path
       const match = videoUrl.match(/gs:\/\/.*?\/(.+)$/);
       storagePath = match ? match[1] : '';
+    } else if (videoUrl.includes('firebasestorage.googleapis.com')) {
+      // URL pública: https://firebasestorage.googleapis.com/v0/b/bucket/o/path?alt=media
+      const match = videoUrl.match(/\/o\/(.*)\?/);
+      storagePath = match ? decodeURIComponent(match[1]) : '';
     } else {
-      // Fallback: asumir que es el path directo después del dominio
-      storagePath = videoUrl.split('/').slice(4).join('/');
+      // Fallback: asumir que es el path directo
+      storagePath = videoUrl;
     }
+    
+    console.log('📁 [REGENERATE-KEYFRAMES] Storage path extraído:', storagePath);
     
     if (!storagePath) {
       return NextResponse.json({
