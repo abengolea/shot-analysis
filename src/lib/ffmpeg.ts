@@ -135,10 +135,13 @@ export async function extractKeyframesFromBuffer(
   inputBuffer: Buffer,
   numFrames: number
 ): Promise<Array<{ index: number; timestamp: number; imageBuffer: Buffer }>> {
+  console.log(`🔍 [extractKeyframesFromBuffer] Iniciando extracción de ${numFrames} frames`);
   const duration = await getVideoDurationSecondsFromBuffer(inputBuffer);
+  console.log(`⏱️ [extractKeyframesFromBuffer] Duración del video: ${duration}s`);
   const frames: Array<{ index: number; timestamp: number; imageBuffer: Buffer }> = [];
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'shot-kf-'));
   const inPath = path.join(tmpDir, 'input.mp4');
+  console.log(`📁 [extractKeyframesFromBuffer] Escribiendo video en: ${inPath}`);
   await fs.writeFile(inPath, inputBuffer);
   try {
     const effectiveDuration = Math.max(0.5, Math.min(duration || 30, 30));
@@ -155,8 +158,10 @@ export async function extractKeyframesFromBuffer(
         '-vf', 'scale=-2:720',
         outPath,
       ];
+      console.log(`🎬 [extractKeyframesFromBuffer] Extrayendo frame ${i}/${numFrames} en ${ts.toFixed(2)}s`);
       await spawnAsync(RESOLVED_FFMPEG, args);
       const buf = await fs.readFile(outPath);
+      console.log(`✅ [extractKeyframesFromBuffer] Frame ${i} extraído exitosamente (${buf.length} bytes)`);
       frames.push({ index: i - 1, timestamp: ts, imageBuffer: buf });
     }
     return frames;
