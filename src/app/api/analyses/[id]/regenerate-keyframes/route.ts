@@ -101,11 +101,13 @@ export async function GET(
     
     // 5. Extraer keyframes inteligentes
     console.log('🔍 [REGENERATE-KEYFRAMES] Extrayendo keyframes...');
+    console.log('🔍 [REGENERATE-KEYFRAMES] Analysis data:', JSON.stringify(analysisData, null, 2));
     await extractAndUploadSmartKeyframesAsync({
       analysisId: analysisId,
       videoBuffers,
-      userId: analysisData?.userId || 'unknown'
+      userId: analysisData?.playerId || analysisData?.userId || 'unknown'
     });
+    console.log('✅ [REGENERATE-KEYFRAMES] extractAndUploadSmartKeyframesAsync completado');
     
     console.log('✅ [REGENERATE-KEYFRAMES] Keyframes regenerados exitosamente');
     

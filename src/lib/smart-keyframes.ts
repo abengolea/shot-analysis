@@ -406,10 +406,12 @@ export async function extractAndUploadSmartKeyframesAsync(input: SmartKeyframeEx
       }
     }
     
-    // Actualizar Firestore con los keyframes (solo metadatos, no las imágenes)
+      // Actualizar Firestore con los keyframes (solo metadatos, no las imágenes)
     const totalFrames = Object.values(smartKeyframes).reduce((sum, arr) => sum + arr.length, 0);
+    console.log(`✅ [Smart Keyframes] Total de frames extraídos: ${totalFrames}`);
     
     if (totalFrames > 0) {
+      console.log(`✅ [Smart Keyframes] Guardando ${totalFrames} frames en Firestore...`);
       // Crear keyframes sin las imágenes para evitar límite de tamaño
       const keyframesMetadata = {
         front: smartKeyframes.front.map(kf => ({
@@ -449,6 +451,7 @@ export async function extractAndUploadSmartKeyframesAsync(input: SmartKeyframeEx
       const averageImportance = allFrames.reduce((sum, f) => sum + f.importance, 0) / allFrames.length;
       
       // Guardar metadatos en el documento principal
+      console.log(`✅ [Smart Keyframes] Actualizando documento ${analysisId} con ${totalFrames} frames...`);
       await adminDb.collection('analyses').doc(analysisId).update({
         smartKeyframes: keyframesMetadata,
         keyframesExtractedAt: new Date().toISOString(),
@@ -461,12 +464,15 @@ export async function extractAndUploadSmartKeyframesAsync(input: SmartKeyframeEx
           shotSequenceQuality: averageImportance > 0.5 ? 'high' : averageImportance > 0.3 ? 'medium' : 'low'
         }
       });
+      console.log(`✅ [Smart Keyframes] Documento ${analysisId} actualizado exitosamente`);
 
       // Guardar las imágenes en documentos separados para evitar límite de tamaño
+      console.log(`✅ [Smart Keyframes] Guardando imágenes en subcolecciones...`);
       for (const angle of angles) {
         const frames = smartKeyframes[angle];
         if (frames.length > 0) {
-                    // Guardar cada frame en un documento separado
+          console.log(`✅ [Smart Keyframes] Guardando ${frames.length} frames de ${angle}...`);
+          // Guardar cada frame en un documento separado
           for (let i = 0; i < frames.length; i++) {
             const frame = frames[i];
             const frameDoc = adminDb.collection('analyses').doc(analysisId).collection('keyframes').doc(angle).collection('frames').doc(`frame_${i}`);
@@ -480,8 +486,8 @@ export async function extractAndUploadSmartKeyframesAsync(input: SmartKeyframeEx
               imageData: frame.imageBuffer
             });
           }
-          
-                  }
+          console.log(`✅ [Smart Keyframes] ${frames.length} frames de ${angle} guardados exitosamente`);
+        }
       }
       
           } else {
