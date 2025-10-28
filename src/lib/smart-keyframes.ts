@@ -345,9 +345,12 @@ export async function extractAndUploadSmartKeyframesAsync(input: SmartKeyframeEx
       }
       
       try {
-                // USAR EXTRACCIÓN INTELIGENTE REAL
+        console.log(`🔍 [Smart Keyframes] Procesando ${angle}, buffer size: ${buffer.length} bytes`);
+        // USAR EXTRACCIÓN INTELIGENTE REAL
         const smartFrames = await extractSmartKeyframesFromBuffer(buffer, 12);
-                // Convertir a formato de data URL para almacenar
+        console.log(`✅ [Smart Keyframes] Extrajeron ${smartFrames.length} frames de ${angle}`);
+        
+        // Convertir a formato de data URL para almacenar
         const processedFrames: SmartKeyframe[] = [];
         
         for (let i = 0; i < smartFrames.length; i++) {
