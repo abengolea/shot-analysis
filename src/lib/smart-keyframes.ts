@@ -40,12 +40,19 @@ export async function extractSmartKeyframesFromBuffer(
     // Simplificar: usar directamente la extracción tradicional que funciona
   try {
     console.log('🔍 [Smart Keyframes] Intentando extraer keyframes...');
+    console.log(`📊 [Smart Keyframes] Buffer size: ${inputBuffer.length} bytes`);
     const frames = await extractKeyframesFromBuffer(inputBuffer, numFrames);
     console.log(`✅ [Smart Keyframes] Se extrajeron ${frames.length} frames exitosamente`);
+    
+    if (frames.length === 0) {
+      console.error('❌ [Smart Keyframes] No se extrajeron frames!');
+      return [];
+    }
     
     const smartKeyframes: SmartKeyframe[] = [];
         for (let i = 0; i < frames.length; i++) {
           const frame = frames[i];
+          console.log(`🖼️ [Smart Keyframes] Procesando frame ${i + 1}, imageBuffer size: ${frame.imageBuffer.length} bytes`);
           // frame.imageBuffer ya es un Buffer, convertirlo a data URL
           const base64Image = frame.imageBuffer.toString('base64');
           const dataUrl = `data:image/jpeg;base64,${base64Image}`;
@@ -58,12 +65,15 @@ export async function extractSmartKeyframesFromBuffer(
             phase: 'preparation', // Valor por defecto
             imageBuffer: dataUrl
           });
+          console.log(`✅ [Smart Keyframes] Frame ${i + 1} procesado, data URL size: ${dataUrl.length} bytes`);
         }
     
+    console.log(`✅ [Smart Keyframes] Total de smart keyframes generados: ${smartKeyframes.length}`);
         return smartKeyframes;
     
   } catch (error) {
     console.error(`❌ [Smart Keyframes] Error en extracción:`, error);
+    console.error(`❌ [Smart Keyframes] Stack trace:`, error instanceof Error ? error.stack : 'No stack');
     // Fallback: devolver array vacío
     return [];
   }
