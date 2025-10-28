@@ -240,31 +240,71 @@ export async function startAnalysisWithSmartKeyframes(prevState: any, formData: 
                 .replace(/\s+/g, '_') // Espacios a guiones bajos
                 .replace(/[^a-z0-9_]/g, ''); // Solo letras, números y guiones bajos
             
-            // Mapeo específico para manejar diferencias entre nombres de IA y claves de pesos
+            // Mapeo específico para manejar diferencias entre nombres de IA y claves de pesos (igual que actions.ts)
             const mapping: Record<string, string> = {
+                // PREPARACIÓN (Común para tres y libre)
                 'alineacion_de_pies': 'alineacion_pies',
                 'alineacion_de_los_pies': 'alineacion_pies',
                 'alineacion_corporal': 'alineacion_cuerpo',
                 'alineacion_del_cuerpo': 'alineacion_cuerpo',
+                'alineacion_pies_cuerpo': 'alineacion_pies_cuerpo',
                 'flexion_de_rodillas': 'flexion_rodillas',
+                'flexion_rodillas': 'flexion_rodillas',
+                'muneca_cargada': 'muneca_cargada_libre',
+                'posicion_inicial_del_balon': 'posicion_inicial_balon',
+                'posicion_inicial_balon': 'posicion_inicial_balon',
+                'rutina_pre_tiro': 'rutina_pre_tiro',
+                'rutina_pretiro': 'rutina_pre_tiro',
+                
+                // ASCENSO (Común para tres y libre)
                 'mano_no_dominante_en_ascenso': 'mano_no_dominante_ascenso',
                 'codos_cerca_del_cuerpo': 'codos_cerca_cuerpo',
+                'codos_cerca_del_cuerpo_libre': 'codos_cerca_cuerpo_libre',
                 'subida_recta_del_balon': 'subida_recta_balon',
                 'trayectoria_del_balon_hasta_el_set_point': 'trayectoria_hasta_set_point',
                 'trayectoria_del_balon_hasta_set_point': 'trayectoria_hasta_set_point',
                 'trayectoria_hasta_el_set_point': 'trayectoria_hasta_set_point',
+                'trayectoria_vertical': 'trayectoria_vertical_libre',
+                'trayectoria_vertical_libre': 'trayectoria_vertical_libre',
+                'mano_guia': 'mano_guia_libre',
+                'mano_guia_libre': 'mano_guia_libre',
+                'set_point': 'set_point',
+                'set_point_altura_segun_edad': 'set_point_altura_edad',
+                'set_point_altura_edad': 'set_point_altura_edad',
                 'tiempo_de_lanzamiento': 'tiempo_lanzamiento',
-                // FLUIDEZ (50% del peso) - CRÍTICO
-                'tiro_en_un_solo_tiempo': 'tiro_un_solo_tiempo', // IA usa "EN", peso usa "UN"
+                
+                // FLUIDEZ
+                'tiro_en_un_solo_tiempo': 'tiro_un_solo_tiempo',
+                'tiro_un_solo_tiempo': 'tiro_un_solo_tiempo',
+                'tiro_un_solo_tiempo_libre': 'tiro_un_solo_tiempo_libre',
                 'transferencia_energetica_sincronia_con_piernas': 'sincronia_piernas',
-                'transferencia_energetica__sincronia_con_piernas': 'sincronia_piernas', // Con doble guión bajo (em-dash)
+                'transferencia_energetica__sincronia_con_piernas': 'sincronia_piernas',
+                'sincronia_con_piernas': 'sincronia_piernas',
+                'sincronia_piernas': 'sincronia_piernas',
+                'sincronia_piernas_libre': 'sincronia_piernas_libre',
+                
                 // LIBERACIÓN
                 'mano_no_dominante_en_liberacion': 'mano_no_dominante_liberacion',
                 'mano_no_dominante_en_la_liberacion': 'mano_no_dominante_liberacion',
                 'extension_completa_del_brazo': 'extension_completa_brazo',
+                'extension_completa': 'extension_completa_brazo',
+                'extension_completa_liberacion': 'extension_completa_liberacion',
                 'giro_de_la_pelota': 'giro_pelota',
+                'rotacion_del_balon': 'rotacion_balon',
+                'rotacion_balon': 'rotacion_balon',
+                'giro_pelota': 'giro_pelota',
                 'angulo_de_salida': 'angulo_salida',
+                'angulo_salida': 'angulo_salida',
+                'angulo_salida_libre': 'angulo_salida_libre',
+                'flexion_muneca_final': 'flexion_muneca_final',
+                'gooseneck': 'flexion_muneca_final',
+                
                 // SEGUIMIENTO
+                'sin_salto': 'sin_salto_reglamentario',
+                'sin_salto_reglamentario': 'sin_salto_reglamentario',
+                'pies_dentro_zona': 'pies_dentro_zona',
+                'pies_dentro_de_zona': 'pies_dentro_zona',
+                'balance_vertical': 'balance_vertical',
                 'equilibrio_post_liberacion_y_aterrizaje': 'equilibrio_general',
                 'mantenimiento_del_equilibrio': 'equilibrio_general',
                 'equilibrio_en_aterrizaje': 'equilibrio_general',
@@ -272,7 +312,10 @@ export async function startAnalysisWithSmartKeyframes(prevState: any, formData: 
                 'equilibrio_general': 'equilibrio_general',
                 'duracion_del_follow_through': 'duracion_follow_through',
                 'duracion_del_followthrough': 'duracion_follow_through',
-                // CONSISTENCIA
+                'follow_through_completo': 'follow_through_completo_libre',
+                'follow_through_completo_libre': 'follow_through_completo_libre',
+                
+                // CONSISTENCIA (solo para tres puntos)
                 'consistencia_del_movimiento': 'consistencia_general',
                 'consistencia_tecnica': 'consistencia_general',
                 'consistencia_de_resultados': 'consistencia_general',

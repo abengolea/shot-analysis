@@ -360,6 +360,11 @@ export async function extractAndUploadSmartKeyframesAsync(input: SmartKeyframeEx
         const smartFrames = await extractSmartKeyframesFromBuffer(buffer, 12);
         console.log(`✅ [Smart Keyframes] Extrajeron ${smartFrames.length} frames de ${angle}`);
         
+        if (smartFrames.length === 0) {
+          console.error(`❌ [Smart Keyframes] NO se extrajeron frames de ${angle}!`);
+          console.error(`❌ [Smart Keyframes] Esto significa que extractSmartKeyframesFromBuffer falló o retornó array vacío`);
+        }
+        
         // Convertir a formato de data URL para almacenar
         const processedFrames: SmartKeyframe[] = [];
         

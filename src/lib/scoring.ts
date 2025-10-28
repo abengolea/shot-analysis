@@ -35,7 +35,41 @@ export const ITEM_WEIGHTS_TRES: Record<string, number> = {
   consistencia_general: 2.5, // Unificado: consistencia_repetitiva
 };
 
+// Pesos exactos por ítem del checklist de Tiro Libre. Deben sumar 100.
+export const ITEM_WEIGHTS_LIBRE: Record<string, number> = {
+  // Preparación (28%)
+  rutina_pre_tiro: 8.4,
+  alineacion_pies_cuerpo: 7.0,
+  muneca_cargada_libre: 5.6,
+  flexion_rodillas_libre: 4.2,
+  posicion_inicial_balon: 2.8,
+
+  // Ascenso (23%)
+  set_point_altura_edad: 9.2,
+  codos_cerca_cuerpo_libre: 6.9,
+  trayectoria_vertical_libre: 4.6,
+  mano_guia_libre: 2.3,
+
+  // Fluidez (12%)
+  tiro_un_solo_tiempo_libre: 7.2,
+  sincronia_piernas_libre: 4.8,
+
+  // Liberación (22%)
+  extension_completa_liberacion: 8.8,
+  angulo_salida_libre: 7.7,
+  flexion_muneca_final: 3.3,
+  rotacion_balon: 2.2,
+
+  // Seguimiento (15%)
+  // Equilibrio y Estabilidad (9.75% del total)
+  sin_salto_reglamentario: 3.9,
+  pies_dentro_zona: 2.93,
+  balance_vertical: 2.93,
+  follow_through_completo_libre: 5.25,
+};
+
 export const CATEGORY_TO_ITEM_IDS: Record<string, string[]> = {
+  // Tiro de Tres (3 puntos)
   "Fluidez (30%)": ["tiro_un_solo_tiempo", "sincronia_piernas"],
   "Preparación (24%)": [
     "alineacion_pies",
@@ -64,7 +98,54 @@ export const CATEGORY_TO_ITEM_IDS: Record<string, string[]> = {
     "duracion_follow_through",
     "consistencia_general",
   ],
+  
+  // Tiro Libre
+  "Preparación (28%)": [
+    "rutina_pre_tiro",
+    "alineacion_pies_cuerpo",
+    "muneca_cargada_libre",
+    "flexion_rodillas_libre",
+    "posicion_inicial_balon",
+  ],
+  "Ascenso (23%)": [
+    "set_point_altura_edad",
+    "codos_cerca_cuerpo_libre",
+    "trayectoria_vertical_libre",
+    "mano_guia_libre",
+  ],
+  "Fluidez (12%)": [
+    "tiro_un_solo_tiempo_libre",
+    "sincronia_piernas_libre",
+  ],
+  "Liberación (22%)": [
+    "extension_completa_liberacion",
+    "angulo_salida_libre",
+    "flexion_muneca_final",
+    "rotacion_balon",
+  ],
+  "Seguimiento (15%)": [
+    "sin_salto_reglamentario",
+    "pies_dentro_zona",
+    "balance_vertical",
+    "follow_through_completo_libre",
+  ],
 };
+
+// Obtener pesos por defecto según tipo de tiro
+export function getDefaultWeights(shotType: string): Record<string, number> {
+  switch (shotType.toLowerCase()) {
+    case 'libre':
+    case 'freethrow':
+    case 'tiro libre':
+      return ITEM_WEIGHTS_LIBRE;
+    case 'tres':
+    case 'three':
+    case '3 puntos':
+    case '3-point':
+    default:
+      return ITEM_WEIGHTS_TRES;
+  }
+}
 
 // Cache de pesos cargados desde Firestore
 let cachedWeights: Record<string, Record<string, number>> = {};
@@ -81,26 +162,27 @@ export async function loadWeightsFromFirestore(shotType: string = 'tres'): Promi
 
     if (!adminDb) {
       console.warn('⚠️ AdminDb no disponible, usando pesos por defecto');
-      return ITEM_WEIGHTS_TRES;
+      return getDefaultWeights(shotType);
     }
 
     const docRef = adminDb.collection('config').doc(docId);
     const docSnap = await docRef.get();
 
     if (!docSnap.exists) {
-            cachedWeights[shotType] = ITEM_WEIGHTS_TRES;
-      return ITEM_WEIGHTS_TRES;
+      const defaultWeights = getDefaultWeights(shotType);
+      cachedWeights[shotType] = defaultWeights;
+      return defaultWeights;
     }
 
     const data = docSnap.data();
-    const weights = data?.weights || ITEM_WEIGHTS_TRES;
+    const weights = data?.weights || getDefaultWeights(shotType);
     
-        cachedWeights[shotType] = weights;
+    cachedWeights[shotType] = weights;
     
     return weights;
   } catch (error) {
     console.error('❌ Error cargando pesos desde Firestore:', error);
-    return ITEM_WEIGHTS_TRES;
+    return getDefaultWeights(shotType);
   }
 }
 

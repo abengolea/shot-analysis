@@ -150,6 +150,13 @@ Video: {{videoUrl}}`
 // Ya no necesitamos este schema porque la IA no generará keyframes
 // Los keyframes se extraerán con FFmpeg en el backend
 
+// Detectar si es tiro libre o tres puntos
+function detectTiroLibre(shotType: string | undefined): boolean {
+  if (!shotType) return false;
+  const tipo = shotType.toLowerCase();
+  return tipo.includes('libre') || tipo.includes('free') || tipo.includes('ft');
+}
+
 // Checklist schemas
 const EvidenceFrameSchema = z.object({
   frameId: z.string().describe('ID of the keyframe where this evidence was observed'),
@@ -665,8 +672,64 @@ const analyzeShotPromptTestPage = ai.definePrompt({
 Video: {{videoUrl}}`
 });
 
-// Función helper para construir el prompt dinámicamente
-function buildAnalysisPrompt(input: AnalyzeBasketballShotInput): string {
+// Función helper para construir el prompt de TIRO LIBRE
+function buildLibrePrompt(input: AnalyzeBasketballShotInput): string {
+  const config = input.promptConfig || {};
+  
+  return `Eres un sistema experto de análisis de TIRO LIBRE en baloncesto.
+
+INFORMACIÓN DEL JUGADOR
+${input.ageCategory ? `- Categoría de edad: ${input.ageCategory}` : '- Presumir edad basándose en tamaño corporal, proporciones, altura relativa al aro y contexto'}
+
+SISTEMA DE PESOS PARA TIRO LIBRE:
+
+🎯 PREPARACIÓN: 28%
+├─ Rutina pre-tiro (8.4%): Secuencia repetible antes del tiro (botes, respiraciones, tiempo)
+├─ Alineación pies/cuerpo (7.0%): Posición del cuerpo para tiro recto
+├─ Muñeca cargada (5.6%): Flexión dorsal AL TOMAR el balón (ANTES del movimiento)
+├─ Flexión rodillas (4.2%): Flexión 90-110° para generar potencia
+└─ Posición inicial balón (2.8%): Ubicación correcta al inicio
+
+🎯 ASCENSO: 23%
+├─ Set point altura según edad (9.2%): CRÍTICO - Altura varía por edad
+│  • 6-8 años: Pecho/Hombros | • 9-11 años: Hombros/Mentón
+│  • 12-14 años: Frente/Ojos | • 15-17 años: Sobre cabeza | • 18+: Extensión completa
+│  TAMBIÉN: Trayectoria VERTICAL (no va atrás)
+├─ Codos cerca del cuerpo (6.9%): No abiertos durante ascenso
+├─ Trayectoria vertical (4.6%): Línea recta, sin desviaciones
+└─ Mano guía (2.3%): Solo guía/estabiliza, no empuja
+
+🎯 FLUIDEZ: 12%
+├─ Tiro en un tiempo (7.2%): Continuo sin pausas. NOTA: Menos crítico que tres puntos
+└─ Sincronía con piernas (4.8%): Balón sube coordinado con extensión de piernas
+
+🎯 LIBERACIÓN: 22%
+├─ Extensión completa (8.8%): Brazo Y cuerpo elongados en liberación
+├─ Ángulo de salida (7.7%): 45-52° óptimo
+├─ Flexión muñeca final (3.3%): "Gooseneck" - muñeca caída después de liberar
+└─ Rotación balón (2.2%): Backspin (puede ser no_evaluable)
+
+🎯 SEGUIMIENTO: 15%
+├─ Equilibrio y Estabilidad (9.75%):
+│  ├─ SIN SALTO (3.9%): Pies NO despegan ANTES del toque del aro
+│  │  ⚠️ INFRACCIÓN GRAVE si salta antes del toque
+│  ├─ Pies dentro zona (2.93%): No pisar línea antes del toque
+│  │  ⚠️ INFRACCIÓN si pisa línea
+│  └─ Balance vertical (2.93%): Sin movimientos laterales significativos
+└─ Follow-through completo (5.25%): Brazo extendido post-liberación (0.5-1s)
+
+⚠️ DIFERENCIACIÓN CRÍTICA:
+1. Muñeca CARGADA (Preparación): Flexión DORSAL al tomar el balón
+2. Muñeca FINAL (Liberación): Flexión hacia ABAJO (gooseneck) después de soltar
+
+RESPONDER EN FORMATO JSON:
+Evalúa TODOS los parámetros del tiro libre y responde en JSON con estructura completa.
+
+Video: {{videoUrl}}`;
+}
+
+// Función helper para construir el prompt de TRES PUNTOS
+function buildTresPuntosPrompt(input: AnalyzeBasketballShotInput): string {
   const config = input.promptConfig || {};
   const sectionPrompts = (config as any).sectionPrompts || {};
   
@@ -1103,6 +1166,19 @@ Si más del 50% de parámetros son "no_evaluables", incluye:
 Video a analizar: {{videoUrl}}`;
 
   return prompt;
+}
+
+// Función principal que selecciona el prompt correcto
+function buildAnalysisPrompt(input: AnalyzeBasketballShotInput): string {
+  // Detectar tipo de tiro
+  const esTiroLibre = detectTiroLibre(input.shotType);
+  
+  // Seleccionar el prompt apropiado según el tipo de tiro
+  if (esTiroLibre) {
+    return buildLibrePrompt(input);
+  } else {
+    return buildTresPuntosPrompt(input);
+  }
 }
 
 const analyzeBasketballShotFlow = ai.defineFlow(
