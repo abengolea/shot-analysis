@@ -9,14 +9,43 @@ let RESOLVED_FFMPEG: string = 'ffmpeg'; // Default
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const ffmpegStatic = require('ffmpeg-static');
+  console.log('🔍 [FFmpeg] ffmpeg-static module:', typeof ffmpegStatic);
+  console.log('🔍 [FFmpeg] ffmpeg-static direct value:', ffmpegStatic);
+  console.log('🔍 [FFmpeg] ffmpeg-static.path:', ffmpegStatic?.path);
   if (ffmpegStatic && (ffmpegStatic.path || ffmpegStatic)) {
     RESOLVED_FFMPEG = ffmpegStatic.path || ffmpegStatic;
     console.log('✅ [FFmpeg] Usando ffmpeg-static:', RESOLVED_FFMPEG);
+    
+    // Verificar que el binario exista y tenga permisos de ejecución
+    const { accessSync, constants } = require('fs');
+    try {
+      accessSync(RESOLVED_FFMPEG, constants.F_OK);
+      console.log('✅ [FFmpeg] El binario existe en disco');
+      
+      // Intentar hacer el binario ejecutable (solo en Linux/Mac)
+      const { chmod } = require('fs');
+      try {
+        chmod(RESOLVED_FFMPEG, 0o755, (err: any) => {
+          if (err) {
+            console.warn('⚠️ [FFmpeg] No se pudieron establecer permisos de ejecución:', err.message);
+          } else {
+            console.log('✅ [FFmpeg] Permisos de ejecución establecidos');
+          }
+        });
+      } catch (chmodErr) {
+        console.warn('⚠️ [FFmpeg] Error al establecer permisos (Windows?):', chmodErr);
+      }
+    } catch (accessErr) {
+      console.error('❌ [FFmpeg] El binario no existe en:', RESOLVED_FFMPEG);
+      console.error('❌ [FFmpeg] Error:', accessErr.message);
+      RESOLVED_FFMPEG = 'ffmpeg'; // Fallback a comando del sistema
+    }
   } else {
     console.log('⚠️ [FFmpeg] ffmpeg-static no tiene path válido, usando:', RESOLVED_FFMPEG);
   }
-} catch (e) {
-  console.warn('⚠️ [FFmpeg] No se encontró ffmpeg-static:', e.message);
+} catch (e: any) {
+  console.warn('⚠️ [FFmpeg] No se encontró ffmpeg-static:', e?.message || String(e));
+  console.warn('⚠️ [FFmpeg] Stack:', e?.stack || 'No stack');
   console.warn('⚠️ [FFmpeg] Usando comando del sistema:', RESOLVED_FFMPEG);
 }
 
