@@ -23,8 +23,33 @@ export async function GET() {
       path: ffmpegStatic?.path
     };
 
-    const { accessSync, constants } = require('fs');
-    const RESOLVED_FFMPEG = ffmpegStatic?.path || ffmpegStatic;
+    const { accessSync, constants, existsSync } = require('fs');
+    const path = require('path');
+    
+    let RESOLVED_FFMPEG = ffmpegStatic?.path || ffmpegStatic;
+    
+    // Si la ruta directa no existe, buscar en fallback paths
+    try {
+      accessSync(RESOLVED_FFMPEG, constants.F_OK);
+    } catch {
+      // Buscar en rutas de fallback
+      const fallbackPaths = [
+        path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(process.cwd(), '.next', 'standalone', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        '/workspace/node_modules/ffmpeg-static/ffmpeg',
+        '/workspace/.next/standalone/node_modules/ffmpeg-static/ffmpeg',
+      ];
+      
+      diagnostics.ffmpeg.fallbackSearch = [];
+      for (const fallbackPath of fallbackPaths) {
+        const exists = existsSync(fallbackPath);
+        diagnostics.ffmpeg.fallbackSearch.push({ path: fallbackPath, exists });
+        if (exists) {
+          RESOLVED_FFMPEG = fallbackPath;
+          break;
+        }
+      }
+    }
     
     diagnostics.ffmpeg.resolvedPath = RESOLVED_FFMPEG;
 
@@ -34,12 +59,17 @@ export async function GET() {
       diagnostics.ffmpeg.binaryExists = true;
 
       // Verificar permisos de ejecución
-      const { accessSync: access } = require('fs');
       try {
         accessSync(RESOLVED_FFMPEG, constants.X_OK);
         diagnostics.ffmpeg.executable = true;
       } catch {
         diagnostics.ffmpeg.executable = false;
+        // Intentar hacer ejecutable
+        try {
+          const { chmodSync } = require('fs');
+          chmodSync(RESOLVED_FFMPEG, 0o755);
+          diagnostics.ffmpeg.executable = true;
+        } catch {}
       }
     } catch (err: any) {
       diagnostics.ffmpeg.binaryExists = false;
