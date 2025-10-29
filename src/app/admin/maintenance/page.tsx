@@ -16,6 +16,11 @@ interface MaintenanceConfig {
   message: string;
   updatedAt: string;
   updatedBy: string;
+  shotTypesMaintenance?: {
+    tres: boolean;
+    media: boolean;
+    libre: boolean;
+  };
 }
 
 export default function MaintenancePage() {
@@ -24,7 +29,12 @@ export default function MaintenancePage() {
     title: '🔧 SITIO EN MANTENIMIENTO',
     message: 'Estamos ajustando variables importantes del sistema.\n\nEl análisis de lanzamientos está temporalmente deshabilitado.\n\nVolveremos pronto con mejoras. ¡Gracias por tu paciencia!',
     updatedAt: '',
-    updatedBy: ''
+    updatedBy: '',
+    shotTypesMaintenance: {
+      tres: false,
+      media: false,
+      libre: true
+    }
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,15 +120,15 @@ export default function MaintenancePage() {
       </div>
 
       <div className="grid gap-6">
-        {/* Estado Actual */}
+        {/* Estado Actual - Mantenimiento General */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <div className={`w-3 h-3 rounded-full ${config.enabled ? 'bg-red-500' : 'bg-green-500'}`} />
-              Estado Actual
+              Mantenimiento General
             </CardTitle>
             <CardDescription>
-              El mantenimiento está actualmente {config.enabled ? 'HABILITADO' : 'DESHABILITADO'}
+              Si está activo, toda la aplicación queda en mantenimiento (todos los tipos de tiro)
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -129,25 +139,139 @@ export default function MaintenancePage() {
                 onCheckedChange={(enabled) => setConfig(prev => ({ ...prev, enabled }))}
               />
               <Label htmlFor="maintenance-enabled" className="text-sm font-medium">
-                {config.enabled ? 'Mantenimiento ACTIVO' : 'Mantenimiento INACTIVO'}
+                {config.enabled ? 'Mantenimiento ACTIVO (Toda la app)' : 'Mantenimiento INACTIVO'}
               </Label>
             </div>
             {config.enabled && (
               <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                 <p className="text-red-800 text-sm font-medium">
-                  ⚠️ Los usuarios NO pueden analizar lanzamientos mientras esté activo
+                  ⚠️ Los usuarios NO pueden analizar ningún tipo de tiro mientras esté activo
                 </p>
               </div>
             )}
           </CardContent>
         </Card>
 
+        {/* Mantenimiento por Tipo de Tiro */}
+        {!config.enabled && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Mantenimiento por Tipo de Tiro</CardTitle>
+              <CardDescription>
+                Controla qué tipos de análisis están en mantenimiento de forma individual
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Tiro de Tres Puntos */}
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="flex-1">
+                  <Label htmlFor="tres-maintenance" className="text-base font-medium cursor-pointer">
+                    🏀 Lanzamiento de Tres Puntos
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Si está activo, los usuarios no pueden analizar tiros de tres puntos
+                  </p>
+                </div>
+                <Switch
+                  id="tres-maintenance"
+                  checked={config.shotTypesMaintenance?.tres || false}
+                  onCheckedChange={(enabled) => setConfig(prev => ({
+                    ...prev,
+                    shotTypesMaintenance: {
+                      ...prev.shotTypesMaintenance,
+                      tres: enabled
+                    }
+                  }))}
+                />
+              </div>
+
+              {/* Tiro de Media Distancia */}
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="flex-1">
+                  <Label htmlFor="media-maintenance" className="text-base font-medium cursor-pointer">
+                    🎯 Lanzamiento de Media Distancia (Jump Shot)
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Si está activo, los usuarios no pueden analizar jump shots
+                  </p>
+                </div>
+                <Switch
+                  id="media-maintenance"
+                  checked={config.shotTypesMaintenance?.media || false}
+                  onCheckedChange={(enabled) => setConfig(prev => ({
+                    ...prev,
+                    shotTypesMaintenance: {
+                      ...prev.shotTypesMaintenance,
+                      media: enabled
+                    }
+                  }))}
+                />
+              </div>
+
+              {/* Tiro Libre */}
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="flex-1">
+                  <Label htmlFor="libre-maintenance" className="text-base font-medium cursor-pointer">
+                    🎲 Tiro Libre
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Si está activo, los usuarios no pueden analizar tiros libres
+                  </p>
+                </div>
+                <Switch
+                  id="libre-maintenance"
+                  checked={config.shotTypesMaintenance?.libre || false}
+                  onCheckedChange={(enabled) => setConfig(prev => ({
+                    ...prev,
+                    shotTypesMaintenance: {
+                      ...prev.shotTypesMaintenance,
+                      libre: enabled
+                    }
+                  }))}
+                />
+              </div>
+
+              {(config.shotTypesMaintenance?.tres || config.shotTypesMaintenance?.media || config.shotTypesMaintenance?.libre) && (() => {
+                const blockedTypes: string[] = [];
+                const availableTypes: string[] = [];
+                
+                if (config.shotTypesMaintenance?.tres) blockedTypes.push('Lanzamiento de Tres');
+                else availableTypes.push('Lanzamiento de Tres');
+                
+                if (config.shotTypesMaintenance?.media) blockedTypes.push('Lanzamiento de Media Distancia');
+                else availableTypes.push('Lanzamiento de Media Distancia');
+                
+                if (config.shotTypesMaintenance?.libre) blockedTypes.push('Tiro Libre');
+                else availableTypes.push('Tiro Libre');
+                
+                return (
+                  <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
+                    <p className="text-amber-800 text-sm font-medium">
+                      ⚠️ Tipos bloqueados ({blockedTypes.length}): {blockedTypes.join(', ')}
+                    </p>
+                    {availableTypes.length > 0 && (
+                      <p className="text-amber-700 text-sm">
+                        ✅ Tipos disponibles ({availableTypes.length}): {availableTypes.join(', ')}
+                      </p>
+                    )}
+                    <p className="text-amber-700 text-xs mt-2">
+                      Los usuarios verán un mensaje específico indicando qué tipo está bloqueado y cuáles están disponibles.
+                    </p>
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Configuración del Mensaje */}
         <Card>
           <CardHeader>
-            <CardTitle>Mensaje de Mantenimiento</CardTitle>
+            <CardTitle>Mensaje de Mantenimiento General</CardTitle>
             <CardDescription>
-              Personaliza el título y mensaje que verán los usuarios
+              {config.enabled 
+                ? 'Personaliza el título y mensaje que verán los usuarios cuando toda la app esté en mantenimiento'
+                : 'Estos mensajes solo se usan cuando el mantenimiento general está activo. Para tipos específicos, el sistema genera mensajes automáticos indicando qué tipos están disponibles.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

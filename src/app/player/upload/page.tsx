@@ -281,16 +281,35 @@ export default function UploadPage() {
     fetchWallet();
   }, [user]);
 
-  // Verificar estado de mantenimiento
+  // Verificar estado de mantenimiento (general y por tipo de tiro)
   useEffect(() => {
     const checkMaintenance = async () => {
       try {
+        // Verificar mantenimiento general
         const response = await fetch('/api/admin/maintenance');
         if (response.ok) {
           const config = await response.json();
           if (config.enabled) {
             setMaintenanceConfig({ title: config.title, message: config.message });
             setMaintenanceOpen(true);
+            return;
+          }
+        }
+        
+        // Si hay un tipo de tiro seleccionado, verificar mantenimiento específico
+        if (shotType) {
+          const shotMaintenanceResponse = await fetch(`/api/admin/maintenance?shotType=${encodeURIComponent(shotType)}`);
+          if (shotMaintenanceResponse.ok) {
+            const data = await shotMaintenanceResponse.json();
+            if (data.inMaintenance && data.config) {
+              setMaintenanceConfig({ 
+                title: data.config.title || '🚧 Análisis en Mantenimiento', 
+                message: data.config.message || `El análisis de ${shotType} está actualmente en mantenimiento.`
+              });
+              setMaintenanceOpen(true);
+            } else {
+              setMaintenanceOpen(false);
+            }
           }
         }
       } catch (error) {
@@ -298,7 +317,7 @@ export default function UploadPage() {
       }
     };
     checkMaintenance();
-  }, []);
+  }, [shotType]);
 
   // Abrir recomendaciones automáticamente la primera vez
   useEffect(() => {
@@ -426,36 +445,7 @@ export default function UploadPage() {
         </CardContent>
       </Card>
 
-      {/* Aviso de desarrollo para tipos de tiro */}
-      {shotType && (shotType === "Tiro Libre" || shotType === "Lanzamiento de Media Distancia (Jump Shot)") && (
-        <Card className="bg-amber-50 border-amber-300 shadow-md">
-          <CardContent className="pt-6">
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0">
-                <div className="h-8 w-8 bg-amber-100 rounded-full flex items-center justify-center">
-                  <span className="text-amber-600 text-lg">⚠️</span>
-                </div>
-              </div>
-              <div className="flex-1">
-                <h3 className="text-base font-bold text-amber-800 mb-2">
-                  🚧 Funcionalidad en Desarrollo
-                </h3>
-                <div className="text-sm text-amber-700 leading-relaxed space-y-2">
-                  <p>
-                    <strong>El análisis de {shotType.toLowerCase()} está actualmente en proceso de desarrollo.</strong>
-                  </p>
-                  <p>
-                    Por el momento, <strong>solo estamos midiendo y probando el análisis de lanzamientos de tres puntos</strong>.
-                  </p>
-                  <p className="bg-amber-100 p-2 rounded border-l-4 border-amber-400">
-                    <strong>💡 Recomendación:</strong> Si querés probar el sistema, seleccioná <strong>"Lanzamiento de Tres"</strong> para obtener un análisis completo.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Mantenimiento por tipo de tiro se maneja dinámicamente con el modal */}
 
       {/* Selector de videos (unificado) */}
       <Card>

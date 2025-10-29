@@ -1486,7 +1486,7 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
 // 🎯 FUNCIÓN PRINCIPAL DE ANÁLISIS: PROMPT OPTIMIZADO + PREPROCESAMIENTO FFMPEG + PESOS CONFIGURABLES
 export async function startAnalysis(prevState: any, formData: FormData) {
     try {
-        // Verificar si el sistema está en modo mantenimiento
+        // Verificar si el sistema está en modo mantenimiento general
         const maintenanceEnabled = await isMaintenanceMode();
         if (maintenanceEnabled) {
             return { 
@@ -1495,11 +1495,22 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             };
         }
 
-                                        const userId = formData.get('userId') as string;
+        const userId = formData.get('userId') as string;
         const coachId = (formData.get('coachId') as string | null) || null;
         if (!userId) return { message: "ID de usuario requerido.", error: true };
         const shotType = formData.get('shotType') as string;
         if (!shotType) return { message: "Tipo de lanzamiento requerido.", error: true };
+        
+        // Verificar mantenimiento específico por tipo de tiro
+        const { isShotTypeInMaintenance, normalizeShotType } = await import('@/lib/maintenance');
+        const normalizedShotType = normalizeShotType(shotType);
+        const shotTypeMaintenance = await isShotTypeInMaintenance(normalizedShotType);
+        if (shotTypeMaintenance) {
+            return { 
+                message: `El análisis de ${shotType} está actualmente en mantenimiento. Por favor, intenta con otro tipo de tiro o vuelve más tarde.`, 
+                error: true 
+            };
+        }
         
         const ageCategory = formData.get('ageCategory') as string || 'adult';
         const playerLevel = formData.get('playerLevel') as string || 'intermediate';
