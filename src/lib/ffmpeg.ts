@@ -35,12 +35,33 @@ try {
       const path = require('path');
       const { existsSync } = require('fs');
       
+      // Buscar usando require.resolve para encontrar el módulo real
+      let ffmpegModuleDir: string | null = null;
+      try {
+        // require.resolve devuelve el path al index.js del módulo
+        const moduleIndexPath = require.resolve('ffmpeg-static');
+        ffmpegModuleDir = path.dirname(moduleIndexPath);
+        console.log('🔍 [FFmpeg] Módulo encontrado en:', ffmpegModuleDir);
+      } catch (resolveErr) {
+        console.warn('⚠️ [FFmpeg] No se pudo resolver ffmpeg-static con require.resolve');
+      }
+      
       const fallbackPaths = [
+        // Ruta del binario en el directorio del módulo
+        ffmpegModuleDir ? path.join(ffmpegModuleDir, 'ffmpeg') : null,
+        // Buscar en subdirectorios comunes del módulo
+        ffmpegModuleDir ? path.join(ffmpegModuleDir, 'bin', 'ffmpeg') : null,
+        ffmpegModuleDir ? path.join(ffmpegModuleDir, '..', 'ffmpeg') : null,
+        // Rutas estándar
         path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg'),
         path.join(process.cwd(), '.next', 'standalone', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
         '/workspace/node_modules/ffmpeg-static/ffmpeg',
         '/workspace/.next/standalone/node_modules/ffmpeg-static/ffmpeg',
-      ];
+        // Rutas relativas desde diferentes ubicaciones
+        path.join(__dirname, '..', '..', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(__dirname, '..', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(__dirname, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+      ].filter(Boolean);
       
       let found = false;
       for (const fallbackPath of fallbackPaths) {
