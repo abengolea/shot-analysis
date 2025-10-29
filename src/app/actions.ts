@@ -1662,7 +1662,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         
         let analysisResult;
         try {
-            // Pasar solo los videos que existen
+            // Pasar solo los videos que existen + parámetros importantes (máximo 3 videos)
             analysisResult = await analyzeVideoSimplePrompt(
                 videoBuffers[0] || null,
                 fileNames[0] || null,
@@ -1670,8 +1670,9 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 fileNames[1] || null,
                 videoBuffers[2] || null,
                 fileNames[2] || null,
-                videoBuffers[3] || null,
-                fileNames[3] || null
+                ageCategory,
+                playerLevel,
+                shotType
             );
                     } catch (error) {
             console.error('❌ Error en el análisis híbrido:', error);
@@ -1708,7 +1709,11 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 .normalize('NFD')
                 .replace(/[\u0300-\u036f]/g, '') // Quitar acentos
                 .replace(/\s+/g, '_') // Espacios a guiones bajos
-                .replace(/[^a-z0-9_]/g, ''); // Solo letras, números y guiones bajos
+                .replace(/[^a-z0-9_]/g, '') // Solo letras, números y guiones bajos
+                .replace(/\//g, '_'); // Reemplazar / por _
+            
+            // Mapeo específico según tipo de tiro
+            const isLibre = shotTypeKey === 'libre';
             
             // Mapeo específico para manejar diferencias entre nombres de IA y claves de pesos
             const mapping: Record<string, string> = {
@@ -1718,9 +1723,10 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 'alineacion_corporal': 'alineacion_cuerpo',
                 'alineacion_del_cuerpo': 'alineacion_cuerpo',
                 'alineacion_pies_cuerpo': 'alineacion_pies_cuerpo', // Para tiro libre
+                'alineacion_pies_cuerpo_libre': 'alineacion_pies_cuerpo',
                 'flexion_de_rodillas': 'flexion_rodillas',
-                'flexion_rodillas': 'flexion_rodillas_libre', // Para tiro libre
-                'muneca_cargada': 'muneca_cargada_libre', // Para tiro libre (distinta de la de tres puntos)
+                'flexion_rodillas': isLibre ? 'flexion_rodillas_libre' : 'flexion_rodillas',
+                'muneca_cargada': isLibre ? 'muneca_cargada_libre' : 'muneca_cargada',
                 'posicion_inicial_del_balon': 'posicion_inicial_balon',
                 'posicion_inicial_balon': 'posicion_inicial_balon',
                 'rutina_pre_tiro': 'rutina_pre_tiro', // Específico tiro libre
@@ -1728,9 +1734,9 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 
                 // ASCENSO (Común para tres y libre)
                 'mano_no_dominante_en_ascenso': 'mano_no_dominante_ascenso',
-                'codos_cerca_del_cuerpo': 'codos_cerca_cuerpo',
+                'codos_cerca_del_cuerpo': isLibre ? 'codos_cerca_cuerpo_libre' : 'codos_cerca_cuerpo',
                 'codos_cerca_del_cuerpo_libre': 'codos_cerca_cuerpo_libre',
-                'codos_cerca_cuerpo': 'codos_cerca_cuerpo',
+                'codos_cerca_cuerpo': isLibre ? 'codos_cerca_cuerpo_libre' : 'codos_cerca_cuerpo',
                 'subida_recta_del_balon': 'subida_recta_balon',
                 'trayectoria_del_balon_hasta_el_set_point': 'trayectoria_hasta_set_point',
                 'trayectoria_del_balon_hasta_set_point': 'trayectoria_hasta_set_point',
@@ -1739,40 +1745,40 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 'trayectoria_vertical_libre': 'trayectoria_vertical_libre',
                 'mano_guia': 'mano_guia_libre',
                 'mano_guia_libre': 'mano_guia_libre',
-                'set_point': 'set_point',
+                'set_point': isLibre ? 'set_point_altura_edad' : 'set_point',
                 'set_point_altura_segun_edad': 'set_point_altura_edad',
                 'set_point_altura_edad': 'set_point_altura_edad',
                 'tiempo_de_lanzamiento': 'tiempo_lanzamiento',
                 
                 // FLUIDEZ
-                'tiro_en_un_solo_tiempo': 'tiro_un_solo_tiempo',
-                'tiro_un_solo_tiempo': 'tiro_un_solo_tiempo',
+                'tiro_en_un_solo_tiempo': isLibre ? 'tiro_un_solo_tiempo_libre' : 'tiro_un_solo_tiempo',
+                'tiro_un_solo_tiempo': isLibre ? 'tiro_un_solo_tiempo_libre' : 'tiro_un_solo_tiempo',
                 'tiro_un_solo_tiempo_libre': 'tiro_un_solo_tiempo_libre',
-                'transferencia_energetica_sincronia_con_piernas': 'sincronia_piernas',
-                'transferencia_energetica__sincronia_con_piernas': 'sincronia_piernas',
-                'sincronia_con_piernas': 'sincronia_piernas',
-                'sincronia_piernas': 'sincronia_piernas',
+                'transferencia_energetica_sincronia_con_piernas': isLibre ? 'sincronia_piernas_libre' : 'sincronia_piernas',
+                'transferencia_energetica__sincronia_con_piernas': isLibre ? 'sincronia_piernas_libre' : 'sincronia_piernas',
+                'sincronia_con_piernas': isLibre ? 'sincronia_piernas_libre' : 'sincronia_piernas',
+                'sincronia_piernas': isLibre ? 'sincronia_piernas_libre' : 'sincronia_piernas',
                 'sincronia_piernas_libre': 'sincronia_piernas_libre',
                 
                 // LIBERACIÓN
                 'mano_no_dominante_en_liberacion': 'mano_no_dominante_liberacion',
                 'mano_no_dominante_en_la_liberacion': 'mano_no_dominante_liberacion',
-                'extension_completa_del_brazo': 'extension_completa_brazo',
-                'extension_completa': 'extension_completa_brazo',
-                'extension_completa_brazo': 'extension_completa_brazo',
+                'extension_completa_del_brazo': isLibre ? 'extension_completa_liberacion' : 'extension_completa_brazo',
+                'extension_completa': isLibre ? 'extension_completa_liberacion' : 'extension_completa_brazo',
+                'extension_completa_brazo': isLibre ? 'extension_completa_liberacion' : 'extension_completa_brazo',
                 'extension_completa_liberacion': 'extension_completa_liberacion',
                 'giro_de_la_pelota': 'giro_pelota',
                 'rotacion_del_balon': 'rotacion_balon', // Específico tiro libre
                 'rotacion_balon': 'rotacion_balon',
                 'giro_pelota': 'giro_pelota',
-                'angulo_de_salida': 'angulo_salida',
-                'angulo_salida': 'angulo_salida',
+                'angulo_de_salida': isLibre ? 'angulo_salida_libre' : 'angulo_salida',
+                'angulo_salida': isLibre ? 'angulo_salida_libre' : 'angulo_salida',
                 'angulo_salida_libre': 'angulo_salida_libre',
                 'flexion_muneca_final': 'flexion_muneca_final', // Específico tiro libre (gooseneck)
                 'gooseneck': 'flexion_muneca_final',
                 
-                // SEGUIMIENTO
-                'sin_salto': 'sin_salto_reglamentario', // Específico tiro libre
+                // SEGUIMIENTO (específicos de tiro libre)
+                'sin_salto': 'sin_salto_reglamentario',
                 'sin_salto_reglamentario': 'sin_salto_reglamentario',
                 'pies_dentro_zona': 'pies_dentro_zona',
                 'pies_dentro_de_zona': 'pies_dentro_zona',

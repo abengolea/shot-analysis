@@ -157,8 +157,155 @@ export const CANONICAL_CATEGORIES: CanonicalCategoryDef[] = [
   },
 ];
 
-export function buildCanonicalChecklist(): ChecklistCategory[] {
-  return CANONICAL_CATEGORIES.map((cat) => ({
+// Checklist canónico para TIRO LIBRE
+export const CANONICAL_CATEGORIES_LIBRE: CanonicalCategoryDef[] = [
+  {
+    category: "Preparación",
+    items: [
+      {
+        id: "rutina_pre_tiro",
+        name: "Rutina pre-tiro",
+        description:
+          "Secuencia repetible antes del tiro (botes, respiraciones, tiempo de preparación).",
+      },
+      {
+        id: "alineacion_pies_cuerpo",
+        name: "Alineación pies/cuerpo",
+        description:
+          "Posición del cuerpo para tiro recto al aro; pies y cuerpo alineados.",
+      },
+      {
+        id: "muneca_cargada_libre",
+        name: "Muñeca cargada",
+        description:
+          "Flexión dorsal AL TOMAR el balón (ANTES del movimiento), lista para liberar.",
+      },
+      {
+        id: "flexion_rodillas_libre",
+        name: "Flexión rodillas",
+        description:
+          "Flexión 90-110° para generar potencia; evita rigidez o sobre-flexión.",
+      },
+      {
+        id: "posicion_inicial_balon",
+        name: "Posición inicial balón",
+        description:
+          "Ubicación correcta del balón al inicio del movimiento.",
+      },
+    ],
+  },
+  {
+    category: "Ascenso",
+    items: [
+      {
+        id: "set_point_altura_edad",
+        name: "Set point altura según edad",
+        description:
+          "CRÍTICO - Altura varía por edad: 6-8 años (Pecho/Hombros), 9-11 años (Hombros/Mentón), 12-14 años (Frente/Ojos), 15-17 años (Sobre cabeza), 18+ (Extensión completa). Trayectoria VERTICAL (no va atrás).",
+      },
+      {
+        id: "codos_cerca_cuerpo_libre",
+        name: "Codos cerca del cuerpo",
+        description:
+          "No abiertos durante ascenso; alineados cercanos al eje corporal.",
+      },
+      {
+        id: "trayectoria_vertical_libre",
+        name: "Trayectoria vertical",
+        description:
+          "Línea recta hacia arriba, sin desviaciones laterales.",
+      },
+      {
+        id: "mano_guia_libre",
+        name: "Mano guía",
+        description:
+          "Solo guía/estabiliza, no empuja; debe soltar antes de la liberación.",
+      },
+    ],
+  },
+  {
+    category: "Fluidez",
+    items: [
+      {
+        id: "tiro_un_solo_tiempo_libre",
+        name: "Tiro en un solo tiempo",
+        description:
+          "Continuo sin pausas; el gesto fluye desde preparación hasta liberación.",
+      },
+      {
+        id: "sincronia_piernas_libre",
+        name: "Sincronía con piernas",
+        description:
+          "Balón sube coordinado con extensión de piernas; transferencia energética correcta.",
+      },
+    ],
+  },
+  {
+    category: "Liberación",
+    items: [
+      {
+        id: "extension_completa_liberacion",
+        name: "Extensión completa",
+        description:
+          "Brazo Y cuerpo elongados en liberación; extensión total hacia el aro.",
+      },
+      {
+        id: "angulo_salida_libre",
+        name: "Ángulo de salida",
+        description:
+          "45-52° óptimo según altura y características del jugador.",
+      },
+      {
+        id: "flexion_muneca_final",
+        name: "Flexión muñeca final",
+        description:
+          "Gooseneck - muñeca flexionada hacia abajo después de liberar (follow-through).",
+      },
+      {
+        id: "rotacion_balon",
+        name: "Rotación balón",
+        description:
+          "Backspin uniforme y centrado; producto del roce final de los dedos.",
+      },
+    ],
+  },
+  {
+    category: "Seguimiento",
+    items: [
+      {
+        id: "sin_salto_reglamentario",
+        name: "SIN SALTO",
+        description:
+          "Pies NO despegan ANTES del toque del aro (⚠️ INFRACCIÓN GRAVE si salta antes del toque).",
+      },
+      {
+        id: "pies_dentro_zona",
+        name: "Pies dentro zona",
+        description:
+          "No pisar línea antes del toque (⚠️ INFRACCIÓN si pisa línea).",
+      },
+      {
+        id: "balance_vertical",
+        name: "Balance vertical",
+        description:
+          "Sin movimientos laterales significativos; equilibrio mantenido.",
+      },
+      {
+        id: "follow_through_completo_libre",
+        name: "Follow-through completo",
+        description:
+          "Brazo extendido post-liberación (0.5-1s); mantener posición.",
+      },
+    ],
+  },
+];
+
+export function buildCanonicalChecklist(shotType?: string): ChecklistCategory[] {
+  // Determinar qué checklist usar según tipo de tiro
+  const isLibre = shotType && (shotType.toLowerCase().includes('libre') || shotType.toLowerCase().includes('free') || shotType === 'libre');
+  const categories = isLibre ? CANONICAL_CATEGORIES_LIBRE : CANONICAL_CATEGORIES;
+  
+  return categories.map((cat) => ({
     category: cat.category,
     items: cat.items.map((it) => ({
       id: it.id,

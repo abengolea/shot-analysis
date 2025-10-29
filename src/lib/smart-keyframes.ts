@@ -424,6 +424,12 @@ export async function extractAndUploadSmartKeyframesAsync(input: SmartKeyframeEx
       // Actualizar Firestore con los keyframes (solo metadatos, no las imágenes)
     const totalFrames = Object.values(smartKeyframes).reduce((sum, arr) => sum + arr.length, 0);
     console.log(`✅ [Smart Keyframes] Total de frames extraídos: ${totalFrames}`);
+    console.log(`📊 [Smart Keyframes] Desglose por ángulo:`, {
+      front: smartKeyframes.front.length,
+      back: smartKeyframes.back.length,
+      left: smartKeyframes.left.length,
+      right: smartKeyframes.right.length
+    });
     
     if (totalFrames > 0) {
       console.log(`✅ [Smart Keyframes] Guardando ${totalFrames} frames en Firestore...`);
@@ -506,9 +512,17 @@ export async function extractAndUploadSmartKeyframesAsync(input: SmartKeyframeEx
       }
       
           } else {
-          }
+      console.error(`❌ [Smart Keyframes] NO se guardaron keyframes porque totalFrames = 0`);
+      console.error(`❌ [Smart Keyframes] Esto significa que NO se extrajeron frames de ningún ángulo`);
+      console.error(`❌ [Smart Keyframes] Posibles causas:`);
+      console.error(`   - FFmpeg no está disponible en producción`);
+      console.error(`   - Error al extraer frames del video`);
+      console.error(`   - Buffer del video vacío o inválido`);
+    }
     
   } catch (error) {
     console.error(`❌ [Smart Keyframes] Error general para ${analysisId}:`, error);
+    console.error(`❌ [Smart Keyframes] Stack trace:`, error instanceof Error ? error.stack : 'No stack');
+    throw error; // Re-lanzar el error para que el endpoint lo capture
   }
 }

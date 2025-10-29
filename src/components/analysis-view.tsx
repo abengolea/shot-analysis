@@ -56,7 +56,7 @@ import {
 } from "lucide-react";
 import { DrillCard } from "./drill-card";
 import { DetailedChecklist } from "./detailed-checklist";
-import { CANONICAL_CATEGORIES } from "@/lib/canonical-checklist";
+import { CANONICAL_CATEGORIES, CANONICAL_CATEGORIES_LIBRE } from "@/lib/canonical-checklist";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -283,32 +283,64 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         .replace(/^_|_$/g, '');
     };
 
+    // Determinar tipo de tiro primero (antes de mapear)
+    const shotType = (analysis as any).shotType || 
+                     (analysis as any).scoreMetadata?.shotTypeKey || 
+                     (analysis as any).scoreMetadata?.shotType || 
+                     '';
+    const isLibre = shotType && (
+      shotType.toLowerCase().includes('libre') || 
+      shotType.toLowerCase().includes('free') || 
+      shotType === 'libre'
+    );
+    
     // Función para mapear IDs de Gemini a IDs canónicos
     const mapGeminiToCanonical = (geminiId: string): string => {
       const normalized = normalizeId(geminiId);
       
       // Mapeo específico de IDs problemáticos
       const mapping: Record<string, string> = {
+        // Tres puntos
         'alineacion_de_pies': 'alineacion_pies',
         'alineacion_corporal': 'alineacion_cuerpo',
         'flexion_de_rodillas': 'flexion_rodillas',
         'mano_no_dominante_en_ascenso': 'mano_no_dominante_ascenso',
-        'codos_cerca_del_cuerpo': 'codos_cerca_cuerpo',
+        'codos_cerca_del_cuerpo': isLibre ? 'codos_cerca_cuerpo_libre' : 'codos_cerca_cuerpo',
         'subida_recta_del_balon': 'subida_recta_balon',
         'tiempo_de_lanzamiento': 'tiempo_lanzamiento',
-        'tiro_en_un_solo_tiempo': 'tiro_un_solo_tiempo',
-        'transferencia_energetica_sincronia_con_piernas': 'sincronia_piernas',
+        'tiro_en_un_solo_tiempo': isLibre ? 'tiro_un_solo_tiempo_libre' : 'tiro_un_solo_tiempo',
+        'transferencia_energetica_sincronia_con_piernas': isLibre ? 'sincronia_piernas_libre' : 'sincronia_piernas',
+        'sincronia_con_piernas': isLibre ? 'sincronia_piernas_libre' : 'sincronia_piernas',
         'mano_no_dominante_en_liberacion': 'mano_no_dominante_liberacion',
-        'extension_completa_del_brazo': 'extension_completa_brazo',
+        'extension_completa_del_brazo': isLibre ? 'extension_completa_liberacion' : 'extension_completa_brazo',
+        'extension_completa': isLibre ? 'extension_completa_liberacion' : 'extension_completa_brazo',
         'giro_de_la_pelota': 'giro_pelota',
-        'angulo_de_salida': 'angulo_salida',
+        'rotacion_balon': 'rotacion_balon',
+        'angulo_de_salida': isLibre ? 'angulo_salida_libre' : 'angulo_salida',
         'mantenimiento_del_equilibrio': 'mantenimiento_equilibrio',
         'equilibrio_en_aterrizaje': 'equilibrio_aterrizaje',
-        'duracion_del_follow_through': 'duracion_follow_through',
-        'duracion_del_followthrough': 'duracion_follow_through',
+        'duracion_del_follow_through': isLibre ? 'follow_through_completo_libre' : 'duracion_follow_through',
+        'duracion_del_followthrough': isLibre ? 'follow_through_completo_libre' : 'duracion_follow_through',
+        'follow_through_completo': isLibre ? 'follow_through_completo_libre' : 'duracion_follow_through',
         'consistencia_del_movimiento': 'consistencia_repetitiva',
         'consistencia_tecnica': 'consistencia_repetitiva',
-        'consistencia_de_resultados': 'consistencia_repetitiva'
+        'consistencia_de_resultados': 'consistencia_repetitiva',
+        // Tiro libre específicos
+        'rutina_pre_tiro': 'rutina_pre_tiro',
+        'alineacion_pies_cuerpo': 'alineacion_pies_cuerpo',
+        'alineacion_piescuerpo': 'alineacion_pies_cuerpo',
+        'muneca_cargada': isLibre ? 'muneca_cargada_libre' : 'muneca_cargada',
+        'flexion_rodillas': isLibre ? 'flexion_rodillas_libre' : 'flexion_rodillas',
+        'posicion_inicial_balon': 'posicion_inicial_balon',
+        'set_point_altura_segun_edad': 'set_point_altura_edad',
+        'set_point_altura_edad': 'set_point_altura_edad',
+        'set_point': isLibre ? 'set_point_altura_edad' : 'set_point',
+        'trayectoria_vertical': 'trayectoria_vertical_libre',
+        'mano_guia': 'mano_guia_libre',
+        'flexion_muneca_final': 'flexion_muneca_final',
+        'sin_salto': 'sin_salto_reglamentario',
+        'pies_dentro_zona': 'pies_dentro_zona',
+        'balance_vertical': 'balance_vertical',
       };
       
       return mapping[normalized] || normalized;
@@ -342,8 +374,13 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       } as DetailedChecklistItem;
     }
 
+    // Usar isLibre ya determinado arriba
+    const canonicalCategories = isLibre ? CANONICAL_CATEGORIES_LIBRE : CANONICAL_CATEGORIES;
+    
+    console.log(`📋 [CHECKLIST] Tipo de tiro: ${shotType}, esLibre: ${isLibre}, usando ${isLibre ? 'LIBRE' : 'TRES'} checklist`);
+    
     // Construir checklist canónico y superponer datos de IA por id (sin agregar otros ítems)
-    const canonical = CANONICAL_CATEGORIES.map((cat) => {
+    const canonical = canonicalCategories.map((cat) => {
       const items = cat.items.map((def) => {
         const canonicalId = def.id.trim().toLowerCase();
         const fromIA = iaItemById[canonicalId];

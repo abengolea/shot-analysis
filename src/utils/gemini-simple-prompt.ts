@@ -150,6 +150,13 @@ export async function analyzeVideoSimplePrompt(
   }
 }
 
+// Función helper para detectar si es tiro libre
+function detectTiroLibre(shotType: string): boolean {
+  if (!shotType) return false;
+  const tipo = shotType.toLowerCase();
+  return tipo.includes('libre') || tipo.includes('free') || tipo.includes('ft');
+}
+
 async function analyzeWithGeminiSimple(
   videoBase64: string,
   secondVideoBase64?: string | null,
@@ -166,7 +173,349 @@ async function analyzeWithGeminiSimple(
     },
   });
 
-  // PROMPT SIMPLIFICADO - Solo lo esencial para los 22 parámetros
+  // Detectar si es tiro libre y construir prompt apropiado
+  const esTiroLibre = detectTiroLibre(shotType);
+  console.log(`🎯 [ANÁLISIS] Tipo de tiro: ${shotType}, esTiroLibre: ${esTiroLibre}`);
+  
+  // Si es tiro libre, usar prompt específico
+  if (esTiroLibre) {
+    console.log('✅ [ANÁLISIS] Usando prompt ESPECÍFICO de tiro libre');
+    const librePrompt = `Eres un sistema experto de análisis de TIRO LIBRE en baloncesto.
+
+🚨 VERIFICACIÓN OBLIGATORIA DEL TIPO DE TIRO 🚨
+ANTES de analizar, CONFIRMA que esto es un TIRO LIBRE verificando:
+1. ¿El jugador está en la LÍNEA DE TIRO LIBRE? (línea a 4.57m del aro)
+2. ¿Los pies están DENTRO de la zona de tiro libre (no pisando la línea)?
+3. ¿El jugador NO salta (o salta mínimamente DESPUÉS del toque del aro)?
+4. ¿La distancia es CORTA (4.57m desde el aro)?
+5. ¿El movimiento es más VERTICAL y CONTROLADO que un tiro de tres puntos?
+
+⚠️ Si el jugador salta ANTES del toque, está lejos del aro, o el movimiento es de tres puntos → 
+   MENCIONA la discrepancia en verification.description pero analiza como tiro libre según las instrucciones.
+
+INFORMACIÓN DEL JUGADOR
+${ageCategory ? `- Categoría de edad: ${ageCategory}` : '- Presumir edad basándose en tamaño corporal, proporciones, altura relativa al aro y contexto'}
+
+SISTEMA DE PESOS PARA TIRO LIBRE:
+
+🎯 PREPARACIÓN: 28%
+├─ Rutina pre-tiro (8.4%): Secuencia repetible antes del tiro (botes, respiraciones, tiempo)
+├─ Alineación pies/cuerpo (7.0%): Posición del cuerpo para tiro recto
+├─ Muñeca cargada (5.6%): Flexión dorsal AL TOMAR el balón (ANTES del movimiento)
+├─ Flexión rodillas (4.2%): Flexión 90-110° para generar potencia
+└─ Posición inicial balón (2.8%): Ubicación correcta al inicio
+
+🎯 ASCENSO: 23%
+├─ Set point altura según edad (9.2%): CRÍTICO - Altura varía por edad
+│  • 6-8 años: Pecho/Hombros | • 9-11 años: Hombros/Mentón
+│  • 12-14 años: Frente/Ojos | • 15-17 años: Sobre cabeza | • 18+: Extensión completa
+│  TAMBIÉN: Trayectoria VERTICAL (no va atrás)
+├─ Codos cerca del cuerpo (6.9%): No abiertos durante ascenso
+├─ Trayectoria vertical (4.6%): Línea recta, sin desviaciones
+└─ Mano guía (2.3%): Solo guía/estabiliza, no empuja
+
+🎯 FLUIDEZ: 12%
+├─ Tiro en un solo tiempo (7.2%): Continuo sin pausas. NOTA: Menos crítico que tres puntos
+└─ Sincronía con piernas (4.8%): Balón sube coordinado con extensión de piernas
+
+🎯 LIBERACIÓN: 22%
+├─ Extensión completa (8.8%): Brazo Y cuerpo elongados en liberación
+├─ Ángulo de salida (7.7%): 45-52° óptimo
+├─ Flexión muñeca final (3.3%): "Gooseneck" - muñeca caída después de liberar
+└─ Rotación balón (2.2%): Backspin (puede ser no_evaluable)
+
+🎯 SEGUIMIENTO: 15%
+├─ Equilibrio y Estabilidad (9.75%):
+│  ├─ SIN SALTO (3.9%): Pies NO despegan ANTES del toque del aro
+│  │  ⚠️ INFRACCIÓN GRAVE si salta antes del toque
+│  ├─ Pies dentro zona (2.93%): No pisar línea antes del toque
+│  │  ⚠️ INFRACCIÓN si pisa línea
+│  └─ Balance vertical (2.93%): Sin movimientos laterales significativos
+└─ Follow-through completo (5.25%): Brazo extendido post-liberación (0.5-1s)
+
+⚠️ DIFERENCIACIÓN CRÍTICA:
+1. Muñeca CARGADA (Preparación): Flexión DORSAL al tomar el balón
+2. Muñeca FINAL (Liberación): Flexión hacia ABAJO (gooseneck) después de soltar
+
+Analiza este video de TIRO LIBRE y devuelve EXACTAMENTE este JSON:
+
+🚨 CRÍTICO: USA EXACTAMENTE ESTOS 19 NOMBRES DE PARÁMETROS (sin variaciones):
+
+PREPARACIÓN (5 parámetros):
+1. "Rutina pre-tiro"
+2. "Alineación pies/cuerpo"
+3. "Muñeca cargada"
+4. "Flexión rodillas"
+5. "Posición inicial balón"
+
+ASCENSO (4 parámetros):
+6. "Set point altura según edad"
+7. "Codos cerca del cuerpo"
+8. "Trayectoria vertical"
+9. "Mano guía"
+
+FLUIDEZ (2 parámetros):
+10. "Tiro en un solo tiempo"
+11. "Sincronía con piernas"
+
+LIBERACIÓN (4 parámetros):
+12. "Extensión completa"
+13. "Ángulo de salida"
+14. "Flexión muñeca final"
+15. "Rotación balón"
+
+SEGUIMIENTO (4 parámetros):
+16. "SIN SALTO"
+17. "Pies dentro zona"
+18. "Balance vertical"
+19. "Follow-through completo"
+
+{
+  "verification": {
+    "isReal": true,
+    "confidence": 95,
+    "description": "Descripción breve del video de tiro libre",
+    "canSeeBasket": true/false,
+    "cameraAngle": "frontal/lateral/diagonal",
+    "basketVisible": true/false,
+    "shotResultsVisible": true/false,
+    "environment": "gimnasio/cancha exterior/otro",
+    "videoQuality": "excelente/buena/regular/mala",
+    "playerCharacteristics": {
+      "height": "alto/medio/bajo",
+      "build": "delgado/medio/robusto",
+      "dominantHand": "derecha/izquierda"
+    }
+  },
+  "shotSummary": {
+    "totalShots": 1,
+    "lateralShots": 0,
+    "frontalShots": 1,
+    "additionalShots": 0
+  },
+  "shots": [
+    {
+      "id": 1,
+      "videoSource": "frontal",
+      "shotType": "free_throw",
+      "basketVisible": true,
+      "result": "unknown"
+    }
+  ],
+  "technicalAnalysis": {
+    "summary": "Análisis específico del tiro libre - describe lo que observas",
+    "parameters": [
+      {"name": "Rutina pre-tiro", "score": 0, "status": "Mejorable", "comment": "Evaluar", "evidencia": "Visible"},
+      {"name": "Alineación pies/cuerpo", "score": 0, "status": "Mejorable", "comment": "Evaluar", "evidencia": "Visible"},
+      {"name": "Muñeca cargada", "score": 0, "status": "Mejorable", "comment": "Flexión dorsal ANTES del movimiento", "evidencia": "Visible"},
+      {"name": "Flexión rodillas", "score": 0, "status": "Mejorable", "comment": "90-110°", "evidencia": "Visible"},
+      {"name": "Posición inicial balón", "score": 0, "status": "Mejorable", "comment": "Evaluar", "evidencia": "Visible"},
+      {"name": "Set point altura según edad", "score": 0, "status": "Mejorable", "comment": "CRÍTICO - varía por edad", "evidencia": "Visible"},
+      {"name": "Codos cerca del cuerpo", "score": 0, "status": "Mejorable", "comment": "No abiertos", "evidencia": "Visible"},
+      {"name": "Trayectoria vertical", "score": 0, "status": "Mejorable", "comment": "Línea recta", "evidencia": "Visible"},
+      {"name": "Mano guía", "score": 0, "status": "Mejorable", "comment": "Solo guía", "evidencia": "Visible"},
+      {"name": "Tiro en un solo tiempo", "score": 0, "status": "Mejorable", "comment": "Continuo", "evidencia": "Visible"},
+      {"name": "Sincronía con piernas", "score": 0, "status": "Mejorable", "comment": "Coordinado", "evidencia": "Visible"},
+      {"name": "Extensión completa", "score": 0, "status": "Mejorable", "comment": "Brazo y cuerpo", "evidencia": "Visible"},
+      {"name": "Ángulo de salida", "score": 0, "status": "Mejorable", "comment": "45-52°", "evidencia": "Visible"},
+      {"name": "Flexión muñeca final", "score": 0, "status": "Mejorable", "comment": "Gooseneck", "evidencia": "Visible"},
+      {"name": "Rotación balón", "score": 0, "status": "Mejorable", "comment": "Backspin", "evidencia": "Visible"},
+      {"name": "SIN SALTO", "score": 0, "status": "Mejorable", "comment": "Pies NO despegan", "evidencia": "Visible"},
+      {"name": "Pies dentro zona", "score": 0, "status": "Mejorable", "comment": "No pisar línea", "evidencia": "Visible"},
+      {"name": "Balance vertical", "score": 0, "status": "Mejorable", "comment": "Sin movimientos laterales", "evidencia": "Visible"},
+      {"name": "Follow-through completo", "score": 0, "status": "Mejorable", "comment": "Brazo extendido 0.5-1s", "evidencia": "Visible"}
+    ],
+    "overallScore": 0,
+    "strengths": [],
+    "weaknesses": [],
+    "recommendations": []
+  }
+}
+
+🚨🚨🚨 CRÍTICO - SISTEMA DE PUNTUACIÓN PARA TIRO LIBRE 🚨🚨🚨:
+
+⚠️ SOLO DEVUELVE ESTOS 19 PARÁMETROS (NO MÁS, NO MENOS):
+1. Rutina pre-tiro
+2. Alineación pies/cuerpo
+3. Muñeca cargada
+4. Flexión rodillas
+5. Posición inicial balón
+6. Set point altura según edad
+7. Codos cerca del cuerpo
+8. Trayectoria vertical
+9. Mano guía
+10. Tiro en un solo tiempo
+11. Sincronía con piernas
+12. Extensión completa
+13. Ángulo de salida
+14. Flexión muñeca final
+15. Rotación balón
+16. SIN SALTO
+17. Pies dentro zona
+18. Balance vertical
+19. Follow-through completo
+
+⛔ PROHIBIDO INCLUIR ESTOS PARÁMETROS DE TRES PUNTOS:
+- "Hombros relajados"
+- "Enfoque visual"
+- "Subida recta del balón"
+- "Trayectoria hasta set point"
+- "Tiempo de lanzamiento"
+- "Mano no dominante en ascenso"
+- "Mano no dominante en liberación"
+- "Giro de la pelota" (usa "Rotación balón" en su lugar)
+- "Equilibrio general"
+- "Duración del follow-through" (usa "Follow-through completo")
+- "Consistencia general"
+
+✅ USA PUNTUACIONES REALES Y PRECISAS (1-100):
+- 90-100: PERFECTO - Técnica impecable
+- 80-89: EXCELENTE - Muy bien ejecutado
+- 70-79: CORRECTO - Bien ejecutado
+- 60-69: MEJORABLE - Aceptable pero necesita trabajo
+- 50-59: DEFICIENTE - Problemas evidentes
+- 30-49: INCORRECTO - Errores significativos
+- 10-29: MUY INCORRECTO - Técnica muy deficiente
+- 1-9: CRÍTICO - Requiere corrección total
+
+🚨 REGLA CRÍTICA: NO INVENTAR CALIFICACIONES
+- Si NO puedes ver claramente un parámetro desde los ángulos disponibles → USA "no_evaluable"
+- NO califiques parámetros que requieren ver detalles que no están visibles
+- Es MEJOR marcar como "no_evaluable" que inventar una calificación incorrecta
+- Parámetros que pueden requerir "no_evaluable":
+  * "Pies dentro zona" - si no puedes ver la línea o el momento del toque
+  * "SIN SALTO" - si no puedes ver claramente si despega antes o después del toque
+  * "Rotación balón" - si no puedes ver el backspin claramente
+  * Cualquier parámetro donde la visibilidad sea limitada
+
+🔴 CRÍTICO: Evalúa "Set point altura según edad" considerando la edad del jugador
+
+🚨🚨🚨 CRITERIOS ESTRICTOS PARA INFRACCIONES REGLAMENTARIAS 🚨🚨🚨
+
+🔴 PARÁMETRO: "SIN SALTO" - INFRACCIÓN REGLAMENTARIA GRAVE
+CRITERIO: Los pies NO deben despegar ANTES de que el balón toque el aro. 
+          En tiro libre profesional, NO se salta. Si salta, incluso después, indica falta de control.
+
+🚨 EVALUABILIDAD CRÍTICA:
+- Para evaluar este parámetro, NECESITAS ver CLARAMENTE:
+  1. Los PIES del jugador durante todo el movimiento
+  2. El MOMENTO del TOQUE del balón al aro (o al menos poder estimarlo con precisión)
+  3. Si los pies despegan antes o después del toque
+- Si el video es solo de COSTADO o solo de FRENTE, puede que NO puedas ver:
+  - El momento exacto del toque del aro claramente
+  - Si los pies despegan antes o después del toque
+
+⚠️ REGLA ESTRICTA: Si NO puedes ver CLARAMENTE los pies Y el momento del toque:
+   → USA "no_evaluable" en status
+   → NO inventes una calificación
+   → Comenta: "No evaluable - No se puede determinar claramente si los pies despegan antes o después del toque del balón desde los ángulos disponibles"
+
+EVALUACIÓN (SOLO si puedes ver claramente):
+- ✅ 90-100: NO hay salto en absoluto - pies permanecen en contacto con el suelo durante todo el tiro (PERFECTO)
+- ✅ 85-89: Mínimo levantamiento de talones pero pies NO despegan completamente (excelente)
+- ⚠️ 70-84: Pies despegan SOLO DESPUÉS del toque del aro (técnicamente no es infracción, pero no es óptimo)
+- ❌ 50-69: Pies despegan JUSTO en el momento del toque (límite - califica BAJO)
+- ❌ 30-49: Pies despegan CLARAMENTE ANTES del toque (INFRACCIÓN - califica MUY BAJO)
+- ❌ 1-29: Salto VISIBLE y MARCADO antes del toque (INFRACCIÓN GRAVE - califica EXTREMADAMENTE BAJO)
+
+⚠️ IMPORTANTE: 
+   - Si NO puedes ver el momento del toque claramente → "no_evaluable" (NO califiques)
+   - En tiro libre, la técnica CORRECTA es NO saltar. Si salta (incluso después), califica más bajo.
+   - Si salta ANTES del toque → INFRACCIÓN GRAVE → 1-49 puntos (NO "Correcto")
+   - Si salta DESPUÉS del toque → No es infracción, pero mala técnica → 70-84 puntos máximo
+   - Comenta específicamente: "INFRACCIÓN: Los pies despegan antes del toque" O "Mala técnica: Salta después del toque"
+
+🔴 PARÁMETRO: "Pies dentro zona" - INFRACCIÓN REGLAMENTARIA
+CRITERIO: Los pies NO deben pisar la línea de tiro libre ANTES del toque del aro.
+          En tiro libre profesional, los pies se mantienen dentro durante todo el movimiento.
+          Si invade después del toque, indica desequilibrio y mala técnica.
+
+🚨 EVALUABILIDAD CRÍTICA:
+- Para evaluar este parámetro, NECESITAS ver CLARAMENTE:
+  1. La LÍNEA de tiro libre
+  2. Los PIES del jugador
+  3. El MOMENTO del TOQUE del balón al aro (o al menos poder estimarlo)
+- Si el video es solo de COSTADO o solo de FRENTE, puede que NO puedas ver:
+  - La línea completa
+  - El momento exacto del toque del aro
+  - Si los pies tocan la línea antes o después del toque
+
+⚠️ REGLA ESTRICTA: Si NO puedes ver CLARAMENTE la línea Y el momento del toque:
+   → USA "no_evaluable" en status
+   → NO inventes una calificación
+   → Comenta: "No evaluable - No se puede ver claramente la línea de tiro libre o el momento del toque del balón desde los ángulos disponibles"
+
+EVALUACIÓN (SOLO si puedes ver claramente):
+- ✅ 90-100: Pies completamente dentro, nunca tocan la línea, permanecen dentro durante todo el movimiento (PERFECTO)
+- ✅ 85-89: Pies dentro con espacio visible desde la línea, se mantienen dentro (excelente)
+- ⚠️ 70-84: Pies muy cerca de la línea pero sin pisarla, o tocan/invaden SOLO DESPUÉS del toque (técnicamente no es infracción, pero mala técnica)
+- ❌ 50-69: Pies muy cerca de la línea, límite aceptable (mejorable)
+- ❌ 30-49: Un pie TOCA la línea antes del toque (INFRACCIÓN - califica MUY BAJO)
+- ❌ 1-29: Pies CLARAMENTE pisando o sobrepasando la línea ANTES del toque (INFRACCIÓN GRAVE - califica EXTREMADAMENTE BAJO)
+
+⚠️ IMPORTANTE: 
+   - Si NO puedes ver la línea o el momento del toque → "no_evaluable" (NO califiques)
+   - Si pisa la línea ANTES del toque → INFRACCIÓN → 1-49 puntos (NO "Correcto")
+   - Si invade SOLO DESPUÉS del toque → No es infracción, pero mala técnica → 70-84 puntos máximo
+   - La técnica correcta es mantener los pies dentro durante todo el movimiento
+   - Comenta específicamente: "INFRACCIÓN: Pie(s) pisan/tocan la línea antes del toque" O "Mala técnica: Invade la línea después del toque"
+
+🔴 PARÁMETRO: "Balance vertical" - Estabilidad en tiro libre
+CRITERIO: Sin movimientos laterales significativos durante y después del tiro.
+          Este parámetro captura problemas de equilibrio, incluyendo saltos o invasiones de línea DESPUÉS del toque.
+
+EVALUACIÓN ESTRICTA:
+- ✅ 90-100: Perfectamente balanceado, sin movimientos laterales, sin saltos, sin invasión de línea
+- ✅ 80-89: Balanceado con movimientos laterales mínimos, control total
+- ⚠️ 60-79: Movimientos laterales visibles o salta después del toque o invade línea después → Problemas de control
+- ⚠️ 36-59: Pérdida de equilibrio significativa, movimientos laterales marcados
+- ❌ 0-35: Pérdida de balance grave, desequilibrio evidente
+
+⚠️ NOTA: 
+   - Si salta o invade línea DESPUÉS del toque, esto se refleja en este parámetro (60-79 puntos máximo)
+   - Si hay desequilibrio durante el tiro, califica bajo también aquí
+   - Comenta: "Desequilibrio: Salta/invade después del toque" o "Pérdida de balance durante el movimiento"
+
+Si incluyes parámetros de tres puntos o más/menos de 19 parámetros, el análisis será RECHAZADO.
+
+Video proporcionado.`;
+
+    const content = [
+      { text: librePrompt },
+      {
+        inlineData: {
+          mimeType: 'video/mp4',
+          data: videoBase64,
+        },
+      },
+    ];
+
+    if (secondVideoBase64) {
+      content.push({
+        inlineData: {
+          mimeType: 'video/mp4',
+          data: secondVideoBase64,
+        },
+      });
+    }
+
+    if (thirdVideoBase64) {
+      content.push({
+        inlineData: {
+          mimeType: 'video/mp4',
+          data: thirdVideoBase64,
+        },
+      });
+    }
+
+    const result = await model.generateContent({ contents: [{ role: 'user', parts: content }] });
+    const response = result.response;
+    const jsonText = response.text();
+    const parsed = JSON.parse(jsonText);
+    return parsed;
+  }
+
+  // PROMPT SIMPLIFICADO - Solo lo esencial para los 21 parámetros (tres puntos)
   const prompt = `Analiza este video de baloncesto y devuelve EXACTAMENTE este JSON:
 
 🚨 INSTRUCCIONES CRÍTICAS PARA TODOS LOS PARÁMETROS:
