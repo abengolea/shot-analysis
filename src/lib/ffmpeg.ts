@@ -80,8 +80,30 @@ try {
       
       if (!found) {
         console.error('❌ [FFmpeg] No se encontró el binario en ninguna ubicación conocida');
-        console.error('❌ [FFmpeg] Usando comando del sistema como último recurso:', RESOLVED_FFMPEG);
-        RESOLVED_FFMPEG = 'ffmpeg';
+        console.error('❌ [FFmpeg] Intentando usar comando del sistema...');
+        
+        // Intentar verificar si ffmpeg está disponible en el PATH del sistema
+        try {
+          const { execSync } = require('child_process');
+          try {
+            execSync('which ffmpeg', { stdio: 'pipe', timeout: 2000 });
+            console.log('✅ [FFmpeg] ffmpeg encontrado en PATH del sistema');
+            RESOLVED_FFMPEG = 'ffmpeg';
+          } catch (whichErr) {
+            // Intentar con 'where' en Windows o buscar directamente
+            try {
+              execSync('ffmpeg -version', { stdio: 'pipe', timeout: 2000 });
+              console.log('✅ [FFmpeg] ffmpeg funciona directamente como comando del sistema');
+              RESOLVED_FFMPEG = 'ffmpeg';
+            } catch (execErr) {
+              console.error('❌ [FFmpeg] ffmpeg no está disponible en el sistema');
+              RESOLVED_FFMPEG = 'ffmpeg'; // Último recurso
+            }
+          }
+        } catch (checkErr) {
+          console.error('❌ [FFmpeg] Error verificando ffmpeg del sistema:', checkErr);
+          RESOLVED_FFMPEG = 'ffmpeg'; // Último recurso
+        }
       }
     }
   }
