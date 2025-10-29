@@ -250,27 +250,45 @@ const processUploadedVideoFlow = ai.defineFlow(
 
     // 7. Extraer keyframes inteligentes (SÍNCRONO para asegurar que se generen)
     console.log('🔍 [Smart Keyframes] Iniciando extracción síncrona...');
+    console.log('🔍 [Smart Keyframes] Video buffer size:', videoBuffer?.length || 0);
+    console.log('🔍 [Smart Keyframes] Analysis ID:', docId);
+    console.log('🔍 [Smart Keyframes] User ID:', userId);
     
-    try {
-      // Preparar buffers de video para keyframes
-      const videoBuffers = {
-        back: videoBuffer, // El video principal (back)
-        front: undefined,
-        left: undefined,
-        right: undefined
-      };
-      
-      // Extraer keyframes de forma síncrona
-      await extractAndUploadSmartKeyframesAsync({
-        analysisId: docId,
-        videoBuffers,
-        userId
-      });
-      
-      console.log('✅ [Smart Keyframes] Extracción completada exitosamente');
-    } catch (err) {
-      console.error('❌ [Smart Keyframes] Error en extracción síncrona:', err);
-      // No fallar el análisis completo si fallan los keyframes
+    if (!videoBuffer || videoBuffer.length === 0) {
+      console.error('❌ [Smart Keyframes] Video buffer está vacío, no se pueden extraer keyframes');
+    } else {
+      try {
+        // Preparar buffers de video para keyframes
+        const videoBuffers = {
+          back: videoBuffer, // El video principal (back)
+          front: undefined,
+          left: undefined,
+          right: undefined
+        };
+        
+        // Extraer keyframes de forma síncrona
+        await extractAndUploadSmartKeyframesAsync({
+          analysisId: docId,
+          videoBuffers,
+          userId
+        });
+        
+        console.log('✅ [Smart Keyframes] Extracción completada exitosamente');
+        
+        // Verificar si se guardaron
+        const verificationDoc = await adminDb.collection('analyses').doc(docId).get();
+        const verificationData = verificationDoc.data();
+        if (verificationData?.smartKeyframes) {
+          const total = Object.values(verificationData.smartKeyframes).reduce((sum: number, arr: any) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+          console.log(`✅ [Smart Keyframes] Verificación: ${total} keyframes guardados en DB`);
+        } else {
+          console.error('❌ [Smart Keyframes] Verificación: NO se guardaron keyframes en DB');
+        }
+      } catch (err) {
+        console.error('❌ [Smart Keyframes] Error en extracción síncrona:', err);
+        console.error('❌ [Smart Keyframes] Stack trace:', err instanceof Error ? err.stack : 'No stack');
+        // No fallar el análisis completo si fallan los keyframes
+      }
     }
 
     // 8. Clean up the pending document
