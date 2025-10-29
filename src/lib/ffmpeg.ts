@@ -6,47 +6,67 @@ import { spawn } from 'child_process';
 // Resolver FFmpeg dinámicamente para manejar imports en runtime
 let RESOLVED_FFMPEG: string = 'ffmpeg'; // Default
 
+// Resolver FFmpeg de forma síncrona
 try {
+  // Primero intentar con require directo (sincrónico)
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const ffmpegStatic = require('ffmpeg-static');
   console.log('🔍 [FFmpeg] ffmpeg-static module:', typeof ffmpegStatic);
-  console.log('🔍 [FFmpeg] ffmpeg-static direct value:', ffmpegStatic);
-  console.log('🔍 [FFmpeg] ffmpeg-static.path:', ffmpegStatic?.path);
+  
   if (ffmpegStatic && (ffmpegStatic.path || ffmpegStatic)) {
     RESOLVED_FFMPEG = ffmpegStatic.path || ffmpegStatic;
-    console.log('✅ [FFmpeg] Usando ffmpeg-static:', RESOLVED_FFMPEG);
     
-    // Verificar que el binario exista y tenga permisos de ejecución
+    // Verificar que exista
     const { accessSync, constants } = require('fs');
     try {
       accessSync(RESOLVED_FFMPEG, constants.F_OK);
-      console.log('✅ [FFmpeg] El binario existe en disco');
+      console.log('✅ [FFmpeg] Usando ffmpeg-static (path directo):', RESOLVED_FFMPEG);
       
-      // Intentar hacer el binario ejecutable (solo en Linux/Mac)
-      const { chmod } = require('fs');
+      // Hacer ejecutable
       try {
-        chmod(RESOLVED_FFMPEG, 0o755, (err: any) => {
-          if (err) {
-            console.warn('⚠️ [FFmpeg] No se pudieron establecer permisos de ejecución:', err.message);
-          } else {
-            console.log('✅ [FFmpeg] Permisos de ejecución establecidos');
-          }
-        });
-      } catch (chmodErr) {
-        console.warn('⚠️ [FFmpeg] Error al establecer permisos (Windows?):', chmodErr);
+        const { chmodSync } = require('fs');
+        chmodSync(RESOLVED_FFMPEG, 0o755);
+      } catch {}
+    } catch (accessErr: any) {
+      console.warn('⚠️ [FFmpeg] Binario directo no existe, buscando en otras ubicaciones...');
+      console.warn('⚠️ [FFmpeg] Error:', accessErr.message);
+      
+      // Buscar en otras ubicaciones de forma síncrona (aproximación)
+      const path = require('path');
+      const { existsSync } = require('fs');
+      
+      const fallbackPaths = [
+        path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(process.cwd(), '.next', 'standalone', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        '/workspace/node_modules/ffmpeg-static/ffmpeg',
+        '/workspace/.next/standalone/node_modules/ffmpeg-static/ffmpeg',
+      ];
+      
+      let found = false;
+      for (const fallbackPath of fallbackPaths) {
+        if (existsSync(fallbackPath)) {
+          RESOLVED_FFMPEG = fallbackPath;
+          console.log('✅ [FFmpeg] Encontrado en fallback path:', RESOLVED_FFMPEG);
+          found = true;
+          
+          try {
+            const { chmodSync } = require('fs');
+            chmodSync(RESOLVED_FFMPEG, 0o755);
+          } catch {}
+          break;
+        }
       }
-    } catch (accessErr) {
-      console.error('❌ [FFmpeg] El binario no existe en:', RESOLVED_FFMPEG);
-      console.error('❌ [FFmpeg] Error:', accessErr.message);
-      RESOLVED_FFMPEG = 'ffmpeg'; // Fallback a comando del sistema
+      
+      if (!found) {
+        console.error('❌ [FFmpeg] No se encontró el binario en ninguna ubicación conocida');
+        console.error('❌ [FFmpeg] Usando comando del sistema como último recurso:', RESOLVED_FFMPEG);
+        RESOLVED_FFMPEG = 'ffmpeg';
+      }
     }
-  } else {
-    console.log('⚠️ [FFmpeg] ffmpeg-static no tiene path válido, usando:', RESOLVED_FFMPEG);
   }
 } catch (e: any) {
-  console.warn('⚠️ [FFmpeg] No se encontró ffmpeg-static:', e?.message || String(e));
-  console.warn('⚠️ [FFmpeg] Stack:', e?.stack || 'No stack');
-  console.warn('⚠️ [FFmpeg] Usando comando del sistema:', RESOLVED_FFMPEG);
+  console.warn('⚠️ [FFmpeg] No se pudo cargar ffmpeg-static:', e?.message || String(e));
+  RESOLVED_FFMPEG = 'ffmpeg';
 }
 
 export const FFMPEG_PATH = RESOLVED_FFMPEG;
