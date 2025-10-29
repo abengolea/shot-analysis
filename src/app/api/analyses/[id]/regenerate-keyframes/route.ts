@@ -112,8 +112,8 @@ export async function GET(
     console.log('✅ [REGENERATE-KEYFRAMES] extractAndUploadSmartKeyframesAsync completado');
     
     // Verificar si se guardaron los keyframes
-    const analysisDoc = await adminDb.collection('analyses').doc(analysisId).get();
-    const updatedData = analysisDoc.data();
+    const updatedAnalysisDoc = await adminDb.collection('analyses').doc(analysisId).get();
+    const updatedData = updatedAnalysisDoc.data();
     console.log('🔍 [REGENERATE-KEYFRAMES] Verificando keyframes en DB...');
     console.log('🔍 [REGENERATE-KEYFRAMES] smartKeyframes:', updatedData?.smartKeyframes ? 'EXISTS' : 'NULL');
     console.log('🔍 [REGENERATE-KEYFRAMES] keyframesExtractedAt:', updatedData?.keyframesExtractedAt);
