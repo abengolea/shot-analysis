@@ -373,9 +373,9 @@ export async function startAnalysisWithSmartKeyframes(prevState: any, formData: 
         }
         
         // Normalizar el score final (igual que startAnalysis)
-        // Formula: Σ(peso_i × score_i) / 100
-        // Los pesos suman 100%, los scores están en 0-100
-        const finalScore = totalWeight > 0 ? (weightedScore / 100) : 0;
+        // Formula: Σ(peso_i × score_i) / Σ(peso_i)
+        // Promedio ponderado: suma de (peso × score) dividido por suma de pesos
+        const finalScore = totalWeight > 0 ? (weightedScore / totalWeight) : 0;
         
         console.log('📊 Cálculo de score finalizado:', {
             evaluableCount,
