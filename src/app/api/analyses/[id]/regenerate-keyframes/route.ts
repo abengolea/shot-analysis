@@ -102,12 +102,21 @@ export async function GET(
     // 5. Extraer keyframes inteligentes
     console.log('🔍 [REGENERATE-KEYFRAMES] Extrayendo keyframes...');
     console.log('🔍 [REGENERATE-KEYFRAMES] Analysis data:', JSON.stringify(analysisData, null, 2));
+    console.log('🔍 [REGENERATE-KEYFRAMES] Video buffer size:', videoBuffer.length);
+    console.log('🔍 [REGENERATE-KEYFRAMES] Calling extractAndUploadSmartKeyframesAsync...');
     await extractAndUploadSmartKeyframesAsync({
       analysisId: analysisId,
       videoBuffers,
       userId: analysisData?.playerId || analysisData?.userId || 'unknown'
     });
     console.log('✅ [REGENERATE-KEYFRAMES] extractAndUploadSmartKeyframesAsync completado');
+    
+    // Verificar si se guardaron los keyframes
+    const analysisDoc = await adminDb.collection('analyses').doc(analysisId).get();
+    const updatedData = analysisDoc.data();
+    console.log('🔍 [REGENERATE-KEYFRAMES] Verificando keyframes en DB...');
+    console.log('🔍 [REGENERATE-KEYFRAMES] smartKeyframes:', updatedData?.smartKeyframes ? 'EXISTS' : 'NULL');
+    console.log('🔍 [REGENERATE-KEYFRAMES] keyframesExtractedAt:', updatedData?.keyframesExtractedAt);
     
     console.log('✅ [REGENERATE-KEYFRAMES] Keyframes regenerados exitosamente');
     
