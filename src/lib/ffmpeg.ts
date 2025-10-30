@@ -8,107 +8,136 @@ let RESOLVED_FFMPEG: string = 'ffmpeg'; // Default
 
 // Resolver FFmpeg de forma síncrona
 try {
-  // Primero intentar con require directo (sincrónico)
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const ffmpegStatic = require('ffmpeg-static');
-  console.log('🔍 [FFmpeg] ffmpeg-static module:', typeof ffmpegStatic);
+  console.log('🔍 [FFmpeg] ffmpeg-static module type:', typeof ffmpegStatic);
   
-  if (ffmpegStatic && (ffmpegStatic.path || ffmpegStatic)) {
-    RESOLVED_FFMPEG = ffmpegStatic.path || ffmpegStatic;
-    
-    // Verificar que exista
-    const { accessSync, constants } = require('fs');
+  // ffmpeg-static puede retornar string directamente o objeto con .path
+  let possiblePath: string | null = null;
+  if (typeof ffmpegStatic === 'string') {
+    possiblePath = ffmpegStatic;
+    console.log('🔍 [FFmpeg] ffmpeg-static retornó string directamente');
+  } else if (ffmpegStatic && ffmpegStatic.path) {
+    possiblePath = ffmpegStatic.path;
+    console.log('🔍 [FFmpeg] ffmpeg-static retornó objeto con .path');
+  } else if (ffmpegStatic) {
+    possiblePath = ffmpegStatic as string;
+    console.log('🔍 [FFmpeg] ffmpeg-static retornó otro formato');
+  }
+  
+  const path = require('path');
+  const { existsSync, accessSync, constants, chmodSync } = require('fs');
+  
+  // Función para verificar y hacer ejecutable
+  const verifyAndSetExecutable = (filePath: string): boolean => {
     try {
-      accessSync(RESOLVED_FFMPEG, constants.F_OK);
-      console.log('✅ [FFmpeg] Usando ffmpeg-static (path directo):', RESOLVED_FFMPEG);
-      
-      // Hacer ejecutable
-      try {
-        const { chmodSync } = require('fs');
-        chmodSync(RESOLVED_FFMPEG, 0o755);
-      } catch {}
-    } catch (accessErr: any) {
-      console.warn('⚠️ [FFmpeg] Binario directo no existe, buscando en otras ubicaciones...');
-      console.warn('⚠️ [FFmpeg] Error:', accessErr.message);
-      
-      // Buscar en otras ubicaciones de forma síncrona (aproximación)
-      const path = require('path');
-      const { existsSync } = require('fs');
-      
-      // Buscar usando require.resolve para encontrar el módulo real
-      let ffmpegModuleDir: string | null = null;
-      try {
-        // require.resolve devuelve el path al index.js del módulo
-        const moduleIndexPath = require.resolve('ffmpeg-static');
-        ffmpegModuleDir = path.dirname(moduleIndexPath);
-        console.log('🔍 [FFmpeg] Módulo encontrado en:', ffmpegModuleDir);
-      } catch (resolveErr) {
-        console.warn('⚠️ [FFmpeg] No se pudo resolver ffmpeg-static con require.resolve');
+      if (existsSync(filePath)) {
+        accessSync(filePath, constants.F_OK);
+        try {
+          chmodSync(filePath, 0o755);
+        } catch {}
+        RESOLVED_FFMPEG = filePath;
+        console.log('✅ [FFmpeg] Binario encontrado y verificado:', RESOLVED_FFMPEG);
+        return true;
       }
+    } catch (e: any) {
+      // Ignorar errores de verificación
+    }
+    return false;
+  };
+  
+  // 1. Intentar el path directo de ffmpeg-static
+  if (possiblePath && verifyAndSetExecutable(possiblePath)) {
+    // Ya está resuelto, salir
+    console.log('✅ [FFmpeg] Usando path directo de ffmpeg-static');
+  } else {
+    console.warn('⚠️ [FFmpeg] Path directo no válido, buscando en ubicaciones alternativas...');
+    
+    // 2. Buscar usando require.resolve para encontrar el módulo
+    let ffmpegModuleDir: string | null = null;
+    try {
+      const moduleIndexPath = require.resolve('ffmpeg-static');
+      ffmpegModuleDir = path.dirname(moduleIndexPath);
+      console.log('🔍 [FFmpeg] Módulo resuelto en:', ffmpegModuleDir);
       
-      const fallbackPaths = [
-        // Ruta del binario en el directorio del módulo
-        ffmpegModuleDir ? path.join(ffmpegModuleDir, 'ffmpeg') : null,
-        // Buscar en subdirectorios comunes del módulo
-        ffmpegModuleDir ? path.join(ffmpegModuleDir, 'bin', 'ffmpeg') : null,
-        ffmpegModuleDir ? path.join(ffmpegModuleDir, '..', 'ffmpeg') : null,
-        // Rutas estándar
-        path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg'),
-        path.join(process.cwd(), '.next', 'standalone', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
-        '/workspace/node_modules/ffmpeg-static/ffmpeg',
-        '/workspace/.next/standalone/node_modules/ffmpeg-static/ffmpeg',
-        // Rutas relativas desde diferentes ubicaciones
-        path.join(__dirname, '..', '..', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
-        path.join(__dirname, '..', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
-        path.join(__dirname, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
-      ].filter(Boolean);
+      // En ffmpeg-static, el binario puede estar en el mismo directorio o en un subdirectorio
+      const modulePossiblePaths = [
+        path.join(ffmpegModuleDir, 'ffmpeg'),
+        path.join(ffmpegModuleDir, 'bin', 'ffmpeg'),
+        path.join(ffmpegModuleDir, '..', 'ffmpeg'),
+        path.join(ffmpegModuleDir, '..', 'bin', 'ffmpeg'),
+      ];
       
-      let found = false;
-      for (const fallbackPath of fallbackPaths) {
-        if (existsSync(fallbackPath)) {
-          RESOLVED_FFMPEG = fallbackPath;
-          console.log('✅ [FFmpeg] Encontrado en fallback path:', RESOLVED_FFMPEG);
-          found = true;
-          
-          try {
-            const { chmodSync } = require('fs');
-            chmodSync(RESOLVED_FFMPEG, 0o755);
-          } catch {}
+      for (const testPath of modulePossiblePaths) {
+        if (verifyAndSetExecutable(testPath)) {
           break;
         }
       }
+    } catch (resolveErr: any) {
+      console.warn('⚠️ [FFmpeg] No se pudo resolver ffmpeg-static:', resolveErr.message);
+    }
+    
+    // 3. Si aún no se encontró, buscar en ubicaciones comunes
+    if (RESOLVED_FFMPEG === 'ffmpeg') {
+      const commonPaths = [
+        // Rutas relativas al working directory
+        path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'bin', 'ffmpeg'),
+        // Next.js standalone build
+        path.join(process.cwd(), '.next', 'standalone', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(process.cwd(), '.next', 'standalone', 'node_modules', 'ffmpeg-static', 'bin', 'ffmpeg'),
+        // Firebase App Hosting paths
+        '/workspace/node_modules/ffmpeg-static/ffmpeg',
+        '/workspace/node_modules/ffmpeg-static/bin/ffmpeg',
+        '/workspace/.next/standalone/node_modules/ffmpeg-static/ffmpeg',
+        '/workspace/.next/standalone/node_modules/ffmpeg-static/bin/ffmpeg',
+        // Rutas relativas desde __dirname (ubicación del archivo compilado)
+        path.join(__dirname, '..', '..', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(__dirname, '..', '..', 'node_modules', 'ffmpeg-static', 'bin', 'ffmpeg'),
+        path.join(__dirname, '..', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(__dirname, '..', 'node_modules', 'ffmpeg-static', 'bin', 'ffmpeg'),
+        // También buscar recursivamente en el directorio del módulo si lo encontramos
+        ...(ffmpegModuleDir ? [
+          path.join(ffmpegModuleDir, 'ffmpeg'),
+          path.join(ffmpegModuleDir, 'bin', 'ffmpeg'),
+          path.join(ffmpegModuleDir, '..', 'ffmpeg'),
+        ] : []),
+      ];
       
-      if (!found) {
-        console.error('❌ [FFmpeg] No se encontró el binario en ninguna ubicación conocida');
-        console.error('❌ [FFmpeg] Intentando usar comando del sistema...');
-        
-        // Intentar verificar si ffmpeg está disponible en el PATH del sistema
-        try {
-          const { execSync } = require('child_process');
-          try {
-            execSync('which ffmpeg', { stdio: 'pipe', timeout: 2000 });
-            console.log('✅ [FFmpeg] ffmpeg encontrado en PATH del sistema');
-            RESOLVED_FFMPEG = 'ffmpeg';
-          } catch (whichErr) {
-            // Intentar con 'where' en Windows o buscar directamente
-            try {
-              execSync('ffmpeg -version', { stdio: 'pipe', timeout: 2000 });
-              console.log('✅ [FFmpeg] ffmpeg funciona directamente como comando del sistema');
-              RESOLVED_FFMPEG = 'ffmpeg';
-            } catch (execErr) {
-              console.error('❌ [FFmpeg] ffmpeg no está disponible en el sistema');
-              RESOLVED_FFMPEG = 'ffmpeg'; // Último recurso
-            }
-          }
-        } catch (checkErr) {
-          console.error('❌ [FFmpeg] Error verificando ffmpeg del sistema:', checkErr);
-          RESOLVED_FFMPEG = 'ffmpeg'; // Último recurso
+      for (const testPath of commonPaths) {
+        if (verifyAndSetExecutable(testPath)) {
+          break;
         }
+      }
+    }
+    
+    // 4. Último recurso: intentar con el sistema
+    if (RESOLVED_FFMPEG === 'ffmpeg') {
+      console.warn('⚠️ [FFmpeg] Binario no encontrado en node_modules, intentando comando del sistema...');
+      try {
+        const { execSync } = require('child_process');
+        try {
+          execSync('which ffmpeg', { stdio: 'pipe', timeout: 2000 });
+          console.log('✅ [FFmpeg] ffmpeg encontrado en PATH del sistema');
+          RESOLVED_FFMPEG = 'ffmpeg';
+        } catch (whichErr) {
+          try {
+            execSync('ffmpeg -version', { stdio: 'pipe', timeout: 2000 });
+            console.log('✅ [FFmpeg] ffmpeg funciona como comando del sistema');
+            RESOLVED_FFMPEG = 'ffmpeg';
+          } catch (execErr) {
+            console.error('❌ [FFmpeg] ffmpeg no está disponible en el sistema');
+            RESOLVED_FFMPEG = 'ffmpeg'; // Último recurso
+          }
+        }
+      } catch (checkErr: any) {
+        console.error('❌ [FFmpeg] Error verificando ffmpeg del sistema:', checkErr.message);
+        RESOLVED_FFMPEG = 'ffmpeg'; // Último recurso
       }
     }
   }
 } catch (e: any) {
-  console.warn('⚠️ [FFmpeg] No se pudo cargar ffmpeg-static:', e?.message || String(e));
+  console.warn('⚠️ [FFmpeg] Error cargando ffmpeg-static:', e?.message || String(e));
   RESOLVED_FFMPEG = 'ffmpeg';
 }
 

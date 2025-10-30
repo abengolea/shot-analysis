@@ -18,7 +18,7 @@ export async function GET() {
     const ffmpegStatic = require('ffmpeg-static');
     diagnostics.ffmpeg.module = {
       type: typeof ffmpegStatic,
-      directValue: typeof ffmpegStatic === 'string' ? ffmpegStatic.substring(0, 100) : String(ffmpegStatic).substring(0, 100),
+      directValue: typeof ffmpegStatic === 'string' ? ffmpegStatic.substring(0, 200) : String(ffmpegStatic).substring(0, 200),
       hasPath: Boolean(ffmpegStatic?.path),
       path: ffmpegStatic?.path
     };
@@ -26,19 +26,60 @@ export async function GET() {
     const { accessSync, constants, existsSync } = require('fs');
     const path = require('path');
     
-    let RESOLVED_FFMPEG = ffmpegStatic?.path || ffmpegStatic;
+    // Usar la misma lógica que ffmpeg.ts
+    let possiblePath: string | null = null;
+    if (typeof ffmpegStatic === 'string') {
+      possiblePath = ffmpegStatic;
+    } else if (ffmpegStatic && ffmpegStatic.path) {
+      possiblePath = ffmpegStatic.path;
+    } else if (ffmpegStatic) {
+      possiblePath = ffmpegStatic as string;
+    }
+    
+    let RESOLVED_FFMPEG = possiblePath || 'ffmpeg';
+    
+    // Función para verificar
+    const verifyPath = (filePath: string): boolean => {
+      try {
+        if (existsSync(filePath)) {
+          accessSync(filePath, constants.F_OK);
+          return true;
+        }
+      } catch {}
+      return false;
+    };
     
     // Si la ruta directa no existe, buscar en fallback paths
-    try {
-      accessSync(RESOLVED_FFMPEG, constants.F_OK);
-    } catch {
-      // Buscar en rutas de fallback
+    if (!possiblePath || !verifyPath(possiblePath)) {
+      diagnostics.ffmpeg.directPathFailed = true;
+      
+      // Buscar usando require.resolve
+      let ffmpegModuleDir: string | null = null;
+      try {
+        const moduleIndexPath = require.resolve('ffmpeg-static');
+        ffmpegModuleDir = path.dirname(moduleIndexPath);
+        diagnostics.ffmpeg.moduleDir = ffmpegModuleDir;
+      } catch (resolveErr: any) {
+        diagnostics.ffmpeg.resolveError = resolveErr.message;
+      }
+      
+      // Buscar en rutas de fallback mejoradas
       const fallbackPaths = [
+        // Path directo del módulo
+        ...(possiblePath ? [possiblePath] : []),
+        // Rutas del módulo
+        ffmpegModuleDir ? path.join(ffmpegModuleDir, 'ffmpeg') : null,
+        ffmpegModuleDir ? path.join(ffmpegModuleDir, 'bin', 'ffmpeg') : null,
+        // Rutas estándar
         path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'bin', 'ffmpeg'),
         path.join(process.cwd(), '.next', 'standalone', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(process.cwd(), '.next', 'standalone', 'node_modules', 'ffmpeg-static', 'bin', 'ffmpeg'),
         '/workspace/node_modules/ffmpeg-static/ffmpeg',
+        '/workspace/node_modules/ffmpeg-static/bin/ffmpeg',
         '/workspace/.next/standalone/node_modules/ffmpeg-static/ffmpeg',
-      ];
+        '/workspace/.next/standalone/node_modules/ffmpeg-static/bin/ffmpeg',
+      ].filter(Boolean) as string[];
       
       diagnostics.ffmpeg.fallbackSearch = [];
       for (const fallbackPath of fallbackPaths) {
@@ -46,6 +87,7 @@ export async function GET() {
         diagnostics.ffmpeg.fallbackSearch.push({ path: fallbackPath, exists });
         if (exists) {
           RESOLVED_FFMPEG = fallbackPath;
+          diagnostics.ffmpeg.foundInFallback = fallbackPath;
           break;
         }
       }
