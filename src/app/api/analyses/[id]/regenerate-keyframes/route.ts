@@ -26,17 +26,30 @@ export async function GET(
     
     const analysisData = analysisDoc.data();
     
-    // 2. Verificar si tiene video
-    const videoUrl = analysisData?.videoUrl || analysisData?.videoBackUrl;
+    // 2. Verificar si tiene video (considerar todos los ángulos)
+    const candidateUrls = {
+      back: analysisData?.videoBackUrl || analysisData?.videoUrl,
+      front: analysisData?.videoFrontUrl,
+      left: analysisData?.videoLeftUrl,
+      right: analysisData?.videoRightUrl,
+    } as Record<string, string | undefined>;
+
+    // Prioridad: back -> front -> left -> right
+    const selectedAngle = (['back', 'front', 'left', 'right'] as const).find(
+      (k) => Boolean(candidateUrls[k])
+    );
+
+    const videoUrl = selectedAngle ? candidateUrls[selectedAngle] : undefined;
+
     if (!videoUrl) {
       return NextResponse.json({
         success: false,
-        error: 'No video found in analysis',
+        error: 'No video found in analysis (none of videoBackUrl, videoUrl, videoFrontUrl, videoLeftUrl, videoRightUrl)',
         analysisId
       }, { status: 400 });
     }
     
-    console.log('📹 [REGENERATE-KEYFRAMES] Video encontrado:', videoUrl);
+    console.log('📹 [REGENERATE-KEYFRAMES] Video encontrado:', { url: videoUrl, angle: selectedAngle });
     
     // 3. Descargar video desde Storage
     const storage = new Storage();
@@ -91,13 +104,13 @@ export async function GET(
     console.log('⬇️ [REGENERATE-KEYFRAMES] Descargando video:', storagePath);
     const [videoBuffer] = await file.download();
     
-    // 4. Preparar buffers de video para keyframes
+    // 4. Preparar buffers de video para keyframes según el ángulo detectado
     const videoBuffers = {
-      back: videoBuffer, // El video principal (back)
-      front: undefined,
-      left: undefined,
-      right: undefined
-    };
+      back: selectedAngle === 'back' ? videoBuffer : undefined,
+      front: selectedAngle === 'front' ? videoBuffer : undefined,
+      left: selectedAngle === 'left' ? videoBuffer : undefined,
+      right: selectedAngle === 'right' ? videoBuffer : undefined,
+    } as const;
     
     // 5. Extraer keyframes inteligentes
     console.log('🔍 [REGENERATE-KEYFRAMES] Extrayendo keyframes...');
