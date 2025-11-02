@@ -23,6 +23,7 @@ import { analyzeVideoFrames } from './analyze-video-frames';
 import { adminDb } from '@/lib/firebase-admin';
 import type { Player } from '@/lib/types';
 import { extractAndUploadSmartKeyframesAsync } from '@/lib/smart-keyframes';
+import { extractKeyframesForAI } from '@/lib/ffmpeg';
 // Usar Admin SDK (adminDb) directamente; no importar helpers del SDK cliente
 
 // Nota: no lanzar error a nivel de módulo para no romper SSR; validamos en tiempo de ejecución
@@ -112,6 +113,29 @@ const processUploadedVideoFlow = ai.defineFlow(
     // Descargar video a buffer
     const [videoBuffer] = await file.download();
     
+    // Extraer keyframes para el análisis de IA (16 frames con descripciones)
+    console.log('🔍 [Keyframes] Iniciando extracción de keyframes para análisis de IA...');
+    let availableKeyframes: Array<{ index: number; timestamp: number; description: string }> = [];
+    
+    try {
+      const extractedKeyframes = await extractKeyframesForAI(videoBuffer, 16);
+      console.log(`✅ [Keyframes] Se extrajeron ${extractedKeyframes.length} keyframes para análisis`);
+      
+      // Formatear keyframes para el análisis (solo index, timestamp, description - sin imageBuffer)
+      availableKeyframes = extractedKeyframes.map(kf => ({
+        index: kf.index,
+        timestamp: kf.timestamp,
+        description: kf.description
+      }));
+      
+      console.log('✅ [Keyframes] Keyframes formateados correctamente:', availableKeyframes.length);
+    } catch (keyframeError) {
+      console.error('❌ [Keyframes] Error extrayendo keyframes para análisis:', keyframeError);
+      console.error('⚠️ [Keyframes] Continuando sin keyframes (análisis funcionará pero sin selección de frames)');
+      // Continuar sin keyframes - el análisis puede funcionar sin ellos
+      availableKeyframes = [];
+    }
+    
     // Usar análisis real de frames (no solo URL)
     const contentValidation = await analyzeVideoFrames({
       videoBuffer: videoBuffer,
@@ -193,7 +217,7 @@ const processUploadedVideoFlow = ai.defineFlow(
       ageCategory: ageCategory,
       playerLevel: player.playerLevel || 'Intermedio',
       shotType: pendingData.shotType,
-      availableKeyframes: [],
+      availableKeyframes: availableKeyframes, // Keyframes extraídos y formateados
       promptConfig,
     };
 
