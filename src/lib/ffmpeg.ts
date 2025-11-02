@@ -11,6 +11,9 @@ try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const ffmpegStatic = require('ffmpeg-static');
   console.log('🔍 [FFmpeg] ffmpeg-static module type:', typeof ffmpegStatic);
+  console.log('🔍 [FFmpeg] ffmpeg-static value:', ffmpegStatic);
+  console.log('🔍 [FFmpeg] process.cwd():', process.cwd());
+  console.log('🔍 [FFmpeg] __dirname:', __dirname);
   
   // ffmpeg-static puede retornar string directamente o objeto con .path
   let possiblePath: string | null = null;

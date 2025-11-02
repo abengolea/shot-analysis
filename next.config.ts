@@ -4,6 +4,8 @@ import path from 'path';
 const nextConfig: NextConfig = {
   /* config options here */
   output: 'standalone',
+  // Asegurar que ffmpeg-static se incluya en el build standalone
+  serverExternalPackages: ['ffmpeg-static'],
   typescript: {
     ignoreBuildErrors: true,
   },
