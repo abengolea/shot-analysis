@@ -269,6 +269,10 @@ export async function startAnalysisWithSmartKeyframes(prevState: any, formData: 
                 
                 // ASCENSO (Común para tres y libre)
                 'mano_no_dominante_en_ascenso': 'mano_no_dominante_ascenso',
+                'angulo_de_codo_estable_en_ascenso': 'angulo_codo_fijo_ascenso',
+                'angulo_codo_estable_en_ascenso': 'angulo_codo_fijo_ascenso',
+                'angulo_codo_fijo_en_ascenso': 'angulo_codo_fijo_ascenso',
+                'angulo_codo_fijo_ascenso': 'angulo_codo_fijo_ascenso',
                 'codos_cerca_del_cuerpo': 'codos_cerca_cuerpo',
                 'codos_cerca_del_cuerpo_libre': 'codos_cerca_cuerpo_libre',
                 'subida_recta_del_balon': 'subida_recta_balon',
@@ -339,6 +343,14 @@ export async function startAnalysisWithSmartKeyframes(prevState: any, formData: 
         
         // Set para evitar contar el mismo parámetro dos veces
         const processedParams = new Set<string>();
+
+        const normalizeStatus = (status: unknown): string =>
+            String(status || '')
+                .toLowerCase()
+                .trim()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/\s+/g, '_');
         
         for (const param of parameters) {
             // Usar el campo id si existe, si no, normalizar el nombre
@@ -350,26 +362,29 @@ export async function startAnalysisWithSmartKeyframes(prevState: any, formData: 
                 continue;
             }
             
-            const weight = customWeights[paramId] || 0;
-            
-            if (weight === 0) {
-                console.warn(`⚠️ Parámetro sin peso: ${paramId} (nombre original: ${param.name})`);
-                continue;
-            }
-            
             // Marcar como procesado
             processedParams.add(paramId);
-            
-            // Si el parámetro es evaluable (tiene score válido)
-            if (param.status !== 'no_evaluable' && typeof param.score === 'number' && param.score > 0) {
-                weightedScore += weight * param.score;
-                totalWeight += weight;
-                evaluableCount++;
-                console.log(`✅ ${paramId}: score=${param.score}, peso=${weight}%, contribución=${(weight * param.score).toFixed(2)}`);
-            } else {
+
+            const weight = customWeights[paramId] || 0;
+            const normalizedStatus = normalizeStatus(param.status);
+            const hasValidScore = typeof param.score === 'number' && param.score > 0;
+            const isNoEvaluable = normalizedStatus === 'no_evaluable' || param.na === true;
+
+            if (isNoEvaluable || !hasValidScore) {
                 nonEvaluableCount++;
-                console.log(`⚠️ ${paramId}: no evaluable (status=${param.status})`);
+                console.log(`⚠️ ${paramId}: no evaluable (status=${param.status}, score=${param.score})`);
+                continue;
             }
+
+            evaluableCount++;
+            if (weight === 0) {
+                console.warn(`⚠️ Parámetro evaluable sin peso: ${paramId} (nombre original: ${param.name})`);
+                continue;
+            }
+
+            weightedScore += weight * param.score;
+            totalWeight += weight;
+            console.log(`✅ ${paramId}: score=${param.score}, peso=${weight}%, contribución=${(weight * param.score).toFixed(2)}`);
         }
         
         // Normalizar el score final (igual que startAnalysis)

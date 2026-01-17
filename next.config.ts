@@ -1,6 +1,8 @@
 import type {NextConfig} from 'next';
 import path from 'path';
 
+const mediapipeShim = path.resolve(__dirname, 'shims/mediapipe-pose-shim.js').replace(/\\/g, '/');
+
 const nextConfig: NextConfig = {
   /* config options here */
   output: 'standalone',
@@ -14,7 +16,7 @@ const nextConfig: NextConfig = {
   },
   turbopack: {
     resolveAlias: {
-      '@mediapipe/pose': path.resolve(__dirname, 'shims/mediapipe-pose-shim.js'),
+      '@mediapipe/pose': mediapipeShim,
     },
   },
   experimental: {
@@ -56,8 +58,8 @@ const nextConfig: NextConfig = {
     // Resolver problemas con Konva
     config.resolve.alias = {
       ...config.resolve.alias,
-      'canvas': false,
-      '@mediapipe/pose': path.resolve(__dirname, 'shims/mediapipe-pose-shim.js'),
+      canvas: false,
+      '@mediapipe/pose': mediapipeShim,
     };
 
     // Manejar archivos de worker de FFmpeg

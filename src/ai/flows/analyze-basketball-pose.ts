@@ -179,27 +179,27 @@ async function runOpenPose(inputVideoPath: string, outputDir: string): Promise<{
 
     console.log('[runOpenPose] Ejecutando:', openposeCommand, args.join(' '));
 
-    const process = spawn(openposeCommand, args);
+    const childProcess = spawn(openposeCommand, args);
 
     let errorOutput = '';
 
-    process.stderr.on('data', (data) => {
+    childProcess.stderr.on('data', (data: Buffer) => {
       errorOutput += data.toString();
       console.log('[runOpenPose] stderr:', data.toString());
     });
 
-    process.stdout.on('data', (data) => {
+    childProcess.stdout.on('data', (data: Buffer) => {
       console.log('[runOpenPose] stdout:', data.toString());
     });
 
-    process.on('close', async (code) => {
+    childProcess.on('close', async (code: number | null) => {
       console.log('[runOpenPose] Proceso terminado con código:', code);
 
       if (code !== 0) {
         resolve({
           success: false,
           keyframes: [],
-          error: `OpenPose falló con código ${code}: ${errorOutput}`
+          error: `OpenPose falló con código ${code ?? 'desconocido'}: ${errorOutput}`
         });
         return;
       }
@@ -222,7 +222,7 @@ async function runOpenPose(inputVideoPath: string, outputDir: string): Promise<{
 
     // Timeout de 5 minutos
     setTimeout(() => {
-      process.kill();
+      childProcess.kill();
       resolve({
         success: false,
         keyframes: [],

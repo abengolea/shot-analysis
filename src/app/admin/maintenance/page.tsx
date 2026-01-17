@@ -47,7 +47,15 @@ export default function MaintenancePage() {
       const response = await fetch('/api/admin/maintenance');
       if (response.ok) {
         const data = await response.json();
-        setConfig(data);
+        setConfig({
+          ...data,
+          shotTypesMaintenance: {
+            tres: false,
+            media: false,
+            libre: false,
+            ...data.shotTypesMaintenance,
+          },
+        });
       }
     } catch (error) {
       console.error('Error cargando configuración:', error);
@@ -175,13 +183,19 @@ export default function MaintenancePage() {
                 <Switch
                   id="tres-maintenance"
                   checked={config.shotTypesMaintenance?.tres || false}
-                  onCheckedChange={(enabled) => setConfig(prev => ({
-                    ...prev,
-                    shotTypesMaintenance: {
+                  onCheckedChange={(enabled) => setConfig(prev => {
+                    const shotTypesMaintenance = {
+                      tres: false,
+                      media: false,
+                      libre: false,
                       ...prev.shotTypesMaintenance,
-                      tres: enabled
-                    }
-                  }))}
+                    };
+                    shotTypesMaintenance.tres = enabled;
+                    return {
+                      ...prev,
+                      shotTypesMaintenance
+                    };
+                  })}
                 />
               </div>
 
@@ -198,13 +212,19 @@ export default function MaintenancePage() {
                 <Switch
                   id="media-maintenance"
                   checked={config.shotTypesMaintenance?.media || false}
-                  onCheckedChange={(enabled) => setConfig(prev => ({
-                    ...prev,
-                    shotTypesMaintenance: {
+                  onCheckedChange={(enabled) => setConfig(prev => {
+                    const shotTypesMaintenance = {
+                      tres: false,
+                      media: false,
+                      libre: false,
                       ...prev.shotTypesMaintenance,
-                      media: enabled
-                    }
-                  }))}
+                    };
+                    shotTypesMaintenance.media = enabled;
+                    return {
+                      ...prev,
+                      shotTypesMaintenance
+                    };
+                  })}
                 />
               </div>
 
@@ -221,13 +241,19 @@ export default function MaintenancePage() {
                 <Switch
                   id="libre-maintenance"
                   checked={config.shotTypesMaintenance?.libre || false}
-                  onCheckedChange={(enabled) => setConfig(prev => ({
-                    ...prev,
-                    shotTypesMaintenance: {
+                  onCheckedChange={(enabled) => setConfig(prev => {
+                    const shotTypesMaintenance = {
+                      tres: false,
+                      media: false,
+                      libre: false,
                       ...prev.shotTypesMaintenance,
-                      libre: enabled
-                    }
-                  }))}
+                    };
+                    shotTypesMaintenance.libre = enabled;
+                    return {
+                      ...prev,
+                      shotTypesMaintenance
+                    };
+                  })}
                 />
               </div>
 

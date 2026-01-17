@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from "next/link";
-import { PlusCircle, User, BarChart, FileText, Eye, Calendar, Video } from "lucide-react";
+import { PlusCircle, User, BarChart, FileText, Eye, Calendar, Video, CheckCircle2, Clock, RefreshCw, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -28,6 +28,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { PlayerProgressChart } from "@/components/player-progress-chart";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 
 function FormattedDate({ dateString }: { dateString: string }) {
     const [formattedDate, setFormattedDate] = useState('');
@@ -49,10 +51,39 @@ export default function DashboardPage() {
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [maintenanceConfig, setMaintenanceConfig] = useState<any>(null);
   const [coachFeedbackByAnalysis, setCoachFeedbackByAnalysis] = useState<Record<string, boolean>>({});
+  const [unlockStatusByAnalysis, setUnlockStatusByAnalysis] = useState<Record<string, {
+    status: 'none' | 'pending_payment' | 'paid_pending_review' | 'reviewed';
+    paidCoachIds: Array<{ coachId: string; coachName: string }>;
+    pendingCoachIds: Array<{ coachId: string; coachName: string }>;
+    unlocks?: Array<{
+      id: string;
+      coachId: string;
+      coachName: string;
+      status: string;
+      paymentProvider?: string | null;
+      preferenceId?: string | null;
+      paymentId?: string | null;
+      createdAt?: string | null;
+      updatedAt?: string | null;
+    }>;
+    reviewedCoachIds?: string[];
+  }>>({});
+  const [retryingByAnalysis, setRetryingByAnalysis] = useState<Record<string, boolean>>({});
+  const mpRetryRef = useRef<Set<string>>(new Set());
 
   // Controles de filtro/rango
   const [range, setRange] = useState<string>("12m"); // 3m,6m,12m,5y,all
   const [shotFilter, setShotFilter] = useState<string>("all"); // all, three, jump, free
+
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [reviewTarget, setReviewTarget] = useState<{
+    analysisId: string;
+    coachId: string;
+    coachName: string;
+  } | null>(null);
+  const [reviewRating, setReviewRating] = useState<number | null>(null);
+  const [reviewComment, setReviewComment] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   // Función para obtener análisis del usuario
   // Cargar configuración de mantenimiento - DESHABILITADO PARA DESARROLLO
@@ -92,29 +123,82 @@ export default function DashboardPage() {
     }
   }, [user?.uid]);
 
-  // Cargar disponibilidad de feedback de entrenador para cada análisis listado
+  // Cargar disponibilidad de feedback de entrenador y unlock status en batch (optimizado)
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
         if (!user || !userAnalyses.length) return;
         const token = await user.getIdToken();
-        const toCheck = userAnalyses.slice(0, 30); // limitar por rendimiento
-        const results = await Promise.all(toCheck.map(async (a) => {
-          try {
-            const res = await fetch(`/api/analyses/${a.id}/coach-feedback`, { headers: { Authorization: `Bearer ${token}` } });
-            if (!res.ok) return [a.id, false] as const;
-            const data = await res.json();
-            return [a.id, Boolean(data?.feedback)] as const;
-          } catch {
-            return [a.id, false] as const;
+        const toCheck = userAnalyses.slice(0, 50); // limitar por rendimiento
+        const analysisIds = toCheck.map(a => a.id);
+        
+        try {
+          const res = await fetch('/api/analyses/batch-coach-status', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ analysisIds }),
+          });
+          
+          if (!res.ok) {
+            console.error(`[Dashboard] ⚠️ No se pudo cargar estado batch:`, res.status);
+            return;
           }
-        }));
-        if (cancelled) return;
-        const map: Record<string, boolean> = {};
-        for (const [id, has] of results) map[id] = has;
-        setCoachFeedbackByAnalysis(map);
-      } catch {}
+          
+          const data = await res.json();
+          const statusByAnalysis = data.statusByAnalysis || {};
+          
+          if (cancelled) return;
+          
+          // Separar feedback y unlock status
+          const feedbackMap: Record<string, boolean> = {};
+          const unlockMap: Record<string, {
+            status: 'none' | 'pending_payment' | 'paid_pending_review' | 'reviewed';
+            paidCoachIds: Array<{ coachId: string; coachName: string }>;
+            pendingCoachIds: Array<{ coachId: string; coachName: string }>;
+            unlocks?: Array<{
+              id: string;
+              coachId: string;
+              coachName: string;
+              status: string;
+              paymentProvider?: string | null;
+              preferenceId?: string | null;
+              paymentId?: string | null;
+              createdAt?: string | null;
+              updatedAt?: string | null;
+            }>;
+            reviewedCoachIds?: string[];
+          }> = {};
+          
+          for (const [analysisId, status] of Object.entries(statusByAnalysis)) {
+            const s = status as {
+              hasCoachFeedback: boolean;
+              unlockStatus: {
+                status: 'none' | 'pending_payment' | 'paid_pending_review' | 'reviewed';
+                paidCoachIds: Array<{ coachId: string; coachName: string }>;
+                pendingCoachIds: Array<{ coachId: string; coachName: string }>;
+              };
+            };
+            feedbackMap[analysisId] = s.hasCoachFeedback;
+            unlockMap[analysisId] = {
+              ...s.unlockStatus,
+              unlocks: (s as any).unlocks || [],
+              reviewedCoachIds: (s as any).reviewedCoachIds || [],
+            };
+          }
+          
+          console.log(`[Dashboard] ✅ Estado batch cargado para ${Object.keys(feedbackMap).length} análisis`);
+          setCoachFeedbackByAnalysis(feedbackMap);
+          setUnlockStatusByAnalysis(unlockMap);
+        } catch (e) {
+          console.error('[Dashboard] ❌ Error cargando estado batch:', e);
+        }
+      } catch (e) {
+        console.error('[Dashboard] ❌ Error general cargando estado:', e);
+      }
     };
     load();
     return () => { cancelled = true; };
@@ -163,6 +247,23 @@ export default function DashboardPage() {
       console.log('🔍 Análisis de Libres (analyzed):', freeAnalyzed.length);
     }
   }, [userAnalyses]);
+
+  // Intentar reprocesar pagos MP pendientes (una vez por análisis)
+  useEffect(() => {
+    if (!user) return;
+    const entries = Object.entries(unlockStatusByAnalysis);
+    if (!entries.length) return;
+    for (const [analysisId, status] of entries) {
+      if (status.status !== 'pending_payment') continue;
+      if (mpRetryRef.current.has(analysisId)) continue;
+      const mpUnlock = status.unlocks?.find(
+        (u) => u.paymentProvider === 'mercadopago' && u.preferenceId
+      );
+      if (!mpUnlock?.preferenceId) continue;
+      mpRetryRef.current.add(analysisId);
+      retryMpPayment(analysisId, { silent: true });
+    }
+  }, [unlockStatusByAnalysis, user]);
 
   // Evitar render mientras se decide o se redirige
   if (!user || !userProfile || (userProfile as any).role === 'admin') {
@@ -260,6 +361,219 @@ export default function DashboardPage() {
   };
 
   const pct = (score: number | null) => (score == null ? 'N/A' : `${Number(score).toFixed(1)} / 100`);
+
+  const goToCoachRequest = (analysisId: string) => {
+    const unlockStatus = unlockStatusByAnalysis[analysisId];
+    
+    // Si ya está pagado y pendiente de revisión, mostrar mensaje
+    if (unlockStatus?.status === 'paid_pending_review') {
+      const coachName = unlockStatus.paidCoachIds[0]?.coachName || 'entrenador designado';
+      toast({
+        title: 'Revisión pendiente',
+        description: `Ya pagaste y tu análisis está pendiente de revisión por ${coachName}. Te avisaremos cuando esté listo.`,
+        variant: 'default',
+      });
+      return;
+    }
+    
+    // Si ya hay feedback, mostrar mensaje
+    if (coachFeedbackByAnalysis[analysisId]) {
+      toast({
+        title: 'Revisión completada',
+        description: 'Tu análisis ya fue revisado por el entrenador. Revisa los resultados.',
+        variant: 'default',
+      });
+      router.push(`/analysis/${analysisId}`);
+      return;
+    }
+    
+    // Caso normal: redirigir a selección de entrenador
+    router.push(`/player/coaches?analysisId=${analysisId}`);
+  };
+
+  const refreshUnlockStatus = async (analysisId: string, token: string) => {
+    try {
+      const unlockResponse = await fetch(`/api/analyses/${analysisId}/unlock-status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (unlockResponse.ok) {
+        const unlockData = await unlockResponse.json();
+        setUnlockStatusByAnalysis((prev) => ({
+          ...prev,
+          [analysisId]: {
+            status: unlockData.status || 'none',
+            paidCoachIds: unlockData.paidCoachIds || [],
+            pendingCoachIds: unlockData.pendingCoachIds || [],
+            unlocks: unlockData.unlocks || [],
+            reviewedCoachIds: unlockData.reviewedCoachIds || [],
+          },
+        }));
+        setCoachFeedbackByAnalysis((prev) => ({
+          ...prev,
+          [analysisId]: unlockData.hasCoachFeedback || false,
+        }));
+      }
+    } catch (error) {
+      console.error('[Dashboard] Error refrescando unlock status:', error);
+    }
+  };
+
+  const retryMpPayment = async (analysisId: string, opts: { silent?: boolean } = {}) => {
+    const unlockStatus = unlockStatusByAnalysis[analysisId];
+    const mpUnlock = unlockStatus?.unlocks?.find(
+      (u) => u.paymentProvider === 'mercadopago' && u.preferenceId
+    );
+    if (!mpUnlock?.preferenceId) {
+      if (!opts.silent) {
+        toast({
+          title: 'No se encontró preferenceId',
+          description: 'No hay datos suficientes para reprocesar el pago.',
+          variant: 'destructive',
+        });
+      }
+      return;
+    }
+    if (!user) return;
+
+    setRetryingByAnalysis((prev) => ({ ...prev, [analysisId]: true }));
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch('/api/payments/check-mp-payment', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          preferenceId: mpUnlock.preferenceId,
+          analysisId,
+        }),
+      });
+      const data = await response.json();
+      if (response.ok && data?.success) {
+        await refreshUnlockStatus(analysisId, token);
+        if (!opts.silent) {
+          toast({
+            title: 'Pago procesado',
+            description: 'El estado se actualizó correctamente.',
+          });
+        }
+      } else if (!opts.silent) {
+        const detailText = data?.details ? ` ${String(data.details).slice(0, 500)}` : '';
+        const statusText = data?.status ? ` (HTTP ${data.status})` : '';
+        toast({
+          title: 'No se pudo reprocesar',
+          description: `${data?.error || data?.message || 'El pago sigue pendiente.'}${statusText}${detailText}`,
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      if (!opts.silent) {
+        toast({
+          title: 'Error',
+          description: error?.message || 'No se pudo reprocesar el pago.',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      setRetryingByAnalysis((prev) => ({ ...prev, [analysisId]: false }));
+    }
+  };
+
+  const isReviewWindowOpen = (createdAt?: string | null) => {
+    if (!createdAt) return false;
+    const created = new Date(createdAt);
+    if (Number.isNaN(created.getTime())) return false;
+    const diffMs = Date.now() - created.getTime();
+    return diffMs >= 7 * 24 * 60 * 60 * 1000;
+  };
+
+  const getReviewCandidate = (analysisId: string) => {
+    const unlockStatus = unlockStatusByAnalysis[analysisId];
+    if (!unlockStatus) return null;
+    const reviewedCoachIds = unlockStatus.reviewedCoachIds || [];
+    const unlock = (unlockStatus.unlocks || []).find(
+      (u) => u.status === 'paid' && !!u.coachId && !reviewedCoachIds.includes(u.coachId) && isReviewWindowOpen(u.createdAt)
+    );
+    if (unlock) {
+      return {
+        analysisId,
+        coachId: unlock.coachId,
+        coachName: unlock.coachName || 'Entrenador',
+      };
+    }
+
+    if (coachFeedbackByAnalysis[analysisId]) {
+      const paidCoach = unlockStatus.paidCoachIds?.[0];
+      if (paidCoach && !reviewedCoachIds.includes(paidCoach.coachId)) {
+        return {
+          analysisId,
+          coachId: paidCoach.coachId,
+          coachName: paidCoach.coachName || 'Entrenador',
+        };
+      }
+    }
+    return null;
+  };
+
+  const openReviewDialog = (analysisId: string, coachId: string, coachName: string) => {
+    setReviewTarget({ analysisId, coachId, coachName });
+    setReviewRating(null);
+    setReviewComment("");
+    setReviewDialogOpen(true);
+  };
+
+  const submitCoachReview = async () => {
+    if (!reviewTarget || !user || !reviewRating) return;
+    try {
+      setSubmittingReview(true);
+      const token = await user.getIdToken();
+      const res = await fetch('/api/coach-reviews', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          analysisId: reviewTarget.analysisId,
+          coachId: reviewTarget.coachId,
+          rating: reviewRating,
+          comment: reviewComment.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'No se pudo enviar la reseña.');
+      }
+      setUnlockStatusByAnalysis((prev) => {
+        const current = prev[reviewTarget.analysisId];
+        if (!current) return prev;
+        const reviewedCoachIds = Array.from(new Set([...(current.reviewedCoachIds || []), reviewTarget.coachId]));
+        return {
+          ...prev,
+          [reviewTarget.analysisId]: { ...current, reviewedCoachIds },
+        };
+      });
+      toast({
+        title: 'Gracias por tu reseña',
+        description: `Tu valoración de ${reviewTarget.coachName} fue enviada.`,
+      });
+      setReviewDialogOpen(false);
+      setReviewTarget(null);
+    } catch (error: any) {
+      toast({
+        title: 'No se pudo enviar la reseña',
+        description: error?.message || 'Intenta nuevamente en unos minutos.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  const reviewIsCoachCompleted = reviewTarget
+    ? !!coachFeedbackByAnalysis[reviewTarget.analysisId]
+    : false;
   
   // Obtener el ÚLTIMO análisis de cada tipo (no promedio)
   const lastThree = lastScoreByType('Lanzamiento de Tres');
@@ -494,8 +808,22 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {userAnalyses.map((analysis) => (
-                <div key={analysis.id} className="flex items-center justify-between p-4 border rounded-lg">
+              {userAnalyses.map((analysis) => {
+                const hasCoachReview = !!coachFeedbackByAnalysis[analysis.id];
+                const unlockStatus = unlockStatusByAnalysis[analysis.id];
+                const hasPendingMp = unlockStatus?.status === 'pending_payment' && unlockStatus?.unlocks?.some(
+                  (u) => u.paymentProvider === 'mercadopago' && u.preferenceId
+                );
+                const reviewCandidate = getReviewCandidate(analysis.id);
+                return (
+                <div
+                  key={analysis.id}
+                  className={`flex items-center justify-between p-4 border rounded-lg ${
+                    hasCoachReview
+                      ? 'bg-amber-50 border-amber-200'
+                      : ''
+                  }`}
+                >
                   <div className="flex items-center gap-4">
                     <div className="p-2 bg-blue-100 rounded-full">
                       <Video className="h-5 w-5 text-blue-600" />
@@ -507,10 +835,25 @@ export default function DashboardPage() {
                         <FormattedDate dateString={analysis.createdAt} />
                         {getStatusBadge(analysis.status)}
                       </div>
-                      {analysis.status === 'analyzed' && coachFeedbackByAnalysis[analysis.id] && (
-                        <div className="mt-1 text-xs text-green-700">
-                          Feedback del entrenador disponible si tu entrenador lo agregó.
-                        </div>
+                      {analysis.status === 'analyzed' && (
+                        <>
+                          {coachFeedbackByAnalysis[analysis.id] ? (
+                            <div className="mt-1 text-xs text-green-700 flex items-center gap-1">
+                              <CheckCircle2 className="h-3 w-3" />
+                              Finalizado análisis de entrenador
+                            </div>
+                          ) : unlockStatus?.status === 'paid_pending_review' ? (
+                            <div className="mt-1 text-xs text-green-700 flex items-center gap-1">
+                              <CheckCircle2 className="h-3 w-3" />
+                              ✅ Ya abonado - Pendiente evaluación por {unlockStatus?.paidCoachIds[0]?.coachName || 'entrenador designado'}
+                            </div>
+                          ) : unlockStatus?.status === 'pending_payment' ? (
+                            <div className="mt-1 text-xs text-amber-700 flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              Pago pendiente. Estamos verificando automáticamente.
+                            </div>
+                          ) : null}
+                        </>
                       )}
                     </div>
                   </div>
@@ -523,9 +866,73 @@ export default function DashboardPage() {
                         </Link>
                       </Button>
                     )}
+                    {reviewCandidate && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openReviewDialog(reviewCandidate.analysisId, reviewCandidate.coachId, reviewCandidate.coachName)}
+                        className="whitespace-nowrap"
+                      >
+                        <Star className="mr-2 h-4 w-4 text-yellow-500" />
+                        Valorar entrenador
+                      </Button>
+                    )}
+                    {coachFeedbackByAnalysis[analysis.id] ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        asChild
+                        className="whitespace-nowrap bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                      >
+                        <Link href={`/analysis/${analysis.id}#coach-checklist`}>
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          Ver revisión del entrenador
+                        </Link>
+                      </Button>
+                    ) : unlockStatus?.status === 'paid_pending_review' ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToCoachRequest(analysis.id)}
+                        className="whitespace-nowrap bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                      >
+                        <CheckCircle2 className="mr-2 h-4 w-4" />
+                        Ya abonado - Pendiente evaluación
+                      </Button>
+                    ) : unlockStatus?.status === 'pending_payment' && hasPendingMp ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => retryMpPayment(analysis.id)}
+                        className="whitespace-nowrap"
+                        disabled={!!retryingByAnalysis[analysis.id]}
+                      >
+                        {retryingByAnalysis[analysis.id] ? (
+                          <>
+                            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                            Verificando...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Reintentar verificación de pago
+                          </>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToCoachRequest(analysis.id)}
+                        className="whitespace-nowrap"
+                      >
+                        Solicitar revisión por entrenador humano
+                      </Button>
+                    )}
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </CardContent>
@@ -582,6 +989,69 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {reviewIsCoachCompleted ? 'Valorar evaluación de' : 'Valorar a'}{' '}
+              {reviewTarget?.coachName || 'entrenador'}
+            </DialogTitle>
+            <DialogDescription>
+              {reviewIsCoachCompleted
+                ? 'El entrenador ya finalizó tu evaluación. Tu reseña ayuda a otros jugadores.'
+                : 'Han pasado 7 días desde tu solicitud. Tu reseña ayuda a otros jugadores.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              {Array.from({ length: 5 }).map((_, i) => {
+                const value = i + 1;
+                const isActive = (reviewRating || 0) >= value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setReviewRating(value)}
+                    className="rounded p-1 transition hover:bg-yellow-50"
+                    aria-label={`Calificar ${value} estrellas`}
+                  >
+                    <Star className={`h-5 w-5 ${isActive ? 'fill-yellow-400 text-yellow-500' : 'text-gray-300'}`} />
+                  </button>
+                );
+              })}
+              <span className="text-sm text-muted-foreground">
+                {reviewRating ? `${reviewRating}/5` : 'Selecciona una calificación'}
+              </span>
+            </div>
+            <Textarea
+              placeholder="Comentario opcional sobre la evaluación del entrenador..."
+              value={reviewComment}
+              onChange={(e) => setReviewComment(e.target.value)}
+              rows={4}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setReviewDialogOpen(false)}
+              disabled={submittingReview}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={submitCoachReview}
+              disabled={!reviewRating || submittingReview}
+            >
+              {submittingReview
+                ? 'Enviando...'
+                : reviewIsCoachCompleted
+                ? 'Enviar reseña de la evaluación'
+                : 'Enviar reseña'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de mantenimiento */}
       <AlertDialog open={maintenanceOpen} onOpenChange={() => {}}>

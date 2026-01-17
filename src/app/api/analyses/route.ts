@@ -38,7 +38,9 @@ export async function GET(request: NextRequest) {
     
     console.log(`📊 [ANALYSES] Colección 'analyses': ${analysesSnapshot.docs.length} documentos`);
     
-    const analysesFromAnalyses = analysesSnapshot.docs.map(doc => ({
+    type AnalysisEntry = { id: string; createdAt?: any; source: string; [key: string]: any };
+
+    const analysesFromAnalyses: AnalysisEntry[] = analysesSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       source: 'analyses'
@@ -52,7 +54,7 @@ export async function GET(request: NextRequest) {
     
     console.log(`📊 [ANALYSES] Colección 'video-analysis': ${videoAnalysisSnapshot.docs.length} documentos`);
     
-    const analysesFromVideoAnalysis = videoAnalysisSnapshot.docs.map(doc => {
+    const analysesFromVideoAnalysis: AnalysisEntry[] = videoAnalysisSnapshot.docs.map(doc => {
       const data = doc.data();
       return {
         id: doc.id,

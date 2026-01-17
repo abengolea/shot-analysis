@@ -54,14 +54,14 @@ export async function GET(request: NextRequest) {
     }
     
     // 4. Verificar subcolecciones de keyframes
-    const keyframesCounts = {
+    const keyframesCounts: Record<'front' | 'back' | 'left' | 'right', number> = {
       front: 0,
       back: 0,
       left: 0,
       right: 0
     };
     
-    const angles = ['front', 'back', 'left', 'right'];
+    const angles = ['front', 'back', 'left', 'right'] as const;
     for (const angle of angles) {
       try {
         const angleDoc = await adminDb

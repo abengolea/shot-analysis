@@ -67,8 +67,13 @@ export async function POST(request: NextRequest) {
       imageDataArray.push(mockImageData);
     }
 
-    // Analizar poses de baloncesto
-    const analysisResult = analyzeBasketballVideo(imageDataArray, mockPoseData);
+    // Analizar poses de baloncesto (mock por ahora)
+    const analysisResult = {
+      shotCount: mockPoseData.length,
+      successfulShots: 0,
+      missedShots: mockPoseData.length,
+      details: []
+    };
 
         return NextResponse.json({
       success: true,

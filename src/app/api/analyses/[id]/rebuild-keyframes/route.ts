@@ -43,6 +43,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (!snap.exists) return NextResponse.json({ error: 'analysis no encontrado' }, { status: 404 });
     const data = snap.data() as any;
     const bucket = adminStorage.bucket();
+    if (!bucket.name) {
+      return NextResponse.json({ error: 'Storage bucket no configurado' }, { status: 500 });
+    }
 
     const uploadExtracted = async (filePath: string, angleKey: 'front'|'left'|'right'|'back', count: number) => {
       try {
@@ -55,7 +58,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           const storagePath = `keyframes/${data.playerId || 'unknown'}/${analysisId}/${kfName}`;
           await bucket.file(storagePath).save(kf.imageBuffer, { metadata: { contentType: 'image/jpeg' } });
           await bucket.file(storagePath).makePublic();
-          urls.push(`https://storage.googleapis.com/${process.env.FIREBASE_ADMIN_STORAGE_BUCKET}/${storagePath}`);
+          urls.push(`https://storage.googleapis.com/${bucket.name}/${storagePath}`);
         }
         return urls;
       } catch (e) {

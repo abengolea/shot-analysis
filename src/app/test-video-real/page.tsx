@@ -227,6 +227,189 @@ export default function TestVideoRealPage() {
                   </div>
                 </div>
 
+                {/* Cuadro de Verificación - Descripción del Video */}
+                <Card className="border-2 border-orange-300 bg-orange-50">
+                  <CardHeader>
+                    <CardTitle className="flex items-center text-orange-900">
+                      <Eye className="h-5 w-5 mr-2" />
+                      🔍 Verificación: ¿Qué ve la IA del video?
+                    </CardTitle>
+                    <CardDescription className="text-orange-700">
+                      Esta descripción confirma que la IA realmente está analizando el video y no está simulando la respuesta
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* Descripción Principal */}
+                    <div className="bg-white p-4 rounded-lg border border-orange-200">
+                      <h4 className="font-semibold text-gray-900 mb-2">📝 Descripción del Video:</h4>
+                      {(comparisonResults.testPrompt.verification?.description || comparisonResults.productionPrompt.verification?.description) ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          {comparisonResults.testPrompt.verification?.description && (
+                            <div>
+                              <p className="text-xs font-medium text-blue-600 mb-1">Prompt de Test:</p>
+                              <p className="text-sm text-gray-700">{comparisonResults.testPrompt.verification.description}</p>
+                            </div>
+                          )}
+                          {comparisonResults.productionPrompt.verification?.description && (
+                            <div>
+                              <p className="text-xs font-medium text-purple-600 mb-1">Prompt de Producción:</p>
+                              <p className="text-sm text-gray-700">{comparisonResults.productionPrompt.verification.description}</p>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500 italic">No se encontró descripción del video en la respuesta</p>
+                      )}
+                    </div>
+
+                    {/* Detalles Visuales */}
+                    <div className="bg-white p-4 rounded-lg border border-orange-200">
+                      <h4 className="font-semibold text-gray-900 mb-3">👁️ Detalles Visuales Específicos:</h4>
+                      {(comparisonResults.testPrompt.details || comparisonResults.productionPrompt.details) ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          {/* Prompt de Test */}
+                          {comparisonResults.testPrompt.details && (
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-blue-600 mb-2">Prompt de Test:</p>
+                              <div className="space-y-2 text-sm">
+                                {comparisonResults.testPrompt.details.colors && (
+                                  <div>
+                                    <span className="font-medium text-gray-700">🎨 Colores:</span>
+                                    <p className="text-gray-600 ml-2">{comparisonResults.testPrompt.details.colors}</p>
+                                  </div>
+                                )}
+                                {comparisonResults.testPrompt.details.objects && (
+                                  <div>
+                                    <span className="font-medium text-gray-700">🏀 Objetos:</span>
+                                    <p className="text-gray-600 ml-2">{comparisonResults.testPrompt.details.objects}</p>
+                                  </div>
+                                )}
+                                {comparisonResults.testPrompt.details.actions && (
+                                  <div>
+                                    <span className="font-medium text-gray-700">⚡ Acciones:</span>
+                                    <p className="text-gray-600 ml-2">{comparisonResults.testPrompt.details.actions}</p>
+                                  </div>
+                                )}
+                                {comparisonResults.testPrompt.details.environment && (
+                                  <div>
+                                    <span className="font-medium text-gray-700">🏟️ Entorno:</span>
+                                    <p className="text-gray-600 ml-2">{comparisonResults.testPrompt.details.environment}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Prompt de Producción */}
+                          {comparisonResults.productionPrompt.details && (
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-purple-600 mb-2">Prompt de Producción:</p>
+                              <div className="space-y-2 text-sm">
+                                {comparisonResults.productionPrompt.details.colors && (
+                                  <div>
+                                    <span className="font-medium text-gray-700">🎨 Colores:</span>
+                                    <p className="text-gray-600 ml-2">{comparisonResults.productionPrompt.details.colors}</p>
+                                  </div>
+                                )}
+                                {comparisonResults.productionPrompt.details.objects && (
+                                  <div>
+                                    <span className="font-medium text-gray-700">🏀 Objetos:</span>
+                                    <p className="text-gray-600 ml-2">{comparisonResults.productionPrompt.details.objects}</p>
+                                  </div>
+                                )}
+                                {comparisonResults.productionPrompt.details.actions && (
+                                  <div>
+                                    <span className="font-medium text-gray-700">⚡ Acciones:</span>
+                                    <p className="text-gray-600 ml-2">{comparisonResults.productionPrompt.details.actions}</p>
+                                  </div>
+                                )}
+                                {comparisonResults.productionPrompt.details.environment && (
+                                  <div>
+                                    <span className="font-medium text-gray-700">🏟️ Entorno:</span>
+                                    <p className="text-gray-600 ml-2">{comparisonResults.productionPrompt.details.environment}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500 italic">No se encontraron detalles visuales en la respuesta</p>
+                      )}
+                    </div>
+
+                    {/* Información de Verificación */}
+                    <div className="bg-white p-4 rounded-lg border border-orange-200">
+                      <h4 className="font-semibold text-gray-900 mb-3">✅ Estado de Verificación:</h4>
+                      {(comparisonResults.testPrompt.verification || comparisonResults.productionPrompt.verification) ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          {comparisonResults.testPrompt.verification && (
+                            <div>
+                              <p className="text-xs font-medium text-blue-600 mb-2">Prompt de Test:</p>
+                              <div className="space-y-1 text-sm">
+                                <div className="flex items-center">
+                                  <span className="font-medium text-gray-700">Video Real:</span>
+                                  <span className={`ml-2 px-2 py-1 rounded text-xs font-medium ${
+                                    comparisonResults.testPrompt.verification.isReal 
+                                      ? 'bg-green-100 text-green-800' 
+                                      : 'bg-red-100 text-red-800'
+                                  }`}>
+                                    {comparisonResults.testPrompt.verification.isReal ? 'Sí ✓' : 'No ✗'}
+                                  </span>
+                                </div>
+                                {comparisonResults.testPrompt.verification.confidence !== undefined && (
+                                  <div>
+                                    <span className="font-medium text-gray-700">Confianza:</span>
+                                    <span className="ml-2 text-gray-600">{comparisonResults.testPrompt.verification.confidence}%</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          {comparisonResults.productionPrompt.verification && (
+                            <div>
+                              <p className="text-xs font-medium text-purple-600 mb-2">Prompt de Producción:</p>
+                              <div className="space-y-1 text-sm">
+                                <div className="flex items-center">
+                                  <span className="font-medium text-gray-700">Video Real:</span>
+                                  <span className={`ml-2 px-2 py-1 rounded text-xs font-medium ${
+                                    comparisonResults.productionPrompt.verification.isReal 
+                                      ? 'bg-green-100 text-green-800' 
+                                      : 'bg-red-100 text-red-800'
+                                  }`}>
+                                    {comparisonResults.productionPrompt.verification.isReal ? 'Sí ✓' : 'No ✗'}
+                                  </span>
+                                </div>
+                                {comparisonResults.productionPrompt.verification.confidence !== undefined && (
+                                  <div>
+                                    <span className="font-medium text-gray-700">Confianza:</span>
+                                    <span className="ml-2 text-gray-600">{comparisonResults.productionPrompt.verification.confidence}%</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500 italic">No se encontró información de verificación en la respuesta</p>
+                      )}
+                    </div>
+
+                    {/* Debug: Mostrar estructura de datos para debugging */}
+                    {process.env.NODE_ENV === 'development' && (
+                      <div className="bg-gray-100 p-3 rounded-lg border border-gray-300">
+                        <h4 className="font-semibold text-gray-900 mb-2 text-xs">🐛 Debug (solo desarrollo):</h4>
+                        <details className="text-xs">
+                          <summary className="cursor-pointer text-gray-600 mb-2">Ver estructura de datos</summary>
+                          <pre className="text-xs overflow-auto max-h-40 bg-white p-2 rounded border">
+                            {JSON.stringify(comparisonResults, null, 2)}
+                          </pre>
+                        </details>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
                 {/* Comparación lado a lado */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* Prompt de Test */}

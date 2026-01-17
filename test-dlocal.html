@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prueba dLocal Go</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .result.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .result.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .result pre {
+            margin: 10px 0 0 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .info {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .info strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Prueba de Integración dLocal Go</h1>
+        
+        <div class="info">
+            <strong>📋 Instrucciones:</strong>
+            <ol>
+                <li>Asegúrate de que el servidor esté corriendo: <code>npm run dev</code></li>
+                <li>Configura las variables de entorno en <code>.env.local</code></li>
+                <li>Completa el formulario y haz clic en "Crear Pago"</li>
+            </ol>
+            <p><strong>💡 Primero prueba:</strong> <a href="http://localhost:9999/api/payments/create-dlocal" target="_blank">http://localhost:9999/api/payments/create-dlocal</a> (debería mostrar información del endpoint)</p>
+        </div>
+
+        <button type="button" id="testBtn" style="background: #28a745; margin-bottom: 20px;">🔍 Probar Conexión Primero</button>
+        
+        <form id="paymentForm">
+            <div class="form-group">
+                <label for="userId">User ID (opcional, se genera uno automático si está vacío):</label>
+                <input type="text" id="userId" placeholder="test-user-123" />
+            </div>
+
+            <div class="form-group">
+                <label for="productId">Producto:</label>
+                <select id="productId">
+                    <option value="analysis_1">Análisis IA de tiro - $5000 ARS</option>
+                    <option value="pack_3">Pack 3 análisis - $13500 ARS</option>
+                    <option value="pack_10">Pack 10 análisis - $40000 ARS</option>
+                    <option value="history_plus_annual">History+ anual - $12000 ARS</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="currency">Moneda:</label>
+                <select id="currency">
+                    <option value="ARS">ARS (Pesos Argentinos)</option>
+                    <option value="USD">USD (Dólares)</option>
+                </select>
+            </div>
+
+            <button type="submit" id="submitBtn">Crear Pago</button>
+        </form>
+
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('paymentForm');
+        const resultDiv = document.getElementById('result');
+        const submitBtn = document.getElementById('submitBtn');
+        const testBtn = document.getElementById('testBtn');
+
+        // Botón para probar conexión
+        testBtn.addEventListener('click', async () => {
+            testBtn.disabled = true;
+            testBtn.textContent = 'Probando...';
+            resultDiv.style.display = 'none';
+
+            try {
+                const response = await fetch('http://localhost:9999/api/payments/create-dlocal');
+                const data = await response.json();
+                
+                resultDiv.style.display = 'block';
+                if (response.ok) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `
+                        <strong>✅ Servidor respondiendo correctamente</strong>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `
+                        <strong>❌ Error del servidor</strong>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <strong>❌ No se pudo conectar al servidor</strong>
+                    <p>${error.message}</p>
+                    <p><strong>Verifica que:</strong></p>
+                    <ul>
+                        <li>El servidor esté corriendo: <code>npm run dev</code></li>
+                        <li>El puerto sea 9999</li>
+                        <li>No haya errores en la terminal del servidor</li>
+                    </ul>
+                `;
+            } finally {
+                testBtn.disabled = false;
+                testBtn.textContent = '🔍 Probar Conexión Primero';
+            }
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const userId = document.getElementById('userId').value || 'test-user-' + Date.now();
+            const productId = document.getElementById('productId').value;
+            const currency = document.getElementById('currency').value;
+
+            // Deshabilitar botón
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creando pago...';
+            resultDiv.style.display = 'none';
+
+            try {
+                const response = await fetch('http://localhost:9999/api/payments/create-dlocal', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        userId,
+                        productId,
+                        currency
+                    })
+                });
+
+                const data = await response.json();
+
+                resultDiv.style.display = 'block';
+                
+                if (response.ok && data.checkout_url) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `
+                        <strong>✅ ¡Éxito! Pago creado correctamente</strong>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                        ${data.checkout_url ? `<p><a href="${data.checkout_url}" target="_blank" style="color: #155724; font-weight: bold;">🔗 Abrir URL de pago</a></p>` : ''}
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `
+                        <strong>❌ Error al crear el pago</strong>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <strong>❌ Error de conexión</strong>
+                    <p>${error.message}</p>
+                    <p><strong>Verifica que:</strong></p>
+                    <ul>
+                        <li>El servidor esté corriendo en el puerto 9999</li>
+                        <li>Las variables de entorno estén configuradas</li>
+                        <li>No haya errores en la consola del servidor</li>
+                    </ul>
+                `;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Crear Pago';
+            }
+        });
+    </script>
+</body>
+</html>
+

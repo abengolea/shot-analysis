@@ -1,4 +1,4 @@
-﻿import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -70,12 +70,13 @@ VERIFICACIÓN ESTRICTA - Analiza este video de baloncesto y evalúa los 22 pará
 IMPORTANTE: DEBES incluir EXACTAMENTE 22 parámetros en technicalAnalysis.parameters
 
 🎯 SISTEMA DE PESOS ACTUALIZADO (para calcular score_global):
-- FLUIDEZ: 50% peso (CRÍTICO - más importante)
-- RESTO DE CATEGORÍAS: 26.38% peso (ALTO)
-- SET POINT: 8.27% peso (MEDIO)
-- CODO: 7.24% peso (MEDIO) 
-- MANO LIBERACIÓN: 3.26% peso (BAJO)
-- MANO ASCENSO: 2.18% peso (BAJO)
+- FLUIDEZ: 47.5% peso (CRÍTICO - más importante)
+- RESTO DE CATEGORÍAS: 25.06% peso (ALTO)
+- SET POINT: 7.86% peso (MEDIO)
+- CODO: 6.88% peso (MEDIO)
+- ÁNGULO CODO ESTABLE: 5% peso (MEDIO)
+- MANO LIBERACIÓN: 3.10% peso (BAJO)
+- MANO ASCENSO: 2.07% peso (BAJO)
 
 🔍 REGLAS FUNDAMENTALES:
 1. Si NO puedes ver claramente un parámetro, usa "no_evaluable" en lugar de inventar un score
@@ -160,7 +161,7 @@ Checklist obligatorio (22 parámetros):
      Si no ves ojos/cara → na: true, razon: "rostro no visible/muy lejos"
 
 2) ASCENSO:
-   - id: "mano_no_dominante_ascenso", name: "Posición de la mano no dominante (ascenso)" - PESO: 2.18%
+   - id: "mano_no_dominante_ascenso", name: "Posición de la mano no dominante (ascenso)" - PESO: 2.07%
      descripcion: "Función de guía sin interferencia"
      evaluar: "Posición lateral del balón dedos apuntan arriba, contacto ligero no empuja, permanece hasta 80% del ascenso"
      score_10: "Mano al costado, pulgar a 90° del balón, solo guía"
@@ -168,7 +169,8 @@ Checklist obligatorio (22 parámetros):
      score_1: "Mano debajo o empujando el balón"
      evidencia_requerida: "Posición relativa al balón, ángulo del pulgar"
    
-   - id: "codos_cerca_cuerpo", name: "Codos cerca del cuerpo" - PESO: 7.24%
+   - id: "codos_cerca_cuerpo", name: "Codos cerca del cuerpo" - PESO: 6.88%
+   - id: "angulo_codo_fijo_ascenso", name: "Ángulo de codo estable en ascenso" - PESO: 5%
      descripcion: "Alineación del codo dominante"
      evaluar: "Codo a <15cm del torso, codo bajo balón y hacia el aro, codo forma L de 90° en set point"
      score_10: "Codo directamente bajo balón, separación 10-15cm del cuerpo"
@@ -192,7 +194,7 @@ Checklist obligatorio (22 parámetros):
      score_1: "Ruta indirecta >20cm desvío o >0.5s"
      evidencia_requerida: "Tiempo en segundos, path tracking, # de cambios dirección"
    
-   - id: "set_point", name: "Set point" - PESO: 8.27%
+   - id: "set_point", name: "Set point" - PESO: 7.86%
      descripcion: "Posición óptima pre-liberación"
      evaluar: "Balón entre frente y corona, 20-25cm de la cara, ángulos codo 90° muñeca cargada 80°"
      score_10: "Balón sobre ojo dominante, codo 90°, muñeca 80-90°"
@@ -208,7 +210,7 @@ Checklist obligatorio (22 parámetros):
      score_1: ">0.8s, muy lento para defensa NBA"
      evidencia_requerida: "Tiempo exacto en ms, desglose por fases"
 
-3) FLUIDEZ (PESO: 50% - CRÍTICO):
+3) FLUIDEZ (PESO: 47.5% - CRÍTICO):
    - id: "tiro_un_solo_tiempo", name: "Tiro en un solo tiempo"
      descripcion: "Continuidad sin pausas del movimiento"
      peso: 25%
@@ -230,7 +232,7 @@ Checklist obligatorio (22 parámetros):
      COMPARA extensión de piernas vs brazos
 
 4) LIBERACIÓN:
-   - id: "mano_no_dominante_liberacion", name: "Mano no dominante en la liberación" - PESO: 3.26%
+   - id: "mano_no_dominante_liberacion", name: "Mano no dominante en la liberación" - PESO: 3.10%
      descripcion: "Separación limpia sin interferencia"
      evaluar: "Se separa 0.02-0.05s antes de soltar, se retira lateralmente no empuja, separación >10cm del balón"
      score_10: "Separación lateral limpia 0.03s antes, sin afectar rotación"

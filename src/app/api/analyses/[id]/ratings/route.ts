@@ -22,35 +22,36 @@ const SETPOINT_NAME = 'Set point (inicio del empuje de la pelota)';
 const ASCENSO_HAND_ID = 'mano_no_dominante_ascenso';
 const LIBERACION_HAND_ID = 'mano_no_dominante_liberacion';
 
-// Pesos exactos por ítem del checklist de Tiro de Tres (default). Suman 103.
+// Pesos exactos por ítem del checklist de Tiro de Tres (default). Suman 100.
 const DEFAULT_ITEM_WEIGHTS_TRES: Record<string, number> = {
-  // Fluidez (50%)
-  tiro_un_solo_tiempo: 25,
-  sincronia_piernas: 25,
-  // Preparación (17%)
-  alineacion_pies: 2,
-  alineacion_cuerpo: 2,
-  muneca_cargada: 4,
-  flexion_rodillas: 4,
-  hombros_relajados: 3,
-  enfoque_visual: 2,
-  // Ascenso (17%)
-  mano_no_dominante_ascenso: 3,
-  codos_cerca_cuerpo: 2,
-  trayectoria_hasta_set_point: 3,
-  subida_recta_balon: 3,
-  set_point: 2,
-  tiempo_lanzamiento: 4,
-  // Liberación (10%)
-  mano_no_dominante_liberacion: 2,
-  extension_completa_brazo: 4,
-  giro_pelota: 2,
-  angulo_salida: 2,
-  // Seguimiento (9%)
-  mantenimiento_equilibrio: 2,
-  equilibrio_aterrizaje: 1,
-  duracion_follow_through: 1,
-  consistencia_repetitiva: 5,
+  // Fluidez (47.5%)
+  tiro_un_solo_tiempo: 23.75,
+  sincronia_piernas: 23.75,
+  // Preparación (16.15%)
+  alineacion_pies: 1.9,
+  alineacion_cuerpo: 1.9,
+  muneca_cargada: 3.8,
+  flexion_rodillas: 3.8,
+  hombros_relajados: 2.85,
+  enfoque_visual: 1.9,
+  // Ascenso (21.15%)
+  mano_no_dominante_ascenso: 2.85,
+  codos_cerca_cuerpo: 1.9,
+  angulo_codo_fijo_ascenso: 5,
+  trayectoria_hasta_set_point: 2.85,
+  subida_recta_balon: 2.85,
+  set_point: 1.9,
+  tiempo_lanzamiento: 3.8,
+  // Liberación (9.5%)
+  mano_no_dominante_liberacion: 1.9,
+  extension_completa_brazo: 3.8,
+  giro_pelota: 1.9,
+  angulo_salida: 1.9,
+  // Seguimiento (5.7%)
+  mantenimiento_equilibrio: 1.9,
+  equilibrio_aterrizaje: 0.95,
+  duracion_follow_through: 0.95,
+  consistencia_repetitiva: 1.9,
 };
 
 function computeFinalScoreExactWeights(

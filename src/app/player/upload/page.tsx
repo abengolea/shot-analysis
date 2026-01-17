@@ -880,7 +880,7 @@ export default function UploadPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{maintenanceConfig?.title || '🔧 SITIO EN MANTENIMIENTO'}</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription asChild>
               <div className="whitespace-pre-line">
                 {maintenanceConfig?.message || 'Estamos ajustando variables importantes del sistema.\n\nEl análisis de lanzamientos está temporalmente deshabilitado.\n\nVolveremos pronto con mejoras. ¡Gracias por tu paciencia!'}
               </div>

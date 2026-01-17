@@ -6,19 +6,46 @@ import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { usePathname } from "next/navigation";
 
 export default function CoachLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const pathname = usePathname();
   const [checking, setChecking] = useState(true);
   const [allowed, setAllowed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [coachStatus, setCoachStatus] = useState<string | null>(null);
+  const [hasAnalysisId, setHasAnalysisId] = useState(false);
+  
+  // Permitir acceso a /coach/coaches si hay un analysisId (jugadores buscando entrenadores)
+  const isCoachesPage = pathname === '/coach/coaches';
+  const allowPublicAccess = isCoachesPage && hasAnalysisId;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    setHasAnalysisId(params.get('analysisId') != null);
+  }, [pathname]);
 
   useEffect(() => {
     const run = async () => {
       if (loading) return;
       setError(null);
-      // No autenticado: mostrar aviso en vez de redirigir
+      
+      // Si es la página de coaches con analysisId, permitir acceso a jugadores autenticados
+      if (allowPublicAccess) {
+        if (!user) {
+          setAllowed(false);
+          setChecking(false);
+          return;
+        }
+        // Jugador autenticado puede acceder para buscar entrenadores
+        setAllowed(true);
+        setChecking(false);
+        return;
+      }
+      
+      // Para otras rutas de coach, verificar que sea entrenador
       if (!user) {
         setAllowed(false);
         setChecking(false);
@@ -27,7 +54,7 @@ export default function CoachLayout({ children }: { children: React.ReactNode })
       try {
         const snap = await getDoc(doc(db as any, "coaches", user.uid));
         if (!snap.exists()) {
-          // No es coach: mostrar CTA para crear perfil
+          // No es coach: mostrar mensaje de acceso restringido
           setAllowed(false);
           setCoachStatus(null);
         } else {
@@ -45,7 +72,7 @@ export default function CoachLayout({ children }: { children: React.ReactNode })
       }
     };
     run();
-  }, [user, loading]);
+  }, [user, loading, allowPublicAccess]);
 
   if (loading || checking) {
     return <div className="min-h-screen flex items-center justify-center">Cargando…</div>;
@@ -84,7 +111,7 @@ export default function CoachLayout({ children }: { children: React.ReactNode })
           <div className="flex items-center justify-center gap-3">
             <Button onClick={() => { setChecking(true); /* reintento */ }}>Reintentar</Button>
             <Button variant="outline" asChild>
-              <Link href="/coach-register">Crear perfil de entrenador</Link>
+              <Link href="/support">Contactar soporte</Link>
             </Button>
           </div>
         </div>
@@ -111,16 +138,16 @@ export default function CoachLayout({ children }: { children: React.ReactNode })
           </>
         ) : (
           <>
-            <h1 className="text-2xl font-bold">Aún no tienes perfil de entrenador</h1>
+            <h1 className="text-2xl font-bold">Acceso solo para entrenadores aprobados</h1>
             <p className="text-muted-foreground">
-              Para usar el panel de entrenador, primero crea tu perfil. Esto toma menos de 2 minutos.
+              Las cuentas de entrenador se crean desde el panel de administración. Si necesitás acceso, escribinos y validaremos tus credenciales.
             </p>
             <div className="flex items-center justify-center gap-3">
               <Button asChild>
-                <Link href="/coach-register">Crear mi perfil de entrenador</Link>
+                <Link href="/support">Contactar al equipo</Link>
               </Button>
               <Button variant="outline" asChild>
-                <Link href="/dashboard">Ir a mi panel de jugador</Link>
+                <Link href="/player/dashboard">Ir a mi panel de jugador</Link>
               </Button>
             </div>
           </>

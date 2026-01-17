@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebase-admin';
+import { adminDb, adminStorage } from '@/lib/firebase-admin';
 import { extractAndUploadSmartKeyframesAsync } from '@/lib/smart-keyframes';
-import { Storage } from '@google-cloud/storage';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  let analysisId: string | undefined;
   try {
-    const analysisId = params.id;
+    const resolvedParams = await params;
+    analysisId = resolvedParams.id;
     
     console.log('🔄 [REGENERATE-KEYFRAMES] Iniciando regeneración para:', analysisId);
     
@@ -51,9 +52,18 @@ export async function GET(
     
     console.log('📹 [REGENERATE-KEYFRAMES] Video encontrado:', { url: videoUrl, angle: selectedAngle });
     
-    // 3. Descargar video desde Storage
-    const storage = new Storage();
-    const bucketName = 'shotanalisys.firebasestorage.app';
+    // 3. Verificar que adminStorage esté disponible
+    if (!adminStorage) {
+      return NextResponse.json({
+        success: false,
+        error: 'Firebase Admin Storage no disponible',
+        analysisId
+      }, { status: 500 });
+    }
+    
+    // 4. Descargar video desde Storage usando Firebase Admin
+    const bucket = adminStorage.bucket();
+    const bucketName = bucket.name;
     
     // Extraer la ruta completa del video en el bucket
     // La videoUrl puede ser una signed URL o una GCS path
@@ -98,13 +108,12 @@ export async function GET(
       }, { status: 400 });
     }
     
-    const bucket = storage.bucket(bucketName);
     const file = bucket.file(storagePath);
     
     console.log('⬇️ [REGENERATE-KEYFRAMES] Descargando video:', storagePath);
     const [videoBuffer] = await file.download();
     
-    // 4. Preparar buffers de video para keyframes según el ángulo detectado
+    // 5. Preparar buffers de video para keyframes según el ángulo detectado
     const videoBuffers = {
       back: selectedAngle === 'back' ? videoBuffer : undefined,
       front: selectedAngle === 'front' ? videoBuffer : undefined,
@@ -112,7 +121,7 @@ export async function GET(
       right: selectedAngle === 'right' ? videoBuffer : undefined,
     } as const;
     
-    // 5. Extraer keyframes inteligentes
+    // 6. Extraer keyframes inteligentes
     console.log('🔍 [REGENERATE-KEYFRAMES] Extrayendo keyframes...');
     console.log('🔍 [REGENERATE-KEYFRAMES] Analysis data:', JSON.stringify(analysisData, null, 2));
     console.log('🔍 [REGENERATE-KEYFRAMES] Video buffer size:', videoBuffer.length);
@@ -144,7 +153,7 @@ export async function GET(
     return NextResponse.json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
-      analysisId: params.id
+      analysisId: analysisId || 'unknown'
     }, { status: 500 });
   }
 }

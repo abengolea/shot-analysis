@@ -41,9 +41,9 @@ const features = [
 export default function LandingPage() {
   return (
     <div className="flex flex-1 flex-col">
-       <header className="container mx-auto flex h-20 items-center justify-between">
+      <header className="container mx-auto flex h-20 items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
-            <Logo size="md" />
+          <Logo size="lg" className="drop-shadow-sm" />
         </Link>
         <div className="flex items-center gap-4">
             <Button asChild variant="outline">
@@ -88,9 +88,9 @@ export default function LandingPage() {
 
           <div className="mt-10 md:mt-16 w-full max-w-5xl">
             <img
-              src="/landing-hero.png"
-              alt="Portada ShotAnalysis"
-              className="mx-auto w-full max-w-3xl h-auto"
+              src="/b45ad063-29cf-4572-9910-e87f35f9ecd8.jpg"
+              alt="Logo CHAaaAS estilizado"
+              className="mx-auto w-full max-w-2xl h-auto drop-shadow-xl rounded-2xl"
             />
           </div>
         </section>
@@ -196,20 +196,6 @@ export default function LandingPage() {
               <Link href="/register">Crear cuenta <ArrowRight className="ml-2" /></Link>
             </Button>
           </div>
-          <div className="mt-10 rounded-xl border bg-background/60 p-6 text-left">
-            <h3 className="font-headline text-2xl font-bold">¿Sos entrenador?</h3>
-            <ul className="mt-2 list-outside list-disc pl-5 text-muted-foreground">
-              <li>Panel de jugadores y videos en un solo lugar</li>
-              <li>Drills compartidos y checklist estandarizado</li>
-              <li>Comentarios con marcas de tiempo</li>
-            </ul>
-            <div className="mt-4 flex gap-3">
-              <Button asChild>
-              <Link href="/coach-register">Postúlate como entrenador en la app</Link>
-              </Button>
-            </div>
-          </div>
-          
           {/* Enlaces legales */}
           <div className="mt-8 pt-8 border-t border-gray-200">
             <div className="flex flex-col sm:flex-row justify-center items-center gap-4 text-sm text-muted-foreground">

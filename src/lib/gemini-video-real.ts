@@ -137,7 +137,8 @@ export async function preprocessVideo(videoBuffer: Buffer, fileName: string): Pr
       try {
         fs.mkdirSync(tempDir, { recursive: true });
       } catch (error) {
-        console.warn('⚠️ No se pudo crear directorio temporal, usando directorio actual:', error.message);
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn('⚠️ No se pudo crear directorio temporal, usando directorio actual:', message);
         return { optimizedVideo: videoBuffer, videoInfo: { format: { duration: "10.0" } } };
       }
     }
@@ -170,7 +171,8 @@ export async function preprocessVideo(videoBuffer: Buffer, fileName: string): Pr
     try {
       await execAsync(ffmpegCommand);
     } catch (ffmpegError) {
-      console.warn('⚠️ FFmpeg no disponible, usando video original:', ffmpegError.message);
+      const message = ffmpegError instanceof Error ? ffmpegError.message : String(ffmpegError);
+      console.warn('⚠️ FFmpeg no disponible, usando video original:', message);
       // Si FFmpeg falla, usar el video original sin optimizar
       fs.copyFileSync(inputPath, outputPath);
     }
@@ -185,7 +187,8 @@ export async function preprocessVideo(videoBuffer: Buffer, fileName: string): Pr
       const { stdout: infoOutput } = await execAsync(infoCommand);
       videoInfo = JSON.parse(infoOutput);
     } catch (ffprobeError) {
-      console.warn('⚠️ FFprobe no disponible, usando información básica:', ffprobeError.message);
+      const message = ffprobeError instanceof Error ? ffprobeError.message : String(ffprobeError);
+      console.warn('⚠️ FFprobe no disponible, usando información básica:', message);
       // Información básica si FFprobe no está disponible
       videoInfo = {
         format: {

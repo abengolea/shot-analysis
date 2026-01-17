@@ -159,20 +159,6 @@ export function RegisterForm() {
                         <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
                     )}
                 </div>
-                {form.getValues("role") === 'player' && (
-                  <div className="space-y-2 rounded-lg border p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label>Hacer públicas mis puntuaciones para el ranking</Label>
-                        <p className="text-xs text-muted-foreground">Podrás cambiarlo luego en tu perfil.</p>
-                      </div>
-                      <Switch
-                        checked={!!form.watch("publicRankingOptIn")}
-                        onCheckedChange={(v) => form.setValue("publicRankingOptIn", v)}
-                      />
-                    </div>
-                  </div>
-                )}
                 <div className="mt-4 p-4 bg-blue-50 rounded-lg">
                     <p className="text-sm text-blue-700">
                         💡 <strong>Nota:</strong> Solo necesitamos estos datos básicos para crear tu cuenta. 

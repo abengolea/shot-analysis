@@ -35,10 +35,12 @@ export async function uploadVideoToStorage(
     let buffer: Buffer;
     if (file instanceof Buffer) {
       buffer = file;
-    } else {
+    } else if (typeof (file as File).arrayBuffer === 'function') {
       // Si es un File del navegador, convertir a Buffer
-      const arrayBuffer = await file.arrayBuffer();
+      const arrayBuffer = await (file as File).arrayBuffer();
       buffer = Buffer.from(arrayBuffer);
+    } else {
+      throw new Error('Archivo inválido para subir a Storage');
     }
 
     // Subir el archivo

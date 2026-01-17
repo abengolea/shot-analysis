@@ -78,6 +78,9 @@ function RoleSpecificForm({ role }: RoleSpecificFormProps) {
                     title: "¡Bienvenido!",
                     description: result.message,
                 });
+                try {
+                    localStorage.setItem('preferredRole', role);
+                } catch {}
                 
                 // Redirigir por rol sin chequear doc (el layout decide)
                 if (role === 'coach') {

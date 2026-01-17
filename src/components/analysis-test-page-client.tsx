@@ -220,7 +220,20 @@ export function AnalysisTestPageClient({ id }: { id: string }) {
         </Card>
 
         {/* Componente principal de análisis */}
-        <AnalysisView analysis={analysis} player={player || { id: analysis.playerId, displayName: 'Usuario' }} />
+        <AnalysisView
+          analysis={analysis}
+          player={player || ({
+            id: analysis.playerId,
+            name: 'Usuario',
+            email: '',
+            role: 'player',
+            avatarUrl: '',
+            status: 'active',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            displayName: 'Usuario',
+          } as Player)}
+        />
 
         {/* Sección de comentarios */}
         <Card>

@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
         shotTypesMaintenance: {
           tres: false,
           media: false,
-          libre: true // Tiro libre en mantenimiento por defecto
+          libre: false // Tiro libre disponible por defecto
         }
       };
       
@@ -36,10 +36,6 @@ export async function GET(request: NextRequest) {
         let isInMaintenance = false;
         if (normalized.includes('libre') || normalized.includes('free') || normalized.includes('ft')) {
           // En desarrollo local, permitir siempre tiro libre para testing
-          const isDevelopment = process.env.NODE_ENV === 'development';
-          if (isDevelopment) {
-            return NextResponse.json({ inMaintenance: false, config: defaultConfig });
-          }
           isInMaintenance = defaultConfig.shotTypesMaintenance.libre;
         } else if (normalized.includes('media') || normalized.includes('jump')) {
           isInMaintenance = defaultConfig.shotTypesMaintenance.media;
@@ -62,14 +58,6 @@ export async function GET(request: NextRequest) {
       
       if (normalized.includes('libre') || normalized.includes('free') || normalized.includes('ft')) {
         typeKey = 'libre';
-        // En desarrollo local, permitir siempre tiro libre para testing
-        const isDevelopment = process.env.NODE_ENV === 'development';
-        if (isDevelopment) {
-          return NextResponse.json({ 
-            inMaintenance: false,
-            config: config 
-          });
-        }
         isInMaintenance = config.shotTypesMaintenance?.libre || false;
       } else if (normalized.includes('media') || normalized.includes('jump')) {
         isInMaintenance = config.shotTypesMaintenance?.media || false;
@@ -149,7 +137,7 @@ export async function POST(request: NextRequest) {
       shotTypesMaintenance: shotTypesMaintenance || currentData?.shotTypesMaintenance || {
         tres: false,
         media: false,
-        libre: true
+        libre: false
       }
     };
 

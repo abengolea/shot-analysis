@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Bell, Check } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query, updateDoc, where, doc } from "firebase/firestore";
@@ -21,23 +21,23 @@ import {
 export function NotificationsBell() {
   const { user, userProfile } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [messages, setMessages] = useState<Message[]>([]);
   const [ticketsUnread, setTicketsUnread] = useState<number>(0);
   const unread = messages.filter(m => !m.read);
   const totalUnread = (unread?.length || 0) + (ticketsUnread || 0);
   const isAdmin = (userProfile as any)?.role === 'admin';
+  // Determinar si está en vista de entrenador o jugador
+  const isCoachView = pathname === '/coach' || pathname?.startsWith('/coach/');
 
   useEffect(() => {
     if (!user || isAdmin) return; // Admin no ve mensajes directos
     try {
+      // Los jugadores solo deben ver mensajes donde toId == user.uid
+      // Los entrenadores pueden ver mensajes con toId y toCoachDocId
       const q1 = query(
         collection(db as any, 'messages'),
         where('toId', '==', user.uid),
-        orderBy('createdAt', 'desc')
-      );
-      const q2 = query(
-        collection(db as any, 'messages'),
-        where('toCoachDocId', '==', user.uid),
         orderBy('createdAt', 'desc')
       );
       const unsubs: Array<() => void> = [];
@@ -55,15 +55,25 @@ export function NotificationsBell() {
         console.error('Error en listener de mensajes (q1):', error);
         // No hacer nada más, el listener se cerrará automáticamente
       }));
-      unsubs.push(onSnapshot(q2, apply, (error) => {
-        console.error('Error en listener de mensajes (q2):', error);
-        // No hacer nada más, el listener se cerrará automáticamente
-      }));
+      
+      // Solo agregar consulta de toCoachDocId si está en vista de entrenador
+      if (isCoachView) {
+        const q2 = query(
+          collection(db as any, 'messages'),
+          where('toCoachDocId', '==', user.uid),
+          orderBy('createdAt', 'desc')
+        );
+        unsubs.push(onSnapshot(q2, apply, (error) => {
+          console.error('Error en listener de mensajes (q2):', error);
+          // No hacer nada más, el listener se cerrará automáticamente
+        }));
+      }
+      
       return () => { unsubs.forEach(u => u()); };
     } catch (e) {
       console.error('Error cargando mensajes:', e);
     }
-  }, [user, isAdmin]);
+  }, [user, isAdmin, isCoachView]);
 
   // Contador de tickets no leídos (para user o admin)
   useEffect(() => {
@@ -167,7 +177,7 @@ export function NotificationsBell() {
             console.log('Click en mensaje:', m.id, 'leído:', m.read);
             console.log('Mensaje no leído, marcando como leído...');
             markMessageAsRead(m.id);
-            try { router.push('/player/messages'); } catch {} 
+            try { router.push(isCoachView ? '/coach/dashboard' : '/player/messages'); } catch {} 
           }}>
             <div className="text-xs text-muted-foreground">{new Date(m.createdAt || Date.now()).toLocaleString()}</div>
             <div className="text-sm">{m.text}</div>

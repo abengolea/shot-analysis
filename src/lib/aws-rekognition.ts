@@ -29,7 +29,8 @@ try {
     console.warn('⚠️ AWS credentials no configuradas, AWS SDK deshabilitado');
   }
 } catch (e) {
-  console.warn('⚠️ Error configurando AWS SDK:', e.message);
+  const message = e instanceof Error ? e.message : String(e);
+  console.warn('⚠️ Error configurando AWS SDK:', message);
 }
 
 export interface BasketballAnalysisResult {
@@ -121,6 +122,9 @@ export class AWSRekognitionService {
    */
   async startVideoAnalysis(s3VideoUri: string): Promise<string> {
     try {
+      if (!rekognitionClient) {
+        throw new Error('AWS Rekognition no configurado');
+      }
       const command = new StartLabelDetectionCommand({
         Video: {
           S3Object: {
@@ -144,6 +148,9 @@ export class AWSRekognitionService {
    */
   async getVideoAnalysisResults(jobId: string): Promise<any> {
     try {
+      if (!rekognitionClient) {
+        throw new Error('AWS Rekognition no configurado');
+      }
       const command = new GetLabelDetectionCommand({
         JobId: jobId,
         MaxResults: 100,
@@ -201,6 +208,8 @@ export class AWSRekognitionService {
     const basketballElements = this.detectBasketballElements(labels);
     const shotDetections = this.detectShots(labels);
     
+    const durationSeconds = Number.parseFloat(this.estimateVideoDuration(labels).replace('s', '')) || 1;
+
     return {
       verificacion_inicial: {
         duracion_video: this.estimateVideoDuration(labels),
@@ -210,7 +219,7 @@ export class AWSRekognitionService {
         angulo_camara: this.detectCameraAngle(labels),
         elementos_entorno: basketballElements,
         tiros_detectados: shotDetections.length,
-        tiros_por_segundo: shotDetections.length / this.estimateVideoDuration(labels).replace('s', ''),
+        tiros_por_segundo: shotDetections.length / durationSeconds,
         deteccion_ia: {
           angulo_detectado: this.detectCameraAngle(labels),
           estrategia_usada: 'aws-rekognition-labels',

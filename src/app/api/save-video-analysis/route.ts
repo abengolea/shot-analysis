@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
       const videoFileName = `video-analysis/${userId}/${videoId}.mp4`;
       const videoRef = adminStorage.bucket().file(videoFileName);
       
-      await videoRef.save(Buffer.from(processedVideoBuffer, 'binary'), {
+      await videoRef.save(processedVideoBuffer, {
         metadata: {
           contentType: 'video/mp4',
           metadata: {
@@ -264,6 +264,16 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
+
+
+
+
+
+
+
+
+
 
 
 

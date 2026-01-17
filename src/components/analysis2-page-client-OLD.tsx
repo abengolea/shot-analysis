@@ -169,7 +169,7 @@ export function Analysis2PageClient({ id }: { id: string }) {
     );
   }
   
-  const coach = null; // TODO: Implementar carga de coach
+  const coachName: string | null = null; // TODO: Implementar carga de coach
   const comments: any[] = [];
 
   return (
@@ -191,10 +191,10 @@ export function Analysis2PageClient({ id }: { id: string }) {
           </h1>
           <p className="font-semibold text-muted-foreground">
             {formattedDate || "..."}
-            {coach && (
+            {coachName && (
               <span className="ml-2 inline-flex items-center gap-1.5 font-normal">
                 <UserCheck className="h-4 w-4" />
-                Entrenador: {coach.name}
+                Entrenador: {coachName}
               </span>
             )}
           </p>

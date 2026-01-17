@@ -7,6 +7,7 @@ export function cn(...inputs: ClassValue[]) {
 
 // Ranking utilities
 export type PublicCategory = 'U11' | 'U13' | 'U15' | 'U17' | 'U21' | 'Mayores';
+export type PlayerAgeGroup = 'U10' | 'U13' | 'U15' | 'U18' | 'Amateur';
 
 export function calculateAgeCategoryFromDob(dob: Date | string | undefined | null): PublicCategory | undefined {
   if (!dob) return undefined;
@@ -24,6 +25,23 @@ export function calculateAgeCategoryFromDob(dob: Date | string | undefined | nul
   if (age <= 17) return 'U17';
   if (age <= 21) return 'U21';
   return 'Mayores';
+}
+
+export function calculateAgeGroupFromDob(dob: Date | string | undefined | null): PlayerAgeGroup | undefined {
+  if (!dob) return undefined;
+  const birth = typeof dob === 'string' ? new Date(dob) : dob;
+  if (!(birth instanceof Date) || Number.isNaN(birth.getTime())) return undefined;
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const m = now.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) {
+    age--;
+  }
+  if (age <= 10) return 'U10';
+  if (age <= 13) return 'U13';
+  if (age <= 15) return 'U15';
+  if (age <= 18) return 'U18';
+  return 'Amateur';
 }
 
 export type ShotTypeKey = 'libre' | 'media' | 'tres';

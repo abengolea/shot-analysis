@@ -1,320 +1,275 @@
-import type { ChecklistCategory, DetailedChecklistItem } from "./types";
+import type { ChecklistCategory, DetailedChecklistItem } from "@/lib/types";
 
-type CanonicalItemDef = { id: string; name: string; description: string };
-type CanonicalCategoryDef = { category: string; items: CanonicalItemDef[] };
+type ChecklistItemDefinition = Pick<
+  DetailedChecklistItem,
+  "id" | "name" | "description" | "status" | "rating" | "na" | "comment"
+>;
 
-export const CANONICAL_CATEGORIES: CanonicalCategoryDef[] = [
+const baseItem = (item: Omit<ChecklistItemDefinition, "status" | "rating" | "na" | "comment">): ChecklistItemDefinition => ({
+  ...item,
+  status: "no_evaluable",
+  rating: 0,
+  na: true,
+  comment: "",
+});
+
+export const CANONICAL_CATEGORIES: ChecklistCategory[] = [
   {
-    category: "Preparación",
+    category: "Fluidez (30%)",
     items: [
-      {
-        id: "alineacion_pies",
-        name: "Alineación de los pies",
-        description:
-          "Pies hacia el aro (o leve apertura natural), apoyo equilibrado; evitar cruzarse o giros excesivos.",
-      },
-      {
-        id: "alineacion_cuerpo",
-        name: "Alineación del cuerpo",
-        description:
-          "Hombros, caderas y pies alineados al aro; eje corporal recto y estable, sin torsiones.",
-      },
-      {
-        id: "muneca_cargada",
-        name: "Muñeca cargada",
-        description:
-          "Muñeca de la mano de tiro flexionada hacia atrás, lista para liberar y generar backspin.",
-      },
-      {
-        id: "flexion_rodillas",
-        name: "Flexión de rodillas",
-        description:
-          "Flexión controlada, idealmente 45°–70°; evitar rigidez o sobre-flexión (>90°).",
-      },
-      {
-        id: "hombros_relajados",
-        name: "Hombros relajados",
-        description:
-          "Sin tensión excesiva, alineados y estables, permitiendo movimiento fluido del brazo de tiro.",
-      },
-      {
-        id: "enfoque_visual",
-        name: "Enfoque visual",
-        description:
-          "Mirada fija en aro o punto objetivo antes y durante el tiro; evitar mirar la pelota.",
-      },
-    ],
-  },
-  {
-    category: "Ascenso",
-    items: [
-      {
-        id: "mano_no_dominante_ascenso",
-        name: "Posición de la mano no dominante (ascenso)",
-        description:
-          "La mano de apoyo acompaña sin empujar; debe soltar antes de la liberación.",
-      },
-      {
-        id: "codos_cerca_cuerpo",
-        name: "Codos cerca del cuerpo",
-        description:
-          "Codos alineados y cercanos al eje corporal; evitar apertura excesiva.",
-      },
-      {
-        id: "subida_recta_balon",
-        name: "Subida recta del balón",
-        description:
-          "Ascenso vertical y cercano al eje corporal; evitar trayectorias inclinadas o desde el costado.",
-      },
-      {
-        id: "trayectoria_hasta_set_point",
-        name: "Trayectoria del balón hasta el set point",
-        description:
-          "El balón sube recto y cercano al eje hacia el set point; evitar trayectorias circulares.",
-      },
-      {
-        id: "set_point",
-        name: "Set point",
-        description:
-          "Altura adecuada según edad; estable y reproducible; no debe romper la continuidad (un solo tiempo).",
-      },
-      {
-        id: "tiempo_lanzamiento",
-        name: "Tiempo de lanzamiento",
-        description:
-          "Medir rapidez y continuidad del gesto entre recepción y liberación, manteniendo control y técnica.",
-      },
-    ],
-  },
-  {
-    category: "Fluidez",
-    items: [
-      {
+      baseItem({
         id: "tiro_un_solo_tiempo",
         name: "Tiro en un solo tiempo",
-        description:
-          "El balón no debe detenerse al llegar al set point; el gesto debe ser continuo desde la preparación hasta la liberación.",
-      },
-      {
+        description: "El gesto es continuo y sin pausas durante la mecánica.",
+      }),
+      baseItem({
         id: "sincronia_piernas",
-        name: "Transferencia energética – sincronía con piernas",
-        description:
-          "El balón llega al set point coordinado con la extensión de las piernas, alcanzando ~70–80% de extensión en ese instante.",
-      },
+        name: "Sincronía con piernas",
+        description: "Subida del balón coordinada con la extensión de piernas.",
+      }),
     ],
   },
   {
-    category: "Liberación",
+    category: "Preparación (24%)",
     items: [
-      {
+      baseItem({
+        id: "alineacion_pies",
+        name: "Alineación de pies",
+        description: "Los pies apuntan hacia el aro y dan estabilidad.",
+      }),
+      baseItem({
+        id: "alineacion_cuerpo",
+        name: "Alineación corporal",
+        description: "Cadera, hombros y torso alineados hacia el objetivo.",
+      }),
+      baseItem({
+        id: "muneca_cargada",
+        name: "Muñeca cargada",
+        description: "Muñeca en flexión dorsal para preparar el release.",
+      }),
+      baseItem({
+        id: "flexion_rodillas",
+        name: "Flexión de rodillas",
+        description: "Flexión adecuada para generar potencia controlada.",
+      }),
+      baseItem({
+        id: "hombros_relajados",
+        name: "Hombros relajados",
+        description: "Tensión mínima para un movimiento fluido.",
+      }),
+      baseItem({
+        id: "enfoque_visual",
+        name: "Enfoque visual",
+        description: "Mirada estable en el aro durante la preparación.",
+      }),
+    ],
+  },
+  {
+    category: "Ascenso (24%)",
+    items: [
+      baseItem({
+        id: "mano_no_dominante_ascenso",
+        name: "Mano no dominante (ascenso)",
+        description: "La mano guía estabiliza sin empujar el balón.",
+      }),
+      baseItem({
+        id: "codos_cerca_cuerpo",
+        name: "Codos cerca del cuerpo",
+        description: "Codo alineado para una trayectoria recta.",
+      }),
+      baseItem({
+        id: "angulo_codo_fijo_ascenso",
+        name: "Ángulo de codo estable en ascenso",
+        description: "El ángulo del codo se mantiene fijo desde la toma del balón hasta el set point.",
+      }),
+      baseItem({
+        id: "trayectoria_hasta_set_point",
+        name: "Trayectoria hasta set point",
+        description: "El balón sube en línea hacia el punto de carga.",
+      }),
+      baseItem({
+        id: "subida_recta_balon",
+        name: "Subida recta del balón",
+        description: "Ascenso vertical sin desviaciones laterales.",
+      }),
+      baseItem({
+        id: "set_point",
+        name: "Set point",
+        description: "Punto de carga consistente y eficiente.",
+      }),
+      baseItem({
+        id: "tiempo_lanzamiento",
+        name: "Tiempo de lanzamiento",
+        description: "Release sincronizado con la extensión final.",
+      }),
+    ],
+  },
+  {
+    category: "Liberación (14%)",
+    items: [
+      baseItem({
         id: "mano_no_dominante_liberacion",
-        name: "Mano no dominante en la liberación",
-        description:
-          "Debe soltarse antes que la mano de tiro empuje; no aporta fuerza ni desvía, solo guía.",
-      },
-      {
+        name: "Mano no dominante (liberación)",
+        description: "La mano guía no interfiere en el release.",
+      }),
+      baseItem({
         id: "extension_completa_brazo",
-        name: "Extensión completa del brazo (follow-through)",
-        description:
-          "Brazo de tiro totalmente extendido hacia el aro, codo bloqueado y muñeca relajada; sostener.",
-      },
-      {
+        name: "Extensión completa del brazo",
+        description: "Extensión total del brazo en la liberación.",
+      }),
+      baseItem({
         id: "giro_pelota",
-        name: "Giro de la pelota (backspin)",
-        description:
-          "Giro uniforme hacia atrás, rotación centrada y consistente; producto del roce final de los dedos.",
-      },
-      {
+        name: "Giro de la pelota",
+        description: "Backspin controlado para mayor estabilidad.",
+      }),
+      baseItem({
         id: "angulo_salida",
         name: "Ángulo de salida",
-        description:
-          "Recomendado ~45°–52° según altura y características del jugador.",
-      },
+        description: "Ángulo óptimo para maximizar la precisión.",
+      }),
     ],
   },
   {
-    category: "Seguimiento / Post-liberación",
+    category: "Seguimiento / Post-liberación (8%)",
     items: [
-      {
+      baseItem({
         id: "equilibrio_general",
         name: "Equilibrio general",
-        description:
-          "Tronco y postura estables durante toda la ejecución y aterrizaje controlado con ambos pies alineados.",
-      },
-      {
+        description: "Control del balance durante y después del tiro.",
+      }),
+      baseItem({
         id: "duracion_follow_through",
         name: "Duración del follow-through",
-        description:
-          "Mantener brazo y muñeca extendidos hasta final del recorrido; no bajarlos antes.",
-      },
-      {
+        description: "Sostiene la extensión tras la liberación.",
+      }),
+      baseItem({
         id: "consistencia_general",
         name: "Consistencia general",
-        description:
-          "Repetir el mismo gesto técnico en todas las fases y tiros, manteniendo consistencia en el movimiento y técnica.",
-      },
+        description: "Repite una mecánica estable en cada tiro.",
+      }),
     ],
   },
 ];
 
-// Checklist canónico para TIRO LIBRE
-export const CANONICAL_CATEGORIES_LIBRE: CanonicalCategoryDef[] = [
+export const CANONICAL_CATEGORIES_LIBRE: ChecklistCategory[] = [
   {
-    category: "Preparación",
+    category: "Preparación (28%)",
     items: [
-      {
+      baseItem({
         id: "rutina_pre_tiro",
         name: "Rutina pre-tiro",
-        description:
-          "Secuencia repetible antes del tiro (botes, respiraciones, tiempo de preparación).",
-      },
-      {
+        description: "Rutina estable antes de iniciar el tiro.",
+      }),
+      baseItem({
         id: "alineacion_pies_cuerpo",
         name: "Alineación pies/cuerpo",
-        description:
-          "Posición del cuerpo para tiro recto al aro; pies y cuerpo alineados.",
-      },
-      {
+        description: "Cuerpo alineado para un tiro recto.",
+      }),
+      baseItem({
         id: "muneca_cargada_libre",
         name: "Muñeca cargada",
-        description:
-          "Flexión dorsal AL TOMAR el balón (ANTES del movimiento), lista para liberar.",
-      },
-      {
+        description: "Muñeca en flexión dorsal al tomar el balón.",
+      }),
+      baseItem({
         id: "flexion_rodillas_libre",
-        name: "Flexión rodillas",
-        description:
-          "Flexión 90-110° para generar potencia; evita rigidez o sobre-flexión.",
-      },
-      {
+        name: "Flexión de rodillas",
+        description: "Flexión controlada para generar potencia.",
+      }),
+      baseItem({
         id: "posicion_inicial_balon",
-        name: "Posición inicial balón",
-        description:
-          "Ubicación correcta del balón al inicio del movimiento.",
-      },
+        name: "Posición inicial del balón",
+        description: "Ubicación correcta del balón al iniciar.",
+      }),
     ],
   },
   {
-    category: "Ascenso",
+    category: "Ascenso (23%)",
     items: [
-      {
+      baseItem({
         id: "set_point_altura_edad",
         name: "Set point altura según edad",
-        description:
-          "CRÍTICO - Altura varía por edad: 6-8 años (Pecho/Hombros), 9-11 años (Hombros/Mentón), 12-14 años (Frente/Ojos), 15-17 años (Sobre cabeza), 18+ (Extensión completa). Trayectoria VERTICAL (no va atrás).",
-      },
-      {
+        description: "Altura del set point acorde a la edad y fuerza.",
+      }),
+      baseItem({
         id: "codos_cerca_cuerpo_libre",
         name: "Codos cerca del cuerpo",
-        description:
-          "No abiertos durante ascenso; alineados cercanos al eje corporal.",
-      },
-      {
+        description: "Codo alineado para evitar desviaciones.",
+      }),
+      baseItem({
         id: "trayectoria_vertical_libre",
         name: "Trayectoria vertical",
-        description:
-          "Línea recta hacia arriba, sin desviaciones laterales.",
-      },
-      {
+        description: "Ascenso recto y vertical del balón.",
+      }),
+      baseItem({
         id: "mano_guia_libre",
         name: "Mano guía",
-        description:
-          "Solo guía/estabiliza, no empuja; debe soltar antes de la liberación.",
-      },
+        description: "La mano no dominante solo guía y estabiliza.",
+      }),
     ],
   },
   {
-    category: "Fluidez",
+    category: "Fluidez (12%)",
     items: [
-      {
+      baseItem({
         id: "tiro_un_solo_tiempo_libre",
         name: "Tiro en un solo tiempo",
-        description:
-          "Continuo sin pausas; el gesto fluye desde preparación hasta liberación.",
-      },
-      {
+        description: "Gesto continuo sin pausas intermedias.",
+      }),
+      baseItem({
         id: "sincronia_piernas_libre",
         name: "Sincronía con piernas",
-        description:
-          "Balón sube coordinado con extensión de piernas; transferencia energética correcta.",
-      },
+        description: "Extensión de piernas coordinada con el balón.",
+      }),
     ],
   },
   {
-    category: "Liberación",
+    category: "Liberación (22%)",
     items: [
-      {
+      baseItem({
         id: "extension_completa_liberacion",
         name: "Extensión completa",
-        description:
-          "Brazo Y cuerpo elongados en liberación; extensión total hacia el aro.",
-      },
-      {
+        description: "Extensión total del cuerpo y brazo al soltar.",
+      }),
+      baseItem({
         id: "angulo_salida_libre",
         name: "Ángulo de salida",
-        description:
-          "45-52° óptimo según altura y características del jugador.",
-      },
-      {
+        description: "Ángulo óptimo para el tiro libre.",
+      }),
+      baseItem({
         id: "flexion_muneca_final",
-        name: "Flexión muñeca final",
-        description:
-          "Gooseneck - muñeca flexionada hacia abajo después de liberar (follow-through).",
-      },
-      {
+        name: "Flexión de muñeca final",
+        description: "Gooseneck visible tras la liberación.",
+      }),
+      baseItem({
         id: "rotacion_balon",
-        name: "Rotación balón",
-        description:
-          "Backspin uniforme y centrado; producto del roce final de los dedos.",
-      },
+        name: "Rotación del balón",
+        description: "Backspin estable y continuo.",
+      }),
     ],
   },
   {
-    category: "Seguimiento",
+    category: "Seguimiento (15%)",
     items: [
-      {
+      baseItem({
         id: "sin_salto_reglamentario",
-        name: "SIN SALTO",
-        description:
-          "Pies NO despegan ANTES del toque del aro (⚠️ INFRACCIÓN GRAVE si salta antes del toque).",
-      },
-      {
+        name: "Sin salto reglamentario",
+        description: "No despegar antes del toque del aro.",
+      }),
+      baseItem({
         id: "pies_dentro_zona",
-        name: "Pies dentro zona",
-        description:
-          "No pisar línea antes del toque (⚠️ INFRACCIÓN si pisa línea).",
-      },
-      {
+        name: "Pies dentro de la zona",
+        description: "No invadir la línea antes del toque.",
+      }),
+      baseItem({
         id: "balance_vertical",
         name: "Balance vertical",
-        description:
-          "Sin movimientos laterales significativos; equilibrio mantenido.",
-      },
-      {
+        description: "Sin desplazamientos laterales durante el tiro.",
+      }),
+      baseItem({
         id: "follow_through_completo_libre",
         name: "Follow-through completo",
-        description:
-          "Brazo extendido post-liberación (0.5-1s); mantener posición.",
-      },
+        description: "Brazo extendido tras la liberación.",
+      }),
     ],
   },
 ];
-
-export function buildCanonicalChecklist(shotType?: string): ChecklistCategory[] {
-  // Determinar qué checklist usar según tipo de tiro
-  const isLibre = shotType && (shotType.toLowerCase().includes('libre') || shotType.toLowerCase().includes('free') || shotType === 'libre');
-  const categories = isLibre ? CANONICAL_CATEGORIES_LIBRE : CANONICAL_CATEGORIES;
-  
-  return categories.map((cat) => ({
-    category: cat.category,
-    items: cat.items.map((it) => ({
-      id: it.id,
-      name: it.name,
-      description: it.description,
-      rating: 3,
-      comment: "",
-      na: true,
-    })) as DetailedChecklistItem[],
-  }));
-}
-

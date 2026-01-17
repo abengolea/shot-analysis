@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
       productId,
       amountARS: amount,
       title,
+      returnBase: req.nextUrl.origin,
     });
 
     const url = pref?.init_point || pref?.sandbox_init_point;

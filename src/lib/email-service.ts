@@ -137,11 +137,49 @@ export async function sendPasswordResetEmail(email: string): Promise<boolean> {
 export async function sendCustomEmail(options: EmailOptions): Promise<boolean> {
   try {
     console.log(`📧 Enviando email personalizado a: ${options.to}`);
-    
-    console.log('📧 Custom email (log only):', { to: options.to, subject: options.subject });
-    
-        return true;
-    
+
+    const sendgridApiKey = process.env.SENDGRID_API_KEY;
+    const sendgridFromEmail = process.env.SENDGRID_FROM_EMAIL;
+
+    const awsSesRegion = process.env.AWS_SES_REGION || process.env.AWS_REGION;
+    const awsSesFromEmail = process.env.AWS_SES_FROM_EMAIL;
+    const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const awsSecretKey = process.env.AWS_SECRET_ACCESS_KEY;
+
+    const useSendGrid = !!(sendgridApiKey && sendgridFromEmail);
+    const useAwsSes = !!(awsSesRegion && awsSesFromEmail && awsAccessKeyId && awsSecretKey);
+
+    if (!useSendGrid && !useAwsSes) {
+      console.warn('⚠️  Ningún proveedor de email configurado. Email NO enviado.');
+      console.log('📧 Custom email (log only):', { to: options.to, subject: options.subject });
+      return false;
+    }
+
+    const bulkOptions: BulkEmailOptions = {
+      to: [options.to],
+      subject: options.subject,
+      html: options.html,
+      text: options.text,
+    };
+
+    if (useAwsSes) {
+      console.log('📤 Usando AWS SES para email personalizado...');
+      const result = await sendBulkEmailWithAwsSes(bulkOptions, {
+        region: awsSesRegion!,
+        fromEmail: awsSesFromEmail!,
+        fromName: process.env.AWS_SES_FROM_NAME || 'Shot Analysis'
+      });
+      return result.success && result.successCount === 1;
+    }
+
+    console.log('📤 Usando SendGrid para email personalizado...');
+    const result = await sendBulkEmailWithSendGrid(bulkOptions, {
+      apiKey: sendgridApiKey!,
+      fromEmail: sendgridFromEmail!,
+      fromName: process.env.SENDGRID_FROM_NAME || 'Shot Analysis'
+    });
+    return result.success && result.successCount === 1;
+
   } catch (error) {
     console.error('❌ Error enviando email personalizado:', error);
     return false;
@@ -238,7 +276,16 @@ export async function sendBulkEmail(options: BulkEmailOptions): Promise<BulkEmai
         fromName: process.env.SENDGRID_FROM_NAME || 'Shot Analysis'
       });
     }
-    
+
+    return {
+      success: false,
+      successCount: 0,
+      failureCount: options.to.length,
+      errors: options.to.map(email => ({
+        email,
+        error: 'No hay proveedor de email disponible'
+      }))
+    };
   } catch (error: any) {
     console.error('❌ Error crítico en envío masivo:', error);
     return {

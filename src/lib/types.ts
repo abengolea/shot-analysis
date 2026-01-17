@@ -14,6 +14,8 @@ export type BaseUser = {
 export type Player = BaseUser & {
   role: 'player';
   // Campos opcionales que se pueden completar después
+  photoURL?: string;
+  displayName?: string;
   dob?: Date;
   country?: string;
   phone?: string;
@@ -50,6 +52,10 @@ export type DetailedChecklistItem = {
   status: 'Correcto' | 'Mejorable' | 'Incorrecto' | 'no_evaluable';
   // Rating puede ser 0 para no_evaluable, o undefined si no hay calificación
   rating?: 0 | 1 | 2 | 3 | 4 | 5;
+  // Rating alternativo en escala 0..10 (si aplica)
+  rating10?: number;
+  // Score numérico raw cuando exista
+  score?: number;
   // Timestamp cuando se observó el parámetro
   timestamp?: string;
   // Evidencia de lo que se observó visualmente
@@ -89,6 +95,12 @@ export type ShotAnalysis = {
   keyframes: KeyframeImages; // URLs or base64 strings of keyframe images, organized by angle
   detailedChecklist?: ChecklistCategory[];
   score?: number;
+  overallScore?: number;
+  status?: string;
+  videoFrontUrl?: string;
+  videoBackUrl?: string;
+  videoLeftUrl?: string;
+  videoRightUrl?: string;
   // Puntuación 1..10 de la categoría principal "Fluidez / Armonía (transferencia energética)"
   fluidezScore10?: number;
   // Campos de verificación de video real
@@ -165,6 +177,7 @@ export type Coach = BaseUser & {
   yearsOfExperience?: number;
   education?: string;
   bio?: string;
+  hidden?: boolean; // si es true, el coach está oculto y no aparece en la lista pública
   availability?: {
     monday: boolean;
     tuesday: boolean;
@@ -174,6 +187,9 @@ export type Coach = BaseUser & {
     saturday: boolean;
     sunday: boolean;
   };
+  paymentAccountOwnerId?: string;
+  paymentAccountOwnerEmail?: string | null;
+  paymentAccountOwnerName?: string | null;
 };
 
 export type ConnectionRequest = {
@@ -253,12 +269,12 @@ export type Wallet = {
   createdAt: string; // ISO
 };
 
-export type ProductId = 'analysis_1' | 'pack_3' | 'pack_10' | 'history_plus_annual';
+export type ProductId = 'analysis_1' | 'pack_3' | 'pack_10' | 'history_plus_annual' | 'coach_review';
 
 export type PaymentRecord = {
   id: string; // doc id
   userId: string;
-  provider: 'mercadopago' | 'stripe';
+  provider: 'mercadopago' | 'stripe' | 'dlocal';
   providerPaymentId: string;
   productId: ProductId;
   status: 'created' | 'approved' | 'rejected' | 'refunded' | 'pending';

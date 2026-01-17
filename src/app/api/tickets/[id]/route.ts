@@ -29,10 +29,10 @@ async function isAdminUid(uid: string): Promise<boolean> {
 }
 
 // GET detalle del ticket
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!adminDb) return NextResponse.json({ error: 'DB no inicializada' }, { status: 500 });
-    const ticketId = params.id;
+    const { id: ticketId } = await params;
     const doc = await adminDb.collection('tickets').doc(ticketId).get();
     if (!doc.exists) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
     return NextResponse.json({ id: doc.id, ...(doc.data() as any) });
@@ -43,7 +43,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 // PATCH actualizar status/priority/assignee (solo admin)
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!adminDb) return NextResponse.json({ error: 'DB no inicializada' }, { status: 500 });
     const who = await getAuthUid(request);
@@ -51,6 +51,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const isAdmin = await isAdminUid(who.uid);
     if (!isAdmin) return NextResponse.json({ error: 'Solo admin' }, { status: 403 });
 
+    const { id: ticketId } = await params;
     const body = await request.json();
     const updates: Record<string, any> = {};
     const allowed = ['status', 'priority', 'adminAssigneeId'] as const;
@@ -59,7 +60,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
     updates.updatedAt = new Date().toISOString();
 
-    await adminDb.collection('tickets').doc(params.id).set(updates, { merge: true });
+    await adminDb.collection('tickets').doc(ticketId).set(updates, { merge: true });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error('ticket PATCH error', e);

@@ -38,7 +38,7 @@ export async function getMaintenanceConfig(): Promise<MaintenanceConfig | null> 
         shotTypesMaintenance: {
           tres: false,
           media: false,
-          libre: true // Tiro libre en mantenimiento por defecto
+          libre: false // Tiro libre disponible por defecto
         }
       };
       
@@ -68,13 +68,6 @@ export async function isMaintenanceMode(): Promise<boolean> {
  * @returns Promise<boolean> - true si está en mantenimiento, false si no
  */
 export async function isShotTypeInMaintenance(shotType: 'tres' | 'media' | 'libre'): Promise<boolean> {
-  // En desarrollo local, permitir siempre el análisis de tiro libre para testing
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  if (isDevelopment && shotType === 'libre') {
-    console.log('🔓 [DEV] Tiro libre permitido en desarrollo local');
-    return false;
-  }
-  
   const config = await getMaintenanceConfig();
   
   // Si el mantenimiento general está activado, todos los tipos están en mantenimiento
