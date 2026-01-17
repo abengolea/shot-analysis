@@ -21,6 +21,7 @@
     "@aws-sdk/client-s3": "^3.896.0",
     "@aws-sdk/client-ses": "^3.908.0",
     "@ffmpeg/core": "^0.12.6",
+    "@ffmpeg/ffmpeg": "^0.12.15",
     "@genkit-ai/googleai": "^1.14.1",
     "@genkit-ai/next": "^1.14.1",
     "@hookform/resolvers": "^4.1.3",
