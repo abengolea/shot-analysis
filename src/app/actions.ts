@@ -157,6 +157,7 @@ export async function adminCreateCoach(prevState: AdminCreateCoachState, formDat
             email,
             bio,
             photoUrl,
+            avatarUrl: photoUrl, // También guardar como avatarUrl para compatibilidad con la UI
             role: 'coach' as const,
             status: 'pending' as const,
             verified: true, // verificación automática al tener foto
@@ -284,6 +285,41 @@ export async function adminUpdateCoachStatus(_prev: any, formData: FormData) {
     }
 }
 
+// Ocultar/mostrar coach (toggle hidden)
+export async function adminToggleCoachHidden(_prev: any, formData: FormData) {
+    try {
+        const userId = String(formData.get('userId') || '');
+        if (!userId) {
+            return { success: false, message: 'userId requerido' };
+        }
+        if (!adminDb) return { success: false, message: 'Servidor sin Admin SDK' };
+        
+        // Obtener el estado actual del coach
+        const coachDoc = await adminDb.collection('coaches').doc(userId).get();
+        if (!coachDoc.exists) {
+            return { success: false, message: 'Coach no encontrado' };
+        }
+        
+        const currentData = coachDoc.data() as any;
+        const currentHidden = currentData?.hidden === true;
+        const newHidden = !currentHidden;
+        
+        await adminDb.collection('coaches').doc(userId).set({ 
+            hidden: newHidden, 
+            updatedAt: new Date().toISOString() 
+        }, { merge: true });
+        
+        revalidatePath('/admin');
+        revalidatePath(`/admin/coaches/${userId}`);
+        revalidatePath('/coach/coaches');
+        
+        return { success: true, message: newHidden ? 'Coach oculto' : 'Coach visible' };
+    } catch (e) {
+        console.error('Error ocultando/mostrando coach:', e);
+        return { success: false, message: 'Error al actualizar' };
+    }
+}
+
 // Editar wallet: créditos y gratis usados
 export async function adminUpdateWallet(_prev: any, formData: FormData) {
     try {
@@ -355,10 +391,13 @@ export async function adminSetHistoryPlus(_prev: any, formData: FormData) {
 }
 
 // Enviar link de reseteo de contraseña al email del jugador
-export async function adminSendPasswordReset(_prev: any, formData: FormData) {
+export async function adminSendPasswordReset(_prev: any, formData?: FormData) {
     try {
+        if (!formData) {
+            return { success: false, message: 'Faltan datos del formulario' };
+        }
         const userId = String(formData.get('userId') || '');
-        if (!userId) return { success: false };
+        if (!userId) return { success: false, message: 'userId requerido' };
         if (!adminDb || !adminAuth) return { success: false };
         let email = '';
         // Buscar email en players o coaches; fallback a Auth
@@ -379,7 +418,57 @@ export async function adminSendPasswordReset(_prev: any, formData: FormData) {
         if (!email) return { success: false, message: 'Email no encontrado' };
         const link = await adminAuth.generatePasswordResetLink(email);
         console.log(`🔗 Password reset link for ${email}: ${link}`);
-        return { success: true, link };
+
+        const html = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #dc2626;">Restablece tu Contraseña</h2>
+            <p>Hola,</p>
+            <p>Has solicitado restablecer tu contraseña en Shot Analysis.</p>
+            <p>Haz clic en el botón de abajo para crear una nueva contraseña:</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${link}"
+                 style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                Restablecer Contraseña
+              </a>
+            </div>
+            <p>Si el botón no funciona, copia y pega este enlace en tu navegador:</p>
+            <p style="word-break: break-all; color: #6b7280;">${link}</p>
+            <p>Este enlace expirará en 1 hora.</p>
+            <p>Si no solicitaste este cambio, puedes ignorar este email.</p>
+            <p>Saludos,<br>El equipo de Shot Analysis</p>
+          </div>
+        `;
+
+        const text = `
+Restablece tu Contraseña
+
+Hola,
+
+Has solicitado restablecer tu contraseña en Shot Analysis.
+
+Haz clic en este enlace para crear una nueva contraseña:
+${link}
+
+Este enlace expirará en 1 hora.
+
+Si no solicitaste este cambio, puedes ignorar este email.
+
+Saludos,
+El equipo de Shot Analysis
+        `.trim();
+
+        const sent = await sendCustomEmail({
+            to: email,
+            subject: 'Restablece tu contraseña',
+            html,
+            text,
+        });
+
+        if (!sent) {
+            return { success: false, message: 'No se pudo enviar el email. Usa el link de abajo.', link };
+        }
+
+        return { success: true, message: 'Email enviado.', link };
     } catch (e) {
         console.error('Error enviando reset password:', e);
         return { success: false };
@@ -393,7 +482,13 @@ export async function adminUpdateCoachProfile(_prev: any, formData: FormData) {
         if (!userId) return { success: false, message: 'userId requerido' };
         if (!adminDb) return { success: false, message: 'Servidor sin Admin SDK' };
         const name = String(formData.get('name') || '').trim();
+        const email = String(formData.get('email') || '').trim();
         const bio = String(formData.get('bio') || '').trim();
+        const experience = String(formData.get('experience') || '').trim();
+        const education = String(formData.get('education') || '').trim();
+        const yearsOfExperienceRaw = String(formData.get('yearsOfExperience') || '').trim();
+        const certificationsRaw = String(formData.get('certifications') || '').trim();
+        const specialtiesRaw = String(formData.get('specialties') || '').trim();
         const payoutEmail = String(formData.get('payoutEmail') || '').trim();
         const ratePerAnalysisRaw = String(formData.get('ratePerAnalysis') || '').trim();
         const verified = formData.get('verified') != null;
@@ -405,7 +500,32 @@ export async function adminUpdateCoachProfile(_prev: any, formData: FormData) {
         const youtube = String(formData.get('youtube') || '').trim();
         const update: any = { updatedAt: new Date().toISOString() };
         if (name) update.name = name;
+        if (email) update.email = email.toLowerCase();
         if (bio || bio === '') update.bio = bio;
+        if (experience || experience === '') update.experience = experience;
+        if (education || education === '') update.education = education;
+        if (yearsOfExperienceRaw !== '') {
+            const years = Number(yearsOfExperienceRaw);
+            if (!Number.isNaN(years) && years >= 0) update.yearsOfExperience = years;
+        } else {
+            update.yearsOfExperience = null;
+        }
+        // Procesar certificaciones (una por línea)
+        if (certificationsRaw || certificationsRaw === '') {
+            const certifications = certificationsRaw
+                .split('\n')
+                .map(c => c.trim())
+                .filter(c => c.length > 0);
+            update.certifications = certifications.length > 0 ? certifications : [];
+        }
+        // Procesar especialidades (una por línea)
+        if (specialtiesRaw || specialtiesRaw === '') {
+            const specialties = specialtiesRaw
+                .split('\n')
+                .map(s => s.trim())
+                .filter(s => s.length > 0);
+            update.specialties = specialties.length > 0 ? specialties : [];
+        }
         if (payoutEmail || payoutEmail === '') update.payoutEmail = payoutEmail;
         if (ratePerAnalysisRaw !== '') {
             const r = Number(ratePerAnalysisRaw);
@@ -448,8 +568,11 @@ export async function adminActivateCoachNow(_prev: any, formData: FormData) {
 }
 
 // Activar y enviar link de contraseña en un solo paso
-export async function adminActivateCoachAndSendPassword(_prev: any, formData: FormData) {
+export async function adminActivateCoachAndSendPassword(_prev: any, formData?: FormData) {
     try {
+        if (!formData) {
+            return { success: false, message: 'Faltan datos del formulario' };
+        }
         const userId = String(formData.get('userId') || '');
         if (!userId) return { success: false, message: 'userId requerido' };
         if (!adminDb || !adminAuth) return { success: false, message: 'Servidor sin Admin SDK' };
@@ -471,14 +594,18 @@ export async function adminActivateCoachAndSendPassword(_prev: any, formData: Fo
         // Generar link de restablecimiento y enviarlo por email
         const link = await adminAuth.generatePasswordResetLink(email);
         try {
-            await sendCustomEmail({
+            const sent = await sendCustomEmail({
                 to: email,
                 subject: 'Tu acceso como entrenador',
                 html: `<p>Hola, tu cuenta de entrenador fue activada.</p><p>Creá tu contraseña desde este enlace: <a href="${link}">establecer contraseña</a>.</p><p>Luego ingresá a tu panel y completá tu perfil.</p>`
             });
+            if (!sent) {
+                console.warn('No se pudo enviar email de contraseña; devolviendo el link de fallback.');
+                return { success: false, message: 'Coach activado. No se pudo enviar email; usa el link devuelto.', link };
+            }
         } catch (e) {
             console.warn('No se pudo enviar email de contraseña; devolviendo el link de fallback.');
-            return { success: true, message: 'Coach activado. No se pudo enviar email; usa el link devuelto.', link };
+            return { success: false, message: 'Coach activado. No se pudo enviar email; usa el link devuelto.', link };
         }
 
         revalidatePath('/admin');
@@ -518,7 +645,11 @@ export async function adminUpdateCoachPhoto(_prev: any, formData: FormData) {
         await gcsFile.makePublic();
         const photoUrl = `https://storage.googleapis.com/${bucket.name}/${path}`;
 
-        await adminDb.collection('coaches').doc(userId).set({ photoUrl, updatedAt: new Date().toISOString() }, { merge: true });
+        await adminDb.collection('coaches').doc(userId).set({ 
+            photoUrl, 
+            avatarUrl: photoUrl, // También guardar como avatarUrl para compatibilidad con la UI
+            updatedAt: new Date().toISOString() 
+        }, { merge: true });
         revalidatePath('/admin');
         revalidatePath(`/admin/coaches/${userId}`);
         return { success: true, photoUrl };
@@ -555,6 +686,53 @@ function mapPlayerLevel(playerLevel: string): PlayerLevel {
         default: return 'Principiante';
     }
 }
+
+const normalizeUploadedVideoUrl = (value?: string | null): string | null => {
+    if (!value) return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const lower = trimmed.toLowerCase();
+    if (lower.startsWith('temp://')) return null;
+    const isGs = trimmed.startsWith('gs://');
+    const isHttp = trimmed.startsWith('http://') || trimmed.startsWith('https://');
+    if (isGs) return trimmed;
+    if (isHttp) {
+        const isStorageHost = trimmed.includes('storage.googleapis.com')
+            || trimmed.includes('firebasestorage.googleapis.com')
+            || trimmed.includes('localhost:9199')
+            || trimmed.includes('127.0.0.1:9199');
+        if (isStorageHost && trimmed.includes('/v0/b/')) return trimmed;
+        if (trimmed.includes('storage.googleapis.com')) return trimmed;
+    }
+    console.warn('⚠️ URL de video subida inválida, se ignorará:', trimmed);
+    return null;
+};
+
+const parseUploadedVideoUrls = (formData: FormData) => {
+    const rawBack = (formData.get('uploadedBackUrl') as string | null) || null;
+    const rawFront = (formData.get('uploadedFrontUrl') as string | null) || null;
+    const rawLeft = (formData.get('uploadedLeftUrl') as string | null) || null;
+    const rawRight = (formData.get('uploadedRightUrl') as string | null) || null;
+
+    const uploadedBackUrl = normalizeUploadedVideoUrl(rawBack);
+    const uploadedFrontUrl = normalizeUploadedVideoUrl(rawFront);
+    const uploadedLeftUrl = normalizeUploadedVideoUrl(rawLeft);
+    const uploadedRightUrl = normalizeUploadedVideoUrl(rawRight);
+
+    const invalidFields: string[] = [];
+    if (rawBack && !uploadedBackUrl) invalidFields.push('uploadedBackUrl');
+    if (rawFront && !uploadedFrontUrl) invalidFields.push('uploadedFrontUrl');
+    if (rawLeft && !uploadedLeftUrl) invalidFields.push('uploadedLeftUrl');
+    if (rawRight && !uploadedRightUrl) invalidFields.push('uploadedRightUrl');
+
+    return {
+        uploadedBackUrl,
+        uploadedFrontUrl,
+        uploadedLeftUrl,
+        uploadedRightUrl,
+        invalidFields
+    };
+};
 
 // Obtener usuario actual usando Firebase Admin SDK
 const getCurrentUser = async (userId: string) => {
@@ -604,10 +782,19 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
         if (!shotType) return { message: "Tipo de lanzamiento requerido.", error: true };
 
         // Nuevo flujo: aceptar URLs ya subidas por el cliente (Firebase Storage)
-        const uploadedBackUrl = (formData.get('uploadedBackUrl') as string | null) || null;
-        const uploadedFrontUrl = (formData.get('uploadedFrontUrl') as string | null) || null;
-        const uploadedLeftUrl = (formData.get('uploadedLeftUrl') as string | null) || null;
-        const uploadedRightUrl = (formData.get('uploadedRightUrl') as string | null) || null;
+        const {
+            uploadedBackUrl,
+            uploadedFrontUrl,
+            uploadedLeftUrl,
+            uploadedRightUrl,
+            invalidFields
+        } = parseUploadedVideoUrls(formData);
+        if (invalidFields.length > 0) {
+            return {
+                message: `URLs de video inválidas: ${invalidFields.join(', ')}`,
+                error: true
+            };
+        }
 
         // Flujo legacy: archivos directos
         const formBack = formData.get('video-back') as File | null;
@@ -978,6 +1165,7 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
                 'Enfoque visual': 'enfoque_visual',
                 'Mano no dominante ascenso': 'mano_no_dominante_ascenso',
                 'Codos cerca del cuerpo': 'codos_cerca_cuerpo',
+                'Ángulo de codo estable en ascenso': 'angulo_codo_fijo_ascenso',
                 'Subida recta del balón': 'subida_recta_balon',
                 'Trayectoria hasta set point': 'trayectoria_hasta_set_point',
                 'Set point': 'set_point',
@@ -1001,7 +1189,7 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
                 category: "TODOS LOS PARÁMETROS (DEBUG)",
                 items: parameters.map((p: any) => ({
                     id: getCanonicalId(p.name),
-                    name: p.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                    name: p.name.replace(/_/g, ' ').replace(/\b\w/g, (letter: string) => letter.toUpperCase()),
                     description: p.comment || '',
                     status: (() => {
                         const score = p.score || 0;
@@ -1182,10 +1370,19 @@ export async function startAnalysisTest(prevState: any, formData: FormData) {
         const playerLevel = formData.get('playerLevel') as string || 'intermediate';
 
         // URLs ya subidas por el cliente (Firebase Storage)
-        const uploadedBackUrl = (formData.get('uploadedBackUrl') as string | null) || null;
-        const uploadedFrontUrl = (formData.get('uploadedFrontUrl') as string | null) || null;
-        const uploadedLeftUrl = (formData.get('uploadedLeftUrl') as string | null) || null;
-        const uploadedRightUrl = (formData.get('uploadedRightUrl') as string | null) || null;
+        const {
+            uploadedBackUrl,
+            uploadedFrontUrl,
+            uploadedLeftUrl,
+            uploadedRightUrl,
+            invalidFields
+        } = parseUploadedVideoUrls(formData);
+        if (invalidFields.length > 0) {
+            return {
+                message: `URLs de video inválidas: ${invalidFields.join(', ')}`,
+                error: true
+            };
+        }
 
         // Flujo legacy: archivos directos
         const formBack = formData.get('video-back') as File | null;
@@ -1660,16 +1857,19 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         // Llamar análisis con prompt simplificado (como test)
         const { analyzeVideoSimplePrompt } = await import('@/utils/gemini-simple-prompt');
         
+        if (!videoBuffers[0]) {
+            throw new Error('No se pudo leer el video principal para análisis.');
+        }
         let analysisResult;
         try {
             // Pasar solo los videos que existen + parámetros importantes (máximo 3 videos)
             analysisResult = await analyzeVideoSimplePrompt(
-                videoBuffers[0] || null,
-                fileNames[0] || null,
+                videoBuffers[0],
+                fileNames[0] ?? 'video1.mp4',
                 videoBuffers[1] || null,
-                fileNames[1] || null,
+                fileNames[1] ?? null,
                 videoBuffers[2] || null,
-                fileNames[2] || null,
+                fileNames[2] ?? null,
                 ageCategory,
                 playerLevel,
                 shotType
@@ -1734,6 +1934,10 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 
                 // ASCENSO (Común para tres y libre)
                 'mano_no_dominante_en_ascenso': 'mano_no_dominante_ascenso',
+                'angulo_de_codo_estable_en_ascenso': 'angulo_codo_fijo_ascenso',
+                'angulo_codo_estable_en_ascenso': 'angulo_codo_fijo_ascenso',
+                'angulo_codo_fijo_en_ascenso': 'angulo_codo_fijo_ascenso',
+                'angulo_codo_fijo_ascenso': 'angulo_codo_fijo_ascenso',
                 'codos_cerca_del_cuerpo': isLibre ? 'codos_cerca_cuerpo_libre' : 'codos_cerca_cuerpo',
                 'codos_cerca_del_cuerpo_libre': 'codos_cerca_cuerpo_libre',
                 'codos_cerca_cuerpo': isLibre ? 'codos_cerca_cuerpo_libre' : 'codos_cerca_cuerpo',
@@ -1806,6 +2010,14 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         
         // Set para evitar contar el mismo parámetro dos veces
         const processedParams = new Set<string>();
+
+        const normalizeStatus = (status: unknown): string =>
+            String(status || '')
+                .toLowerCase()
+                .trim()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/\s+/g, '_');
         
         for (const param of parameters) {
             // Usar el campo id si existe, si no, normalizar el nombre
@@ -1817,26 +2029,29 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 continue;
             }
             
-            const weight = customWeights[paramId] || 0;
-            
-            if (weight === 0) {
-                console.warn(`⚠️ Parámetro sin peso: ${paramId} (nombre original: ${param.name})`);
-                continue;
-            }
-            
             // Marcar como procesado
             processedParams.add(paramId);
-            
-            // Si el parámetro es evaluable (tiene score válido)
-            if (param.status !== 'no_evaluable' && typeof param.score === 'number' && param.score > 0) {
-                weightedScore += weight * param.score;
-                totalWeight += weight;
-                evaluableCount++;
-                console.log(`✅ ${paramId}: score=${param.score}, peso=${weight}%, contribución=${(weight * param.score).toFixed(2)}`);
-            } else {
+
+            const weight = customWeights[paramId] || 0;
+            const normalizedStatus = normalizeStatus(param.status);
+            const hasValidScore = typeof param.score === 'number' && param.score > 0;
+            const isNoEvaluable = normalizedStatus === 'no_evaluable' || param.na === true;
+
+            if (isNoEvaluable || !hasValidScore) {
                 nonEvaluableCount++;
-                console.log(`⚠️ ${paramId}: no evaluable (status=${param.status})`);
+                console.log(`⚠️ ${paramId}: no evaluable (status=${param.status}, score=${param.score})`);
+                continue;
             }
+
+            evaluableCount++;
+            if (weight === 0) {
+                console.warn(`⚠️ Parámetro evaluable sin peso: ${paramId} (nombre original: ${param.name})`);
+                continue;
+            }
+
+            weightedScore += weight * param.score;
+            totalWeight += weight;
+            console.log(`✅ ${paramId}: score=${param.score}, peso=${weight}%, contribución=${(weight * param.score).toFixed(2)}`);
         }
         
         // Normalizar el score final

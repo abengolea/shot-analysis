@@ -11,11 +11,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import Link from 'next/link';
 
 interface Weights {
-  // Fluidez (50%)
+  // Fluidez (47.5%)
   tiro_un_solo_tiempo: number;
   sincronia_piernas: number;
 
-  // Preparación (17%)
+  // Preparación (16.15%)
   alineacion_pies: number;
   alineacion_cuerpo: number;
   muneca_cargada: number;
@@ -23,21 +23,22 @@ interface Weights {
   hombros_relajados: number;
   enfoque_visual: number;
 
-  // Ascenso (17%)
+  // Ascenso (21.15%)
   mano_no_dominante_ascenso: number;
   codos_cerca_cuerpo: number;
+  angulo_codo_fijo_ascenso: number;
   trayectoria_hasta_set_point: number;
   subida_recta_balon: number;
   set_point: number;
   tiempo_lanzamiento: number;
 
-  // Liberación (10%)
+  // Liberación (9.5%)
   mano_no_dominante_liberacion: number;
   extension_completa_brazo: number;
   giro_pelota: number;
   angulo_salida: number;
 
-  // Seguimiento (6%)
+  // Seguimiento (5.7%)
   mantenimiento_equilibrio: number;
   equilibrio_aterrizaje: number;
   duracion_follow_through: number;
@@ -45,37 +46,38 @@ interface Weights {
 }
 
 const DEFAULT_WEIGHTS: Weights = {
-  // Fluidez (50%)
-  tiro_un_solo_tiempo: 25,
-  sincronia_piernas: 25,
+  // Fluidez (47.5%)
+  tiro_un_solo_tiempo: 23.75,
+  sincronia_piernas: 23.75,
 
-  // Preparación (17%)
-  alineacion_pies: 2,
-  alineacion_cuerpo: 2,
-  muneca_cargada: 4,
-  flexion_rodillas: 4,
-  hombros_relajados: 3,
-  enfoque_visual: 2,
+  // Preparación (16.15%)
+  alineacion_pies: 1.9,
+  alineacion_cuerpo: 1.9,
+  muneca_cargada: 3.8,
+  flexion_rodillas: 3.8,
+  hombros_relajados: 2.85,
+  enfoque_visual: 1.9,
 
-  // Ascenso (17%)
-  mano_no_dominante_ascenso: 3,
-  codos_cerca_cuerpo: 2,
-  trayectoria_hasta_set_point: 3,
-  subida_recta_balon: 3,
-  set_point: 2,
-  tiempo_lanzamiento: 4,
+  // Ascenso (21.15%)
+  mano_no_dominante_ascenso: 2.85,
+  codos_cerca_cuerpo: 1.9,
+  angulo_codo_fijo_ascenso: 5,
+  trayectoria_hasta_set_point: 2.85,
+  subida_recta_balon: 2.85,
+  set_point: 1.9,
+  tiempo_lanzamiento: 3.8,
 
-  // Liberación (10%)
-  mano_no_dominante_liberacion: 2,
-  extension_completa_brazo: 4,
-  giro_pelota: 2,
-  angulo_salida: 2,
+  // Liberación (9.5%)
+  mano_no_dominante_liberacion: 1.9,
+  extension_completa_brazo: 3.8,
+  giro_pelota: 1.9,
+  angulo_salida: 1.9,
 
-  // Seguimiento (6%)
-  mantenimiento_equilibrio: 2,
-  equilibrio_aterrizaje: 1,
-  duracion_follow_through: 1,
-  consistencia_repetitiva: 2, // Ajustado de 5 a 2 para sumar 100%
+  // Seguimiento (5.7%)
+  mantenimiento_equilibrio: 1.9,
+  equilibrio_aterrizaje: 0.95,
+  duracion_follow_through: 0.95,
+  consistencia_repetitiva: 1.9,
 };
 
 const PARAMETER_LABELS: Record<keyof Weights, string> = {
@@ -89,6 +91,7 @@ const PARAMETER_LABELS: Record<keyof Weights, string> = {
   enfoque_visual: 'Enfoque visual',
   mano_no_dominante_ascenso: 'Mano no dominante (ascenso)',
   codos_cerca_cuerpo: 'Codos cerca del cuerpo',
+  angulo_codo_fijo_ascenso: 'Ángulo de codo estable en ascenso',
   trayectoria_hasta_set_point: 'Trayectoria hasta set point',
   subida_recta_balon: 'Subida recta del balón',
   set_point: 'Set point',
@@ -104,11 +107,11 @@ const PARAMETER_LABELS: Record<keyof Weights, string> = {
 };
 
 const CATEGORIES = {
-  'Fluidez (50%)': ['tiro_un_solo_tiempo', 'sincronia_piernas'],
-  'Preparación (17%)': ['alineacion_pies', 'alineacion_cuerpo', 'muneca_cargada', 'flexion_rodillas', 'hombros_relajados', 'enfoque_visual'],
-  'Ascenso (17%)': ['mano_no_dominante_ascenso', 'codos_cerca_cuerpo', 'trayectoria_hasta_set_point', 'subida_recta_balon', 'set_point', 'tiempo_lanzamiento'],
-  'Liberación (10%)': ['mano_no_dominante_liberacion', 'extension_completa_brazo', 'giro_pelota', 'angulo_salida'],
-  'Seguimiento (6%)': ['mantenimiento_equilibrio', 'equilibrio_aterrizaje', 'duracion_follow_through', 'consistencia_repetitiva'],
+  'Fluidez (47.5%)': ['tiro_un_solo_tiempo', 'sincronia_piernas'],
+  'Preparación (16.15%)': ['alineacion_pies', 'alineacion_cuerpo', 'muneca_cargada', 'flexion_rodillas', 'hombros_relajados', 'enfoque_visual'],
+  'Ascenso (21.15%)': ['mano_no_dominante_ascenso', 'codos_cerca_cuerpo', 'angulo_codo_fijo_ascenso', 'trayectoria_hasta_set_point', 'subida_recta_balon', 'set_point', 'tiempo_lanzamiento'],
+  'Liberación (9.5%)': ['mano_no_dominante_liberacion', 'extension_completa_brazo', 'giro_pelota', 'angulo_salida'],
+  'Seguimiento (5.7%)': ['mantenimiento_equilibrio', 'equilibrio_aterrizaje', 'duracion_follow_through', 'consistencia_repetitiva'],
 };
 
 export default function WeightsAdminPage() {
@@ -386,7 +389,7 @@ export default function WeightsAdminPage() {
                 • <strong>Cálculo del score:</strong> score_global = Σ(peso_i × score_i) / 100
               </p>
               <p>
-                • <strong>Ejemplo:</strong> Si "Fluidez" pesa 50% y tiene score 80, aporta 40 puntos al score global.
+                • <strong>Ejemplo:</strong> Si "Fluidez" pesa 47.5% y tiene score 80, aporta 38 puntos al score global.
               </p>
             </CardContent>
           </Card>

@@ -69,8 +69,8 @@ async function performAnalysis(request: NextRequest) {
         // 1. ANÁLISIS DIRECTO A GEMINI
         // Convertir videos a buffers
     const videoBuffer1 = Buffer.from(await videoFile1.arrayBuffer());
-    const videoBuffer2 = videoFile2 ? Buffer.from(await videoFile2.arrayBuffer()) : null;
-    const videoBuffer3 = videoFile3 ? Buffer.from(await videoFile3.arrayBuffer()) : null;
+    const videoBuffer2 = videoFile2 ? Buffer.from(await videoFile2.arrayBuffer()) : undefined;
+    const videoBuffer3 = videoFile3 ? Buffer.from(await videoFile3.arrayBuffer()) : undefined;
     
     // Análisis multi-video con preprocesamiento FFmpeg
         const analysisResult = await analyzeVideoReal(

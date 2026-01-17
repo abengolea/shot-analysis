@@ -3,10 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
 import {
   LayoutDashboard,
   PlusSquare,
@@ -14,7 +12,6 @@ import {
   Users,
   Shield,
   ShieldCheck,
-  Trophy,
   Settings,
   MessageSquare,
   FileText,
@@ -39,31 +36,7 @@ export function SidebarMenuContents() {
   const pathname = usePathname();
   const { userProfile } = useAuth();
   const router = useRouter();
-  const [hasCoachProfile, setHasCoachProfile] = useState(false);
-  const [hasPlayerProfile, setHasPlayerProfile] = useState(false);
   const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
-
-  useEffect(() => {
-    const checkProfiles = async () => {
-      try {
-        const uid = (userProfile as any)?.id;
-        if (!uid) {
-          setHasCoachProfile(false);
-          setHasPlayerProfile(false);
-          return;
-        }
-        const [coachDoc, playerDoc] = await Promise.all([
-          getDoc(doc(db as any, 'coaches', uid)),
-          getDoc(doc(db as any, 'players', uid)),
-        ]);
-        setHasCoachProfile(coachDoc.exists());
-        setHasPlayerProfile(playerDoc.exists());
-      } catch (e) {
-        console.warn('No se pudo verificar perfiles coach/player:', e);
-      }
-    };
-    checkProfiles();
-  }, [userProfile]);
 
   const isActive = (path: string, exact: boolean = false) => {
     if (exact) return pathname === path;
@@ -146,30 +119,6 @@ export function SidebarMenuContents() {
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          asChild
-          isActive={isActive("/player/rankings")}
-          tooltip="Rankings"
-        >
-          <Link href="/player/rankings">
-            <Trophy />
-            Rankings
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-      {hasCoachProfile && (
-        <SidebarMenuItem>
-          <SidebarMenuButton asChild isActive={false} tooltip="Cambiar a Entrenador">
-            <Link href="/coach/dashboard" onClick={() => {
-              try { localStorage.setItem('preferredRole', 'coach'); } catch {}
-            }}>
-              <Users />
-              Cambiar a Entrenador
-            </Link>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      )}
     </>
   );
 
@@ -199,18 +148,6 @@ export function SidebarMenuContents() {
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
-      {hasPlayerProfile && (
-        <SidebarMenuItem>
-          <SidebarMenuButton asChild isActive={false} tooltip="Cambiar a Jugador">
-            <Link href="/player/dashboard" onClick={() => {
-              try { localStorage.setItem('preferredRole', 'player'); } catch {}
-            }}>
-              <Users />
-              Cambiar a Jugador
-            </Link>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      )}
     </>
   );
 
@@ -297,18 +234,6 @@ export function SidebarMenuContents() {
           <Link href="/admin/maintenance">
             <Settings />
             Mantenimiento
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          asChild
-          isActive={isActive("/rankings")}
-          tooltip="Rankings Públicos"
-        >
-          <Link href="/rankings">
-            <Trophy />
-            Rankings
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>

@@ -4,35 +4,36 @@ import { adminDb } from "./firebase-admin";
 // Pesos exactos por ítem del checklist de Tiro de Tres (default). Deben sumar 100.
 export const ITEM_WEIGHTS_TRES: Record<string, number> = {
   // Fluidez (30%)
-  tiro_un_solo_tiempo: 15,
-  sincronia_piernas: 15,
+  tiro_un_solo_tiempo: 14.25,
+  sincronia_piernas: 14.25,
 
   // Preparación (24%)
-  alineacion_pies: 4,
-  alineacion_cuerpo: 4,
-  muneca_cargada: 4,
-  flexion_rodillas: 4,
-  hombros_relajados: 4,
-  enfoque_visual: 4,
+  alineacion_pies: 3.8,
+  alineacion_cuerpo: 3.8,
+  muneca_cargada: 3.8,
+  flexion_rodillas: 3.8,
+  hombros_relajados: 3.8,
+  enfoque_visual: 3.8,
 
   // Ascenso (24%)
-  mano_no_dominante_ascenso: 4,
-  codos_cerca_cuerpo: 4,
-  trayectoria_hasta_set_point: 4,
-  subida_recta_balon: 4,
-  set_point: 4,
-  tiempo_lanzamiento: 4,
+  mano_no_dominante_ascenso: 3.8,
+  codos_cerca_cuerpo: 3.8,
+  trayectoria_hasta_set_point: 3.8,
+  subida_recta_balon: 3.8,
+  set_point: 3.8,
+  tiempo_lanzamiento: 3.8,
+  angulo_codo_fijo_ascenso: 5,
 
   // Liberación (14%)
-  mano_no_dominante_liberacion: 3.5,
-  extension_completa_brazo: 3.5,
-  giro_pelota: 3.5,
-  angulo_salida: 3.5,
+  mano_no_dominante_liberacion: 3.325,
+  extension_completa_brazo: 3.325,
+  giro_pelota: 3.325,
+  angulo_salida: 3.325,
 
   // Seguimiento / Post-liberación (8%)
-  equilibrio_general: 3, // Unificado: mantenimiento_equilibrio (2) + equilibrio_aterrizaje (1)
-  duracion_follow_through: 2.5,
-  consistencia_general: 2.5, // Unificado: consistencia_repetitiva
+  equilibrio_general: 2.85, // Unificado: mantenimiento_equilibrio (2) + equilibrio_aterrizaje (1)
+  duracion_follow_through: 2.375,
+  consistencia_general: 2.375, // Unificado: consistencia_repetitiva
 };
 
 // Pesos exactos por ítem del checklist de Tiro Libre. Deben sumar 100.
@@ -86,6 +87,7 @@ export const CATEGORY_TO_ITEM_IDS: Record<string, string[]> = {
     "subida_recta_balon",
     "set_point",
     "tiempo_lanzamiento",
+    "angulo_codo_fijo_ascenso",
   ],
   "Liberación (14%)": [
     "mano_no_dominante_liberacion",
@@ -208,7 +210,7 @@ export function computeCategorySubtotal(category: ChecklistCategory, customWeigh
   
   // Filtrar solo ítems evaluables (no N/A y no no_evaluable)
   const evaluableItems = category.items
-    .filter((it) => !(it as any).na && it.status !== 'no_evaluable' && it.rating > 0);
+    .filter((it) => !(it as any).na && it.status !== 'no_evaluable' && typeof it.rating === 'number' && it.rating > 0);
   
   // Calcular pesos solo de ítems evaluables
   const evaluableWeights = evaluableItems
@@ -262,8 +264,10 @@ export function computeFinalScoreWithTransparency(categories: ChecklistCategory[
       } else {
         evaluableCount++;
         evaluableWeight += weight;
-        const percent = Math.max(0, Math.min(100, (item.rating / 5) * 100));
-        totalScore += weight * percent;
+        if (typeof item.rating === 'number') {
+          const percent = Math.max(0, Math.min(100, (item.rating / 5) * 100));
+          totalScore += weight * percent;
+        }
       }
     }
   }

@@ -24,14 +24,15 @@ async function getAuth(request: NextRequest): Promise<{ ok: true; uid: string; r
 }
 
 // GET mensajes (paginado simple)
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!adminDb) return NextResponse.json({ error: 'DB no inicializada' }, { status: 500 });
+    const { id: ticketId } = await params;
     const { searchParams } = new URL(request.url);
     const limit = Math.max(1, Math.min(Number(searchParams.get('limit') || 50), 200));
     const startAfter = searchParams.get('startAfter') || '';
 
-    let query = adminDb.collection('tickets').doc(params.id).collection('messages').orderBy('createdAt', 'desc') as FirebaseFirestore.Query<FirebaseFirestore.DocumentData>;
+    let query = adminDb.collection('tickets').doc(ticketId).collection('messages').orderBy('createdAt', 'desc') as FirebaseFirestore.Query<FirebaseFirestore.DocumentData>;
     if (startAfter) query = query.startAfter(startAfter);
     const snap = await query.limit(limit).get();
     const items = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
@@ -43,13 +44,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 // POST nuevo mensaje en ticket
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!adminDb) return NextResponse.json({ error: 'DB no inicializada' }, { status: 500 });
+    const { id: ticketId } = await params;
     const who = await getAuth(request);
     if (!who.ok) return NextResponse.json({ error: who.message }, { status: who.status });
 
-    const ticketRef = adminDb.collection('tickets').doc(params.id);
+    const ticketRef = adminDb.collection('tickets').doc(ticketId);
     const ticketSnap = await ticketRef.get();
     if (!ticketSnap.exists) return NextResponse.json({ error: 'Ticket no existe' }, { status: 404 });
     const ticket = ticketSnap.data() as any;
@@ -65,7 +67,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     const nowIso = new Date().toISOString();
     const msg = {
-      ticketId: params.id,
+      ticketId,
       senderId: who.uid,
       senderRole: who.role,
       text,

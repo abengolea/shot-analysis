@@ -39,7 +39,7 @@ export default function CoachRegisterPage() {
       </div>
 
       <div className="grid gap-8 place-items-center">
-        {/* Beneficios y Información */}
+        {/* Beneficios e Información */}
         <div className="space-y-6 w-full max-w-2xl mx-auto">
           <Card>
             <CardHeader>
@@ -65,9 +65,9 @@ export default function CoachRegisterPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Proceso Simple</CardTitle>
+              <CardTitle>Cómo acceder</CardTitle>
               <CardDescription>
-                En solo 3 pasos estarás listo para empezar
+                Validamos cada perfil antes de habilitarlo en la plataforma
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -75,19 +75,19 @@ export default function CoachRegisterPage() {
                 <Badge variant="secondary" className="h-8 w-8 rounded-full p-0 flex items-center justify-center">
                   1
                 </Badge>
-                <span>Completa tu perfil y experiencia</span>
+                <span>Envía tu CV deportivo y redes sociales a nuestro equipo</span>
               </div>
               <div className="flex items-center gap-3">
                 <Badge variant="secondary" className="h-8 w-8 rounded-full p-0 flex items-center justify-center">
                   2
                 </Badge>
-                <span>Establece tus tarifas y disponibilidad</span>
+                <span>El equipo admin verifica credenciales y experiencia</span>
               </div>
               <div className="flex items-center gap-3">
                 <Badge variant="secondary" className="h-8 w-8 rounded-full p-0 flex items-center justify-center">
                   3
                 </Badge>
-                <span>¡Empieza a recibir solicitudes de jugadores!</span>
+                <span>Si sos aprobado, activamos tu perfil y coordinamos el onboarding</span>
               </div>
             </CardContent>
           </Card>
@@ -98,7 +98,7 @@ export default function CoachRegisterPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-3">
-                Nuestro equipo está aquí para ayudarte a comenzar tu viaje como entrenador.
+                Nuestro equipo administra manualmente el alta de entrenadores para garantizar la calidad de la comunidad.
               </p>
               <p className="text-sm font-medium">
                 📧 Contacto: abengolea1@gmail.com

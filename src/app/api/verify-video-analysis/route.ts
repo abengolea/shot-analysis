@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       // 2. SUBIR VIDEO PROCESADO A FIREBASE
       console.log('📤 Subiendo video procesado a Firebase...');
       const videoRef = adminStorage.bucket().file(processedVideoFileName);
-      await videoRef.save(Buffer.from(processedVideoBuffer, 'binary'), {
+      await videoRef.save(processedVideoBuffer, {
         metadata: {
           contentType: 'video/mp4',
           metadata: {
@@ -142,6 +142,16 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
+
+
+
+
+
+
+
+
+
 
 
 

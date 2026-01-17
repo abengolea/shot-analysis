@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Probar Pago dLocal</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .result.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .result.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .result pre {
+            margin: 10px 0 0 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background: rgba(0,0,0,0.05);
+            padding: 10px;
+            border-radius: 4px;
+        }
+        a {
+            color: #155724;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 10px;
+            padding: 10px 20px;
+            background: #28a745;
+            color: white;
+            border-radius: 4px;
+        }
+        a:hover {
+            background: #218838;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Probando Pago dLocal Go</h1>
+        <div id="loading" class="loading">
+            <p>⏳ Creando pago...</p>
+        </div>
+        <div id="result" class="result" style="display: none;"></div>
+    </div>
+
+    <script>
+        // Crear pago automáticamente al cargar la página
+        async function crearPago() {
+            const loadingDiv = document.getElementById('loading');
+            const resultDiv = document.getElementById('result');
+            
+            try {
+                const response = await fetch('http://localhost:9999/api/payments/create-dlocal', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        userId: 'test-user-' + Date.now(),
+                        productId: 'analysis_1',
+                        currency: 'ARS'
+                    })
+                });
+
+                const data = await response.json();
+                
+                loadingDiv.style.display = 'none';
+                resultDiv.style.display = 'block';
+
+                // Verificar si el pago se creó exitosamente
+                const hasCheckoutUrl = data.checkout_url || data.redirect_url;
+                const hasPaymentId = data.id || data.raw?.id;
+                
+                if (response.ok && (hasCheckoutUrl || hasPaymentId)) {
+                    resultDiv.className = 'result success';
+                    const checkoutUrl = data.checkout_url || data.redirect_url;
+                    resultDiv.innerHTML = `
+                        <strong>✅ ¡Pago creado exitosamente!</strong>
+                        <p><strong>ID del pago:</strong> ${data.id || data.raw?.id}</p>
+                        <p><strong>Estado:</strong> ${data.status || data.raw?.status}</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                        ${checkoutUrl ? `<a href="${checkoutUrl}" target="_blank" style="display: inline-block; margin-top: 15px; padding: 12px 24px; background: #28a745; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">🔗 Abrir URL de Pago (Checkout)</a>` : ''}
+                    `;
+                } else if (data.error) {
+                    resultDiv.className = 'result error';
+                    let errorHtml = `<strong>❌ Error: ${data.error}</strong>`;
+                    if (data.missing) {
+                        errorHtml += `<p><strong>Variables faltantes:</strong></p><pre>${JSON.stringify(data.missing, null, 2)}</pre>`;
+                    }
+                    if (data.details) {
+                        errorHtml += `<p><strong>Detalles:</strong></p><pre>${data.details}</pre>`;
+                    }
+                    errorHtml += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                    resultDiv.innerHTML = errorHtml;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `
+                        <strong>⚠️ Respuesta inesperada</strong>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+            } catch (error) {
+                loadingDiv.style.display = 'none';
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <strong>❌ Error de conexión</strong>
+                    <p>${error.message}</p>
+                    <p><strong>Verifica que:</strong></p>
+                    <ul>
+                        <li>El servidor esté corriendo: <code>npm run dev</code></li>
+                        <li>El puerto sea 9999</li>
+                        <li>Las variables de entorno estén configuradas en <code>.env.local</code></li>
+                    </ul>
+                `;
+            }
+        }
+
+        // Ejecutar al cargar la página
+        crearPago();
+    </script>
+</body>
+</html>
+

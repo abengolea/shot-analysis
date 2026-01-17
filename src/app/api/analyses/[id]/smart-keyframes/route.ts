@@ -19,12 +19,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const analysisData = analysisDoc.data();
     
     // Extraer keyframes del análisis (buscar en smartKeyframes primero)
-    const keyframesMetadata = analysisData?.smartKeyframes || analysisData?.keyframes || {
+    const keyframesMetadata = (analysisData?.smartKeyframes || analysisData?.keyframes || {
       front: [],
       back: [],
       left: [],
       right: []
-    };
+    }) as Record<'front' | 'back' | 'left' | 'right', any[]>;
     
     console.log('📊 [SMART-KEYFRAMES] Keyframes metadata encontrados:', {
       front: keyframesMetadata.front?.length || 0,
@@ -34,14 +34,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     });
     
     // Cargar las imágenes de los keyframes desde los documentos separados
-    const keyframesWithImages = {
+    const keyframesWithImages: Record<'front' | 'back' | 'left' | 'right', any[]> = {
       front: [],
       back: [],
       left: [],
       right: []
     };
     
-    const angles = ['front', 'back', 'left', 'right'];
+    const angles = ['front', 'back', 'left', 'right'] as const;
     
     for (const angle of angles) {
       const frames = keyframesMetadata[angle] || [];

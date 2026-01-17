@@ -2,6 +2,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
+import { HarmBlockThreshold, HarmCategory } from '@google/generative-ai';
 
 const StrictAnalysisInputSchema = z.object({
   videoUrl: z.string().describe('URL del video a analizar'),
@@ -63,14 +64,11 @@ export async function analyzeBasketballStrict(
       },
       safetySettings: [
         {
-          category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-          threshold: 'BLOCK_ONLY_HIGH'
+          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH
         }
       ]
     });
-
-    // Subir video
-    const videoFile = await model.uploadFile(input.videoUrl);
 
     // Prompt anti-alucinación
     const strictPrompt = `
@@ -143,7 +141,8 @@ NO INVENTES NADA. Si no puedes determinarlo, usa "no_visible" o "no_determinable
     console.log('[analyzeBasketballStrict] Enviando prompt estricto a Gemini...');
 
     // Analizar con prompt estricto
-    const response = await model.generateContent([strictPrompt, videoFile]);
+    const promptWithVideo = `${strictPrompt}\n\nVIDEO: ${input.videoUrl}`;
+    const response = await model.generateContent([promptWithVideo]);
     const responseText = response.response.text();
 
     console.log('[analyzeBasketballStrict] Respuesta de Gemini:', responseText);

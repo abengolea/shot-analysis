@@ -74,7 +74,7 @@ function ChecklistItem({
     getStatusColor?: (status: string) => string;
     renderStars?: (score: number) => JSX.Element;
 }) {
-  const [rating, setRating] = useState<number | undefined>(item.rating);
+  const [rating, setRating] = useState<DetailedChecklistItem['rating']>(item.rating);
   const [isNA, setIsNA] = useState<boolean>(Boolean((item as any).na));
   const [rating10, setRating10] = useState<number | undefined>(item.rating10);
   const [coachComment, setCoachComment] = useState(item.coachComment || "");
@@ -179,7 +179,10 @@ function ChecklistItem({
       {!isNA && (
         <RadioGroup
           value={rating !== undefined ? String(rating) : ""}
-          onValueChange={(value) => setRating(Number(value))}
+          onValueChange={(value) => {
+            const nextRating = value === "" ? undefined : (Number(value) as DetailedChecklistItem['rating']);
+            setRating(nextRating);
+          }}
           className="flex flex-col gap-2 sm:flex sm:flex-wrap sm:gap-4"
         >
           <div className="flex items-center space-x-2">

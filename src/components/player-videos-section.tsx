@@ -284,9 +284,10 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
               
               <div className="space-y-4">
                 {/* Video Player */}
-                {selectedAnalysis.videoUrl ? (
+                {selectedAnalysis.videoUrl && selectedAnalysis.videoUrl.trim() !== '' ? (
                   <VideoPlayer
                     src={selectedAnalysis.videoUrl}
+                    analysisId={selectedAnalysis.id}
                     onFrameChange={() => {}}
                     onBookmarkAdd={() => {}}
                     bookmarks={[]}
@@ -296,6 +297,9 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                     <div className="text-center">
                       <Play className="h-16 w-16 text-primary mx-auto mb-4" />
                       <p className="text-muted-foreground">No hay video disponible</p>
+                      <p className="text-sm text-muted-foreground mt-2">
+                        Este análisis no tiene una URL de video asociada
+                      </p>
                     </div>
                   </div>
                 )}

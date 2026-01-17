@@ -38,7 +38,7 @@ export function safeOnSnapshot<T = any>(
     }
   };
 
-  const unsubscribe = onSnapshot(query, onNext, handleError);
+  let unsubscribe = onSnapshot(query, onNext, handleError);
 
   // Función de cleanup mejorada
   return () => {

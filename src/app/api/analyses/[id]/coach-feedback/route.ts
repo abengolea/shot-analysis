@@ -82,6 +82,45 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     };
     await feedbackRef.set(payload, { merge: true });
 
+    // Actualizar el mensaje del coach para mostrar "en progreso" si no está completado
+    try {
+      const analysisSnap = await adminDb.collection('analyses').doc(id).get();
+      if (analysisSnap.exists) {
+        const analysisData = analysisSnap.data() as any;
+        const isCompleted = analysisData?.coachCompleted === true;
+        
+        // Solo actualizar si no está completado y hay feedback (items o summary)
+        const hasFeedback = Object.keys(mergedItems).length > 0 || (coachSummary && coachSummary.trim().length > 0);
+        
+        if (!isCompleted && hasFeedback) {
+          // Usar el coachId del auth (el coach que está guardando el feedback)
+          const messagesQuery = await adminDb.collection('messages')
+            .where('toCoachDocId', '==', auth.uid)
+            .where('analysisId', '==', id)
+            .where('fromId', '==', 'system')
+            .limit(1)
+            .get();
+          
+          if (!messagesQuery.empty) {
+            const messageDoc = messagesQuery.docs[0];
+            const messageData = messageDoc.data();
+            const playerName = analysisData?.playerName || 'el jugador';
+            const currentText = messageData?.text || '';
+            
+            // Solo actualizar si el mensaje aún dice "ya abonó" (no está actualizado)
+            if (currentText.includes('ya abonó la revisión manual')) {
+              await messageDoc.ref.update({
+                text: `El análisis ${id} del jugador ${playerName} está en progreso. Podés continuar trabajando en tu devolución.`,
+                updatedAt: nowIso,
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error actualizando mensaje del coach (en progreso):', e);
+    }
+
     // Detectar discrepancias IA vs entrenador
     try {
       const aSnap = await adminDb.collection('analyses').doc(id).get();

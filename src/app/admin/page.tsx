@@ -1,7 +1,10 @@
 "use client";
+
+export const dynamic = 'force-dynamic';
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getAuth, getIdToken } from "firebase/auth";
+import { CoachAdminForm } from "@/components/coach-admin-form";
 
 type WeeklyPoint = {
 	weekStart: string;
@@ -19,6 +22,20 @@ type OverviewMetrics = {
 	activeSubscriptions: number;
 	analysesCount: number;
 	weekly: WeeklyPoint[];
+};
+
+const sumBy = (items: WeeklyPoint[], key: keyof WeeklyPoint) =>
+	items.reduce((acc, item) => acc + (typeof item[key] === 'number' ? (item[key] as number) : 0), 0);
+
+const pctChange = (current: number, previous: number) => {
+	if (previous === 0) return null;
+	return ((current - previous) / previous) * 100;
+};
+
+const formatPct = (value: number | null) => {
+	if (value == null) return '—';
+	const sign = value > 0 ? '+' : '';
+	return `${sign}${value.toFixed(1)}%`;
 };
 
 export default function AdminHome() {
@@ -45,11 +62,18 @@ export default function AdminHome() {
 	const [subsNext, setSubsNext] = useState<string | undefined>(undefined);
 	const [subsLoading, setSubsLoading] = useState(false);
 
+	const [coachReviews, setCoachReviews] = useState<any[]>([]);
+	const [coachReviewsNext, setCoachReviewsNext] = useState<string | undefined>(undefined);
+	const [coachReviewsLoading, setCoachReviewsLoading] = useState(false);
+	const [coachReviewsHiddenOnly, setCoachReviewsHiddenOnly] = useState(false);
+	const [coachReviewsSavingById, setCoachReviewsSavingById] = useState<Record<string, boolean>>({});
+
 	// Filtros de búsqueda
 	const [playersQuery, setPlayersQuery] = useState<string>("");
 	const [coachesQuery, setCoachesQuery] = useState<string>("");
 	const [paymentsQuery, setPaymentsQuery] = useState<string>("");
 	const [subsQuery, setSubsQuery] = useState<string>("");
+	const [coachReviewsQuery, setCoachReviewsQuery] = useState<string>("");
 
 	// Helpers CSV export
 	const toCsvAndDownload = (filename: string, headers: string[], rows: Array<(string|number|null|undefined)[]>) => {
@@ -93,7 +117,11 @@ export default function AdminHome() {
 		if (!q) return payments;
 		return payments.filter(p => String(p.id).toLowerCase().includes(q)
 			|| String(p.userId||'').toLowerCase().includes(q)
-			|| String(p.productId||'').toLowerCase().includes(q));
+			|| String(p.userName||'').toLowerCase().includes(q)
+			|| String(p.productId||'').toLowerCase().includes(q)
+			|| String(p.paymentMethod||'').toLowerCase().includes(q)
+			|| String(p.coachName||'').toLowerCase().includes(q)
+			|| String(p.coachId||'').toLowerCase().includes(q));
 	}, [payments, paymentsQuery]);
 	const filteredSubs = useMemo(() => {
 		const q = subsQuery.trim().toLowerCase();
@@ -101,6 +129,19 @@ export default function AdminHome() {
 		return subs.filter(w => String(w.id).toLowerCase().includes(q)
 			|| String(w.userId||'').toLowerCase().includes(q));
 	}, [subs, subsQuery]);
+	const filteredCoachReviews = useMemo(() => {
+		const q = coachReviewsQuery.trim().toLowerCase();
+		const base = coachReviewsHiddenOnly ? coachReviews.filter(r => r.hidden === true) : coachReviews;
+		if (!q) return base;
+		return base.filter(r =>
+			String(r.id).toLowerCase().includes(q)
+			|| String(r.analysisId||'').toLowerCase().includes(q)
+			|| String(r.coachId||'').toLowerCase().includes(q)
+			|| String(r.coachName||'').toLowerCase().includes(q)
+			|| String(r.playerId||'').toLowerCase().includes(q)
+			|| String(r.playerName||'').toLowerCase().includes(q)
+		);
+	}, [coachReviews, coachReviewsQuery, coachReviewsHiddenOnly]);
 
 	useEffect(() => {
 		try {
@@ -136,6 +177,7 @@ export default function AdminHome() {
 		{ id: 'home', label: 'Inicio' },
 		{ id: 'players', label: 'Jugadores' },
 		{ id: 'coaches', label: 'Entrenadores' },
+		{ id: 'coach-reviews', label: 'Reseñas' },
 		{ id: 'payments', label: 'Pagos' },
 		{ id: 'subscriptions', label: 'Suscripciones' },
 		{ id: 'emails', label: 'Emails' },
@@ -150,6 +192,39 @@ export default function AdminHome() {
 			window.history.replaceState({}, '', url.toString());
 		} catch {}
 	};
+
+	const stats = useMemo(() => {
+		if (!metrics) return null;
+		const weekly = metrics.weekly || [];
+		const last4 = weekly.slice(-4);
+		const prev4 = weekly.slice(-8, -4);
+		const current = {
+			payments: sumBy(last4, 'paymentsCount'),
+			revenue: sumBy(last4, 'paymentsAmountARS'),
+			analyses: sumBy(last4, 'analysesCount'),
+		};
+		const previous = {
+			payments: sumBy(prev4, 'paymentsCount'),
+			revenue: sumBy(prev4, 'paymentsAmountARS'),
+			analyses: sumBy(prev4, 'analysesCount'),
+		};
+		const max = {
+			payments: Math.max(1, ...weekly.map((w) => w.paymentsCount || 0)),
+			revenue: Math.max(1, ...weekly.map((w) => w.paymentsAmountARS || 0)),
+			analyses: Math.max(1, ...weekly.map((w) => w.analysesCount || 0)),
+		};
+		return {
+			weekly,
+			current,
+			previous,
+			trends: {
+				payments: pctChange(current.payments, previous.payments),
+				revenue: pctChange(current.revenue, previous.revenue),
+				analyses: pctChange(current.analyses, previous.analyses),
+			},
+			max,
+		};
+	}, [metrics]);
 
 	return (
 		<div className="p-6 space-y-6">
@@ -274,7 +349,6 @@ export default function AdminHome() {
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin?tab=payments">Pagos</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin?tab=subscriptions">Suscripciones</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin/revision-ia">Revisión IA</Link>
-									<Link className="rounded border p-3 hover:bg-gray-50" href="/rankings">Rankings públicos</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/player/upload">Subir y analizar video</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/player/dashboard">Dashboard usuario</Link>
 								</div>
@@ -399,10 +473,24 @@ export default function AdminHome() {
 								<option value="pending">Pendientes</option>
 								<option value="rejected">Rechazados</option>
 							</select>
-							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Usuario/Producto" value={paymentsQuery} onChange={(e)=>setPaymentsQuery(e.target.value)} />
+							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Usuario/Producto/Medio/Entrenador" value={paymentsQuery} onChange={(e)=>setPaymentsQuery(e.target.value)} />
 							<button className="rounded border px-3 py-1 text-sm" onClick={() => {
-                                const headers = ['id','userId','productId','status','amount','currency','createdAt'];
-                                const rows = filteredPayments.map((p:any) => [p.id,p.userId,p.productId,p.status,p.amount,p.currency, typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : ''))]);
+                                const headers = ['id','usuario','userId','producto','entrenador','coachId','estado','medio','mpPaymentId','mpPreferenceId','importe','moneda','creado'];
+                                const rows = filteredPayments.map((p:any) => [
+									p.id,
+									p.userName || p.userId,
+									p.userId || '',
+									p.productId || '',
+									p.coachName || p.coachId || '',
+									p.coachId || '',
+									p.status || '',
+									p.paymentMethod || p.provider || '',
+									p.mpPaymentId || '',
+									p.mpPreferenceId || '',
+									p.amount,
+									p.currency,
+									typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : ''))
+								]);
 								toCsvAndDownload('payments.csv', headers, rows);
 							}}>Exportar CSV</button>
 							<button
@@ -439,7 +527,11 @@ export default function AdminHome() {
 									<th className="py-2 px-3">ID</th>
 									<th className="py-2 px-3">Usuario</th>
 									<th className="py-2 px-3">Producto</th>
+									<th className="py-2 px-3">Entrenador</th>
 									<th className="py-2 px-3">Estado</th>
+									<th className="py-2 px-3">Medio</th>
+									<th className="py-2 px-3">MP Payment</th>
+									<th className="py-2 px-3">MP Pref</th>
 									<th className="py-2 px-3">Importe</th>
 									<th className="py-2 px-3">Moneda</th>
 									<th className="py-2 px-3">Creado</th>
@@ -449,9 +541,13 @@ export default function AdminHome() {
                                 {filteredPayments.map((p:any) => (
 									<tr key={p.id} className="border-t">
 										<td className="py-2 px-3">{p.id}</td>
-										<td className="py-2 px-3">{p.userId || '-'}</td>
+										<td className="py-2 px-3">{p.userName || p.userId || '-'}</td>
 										<td className="py-2 px-3">{p.productId || '-'}</td>
+										<td className="py-2 px-3">{p.coachName || p.coachId || '-'}</td>
 										<td className="py-2 px-3">{p.status || '-'}</td>
+										<td className="py-2 px-3">{p.paymentMethod || p.provider || '-'}</td>
+										<td className="py-2 px-3">{p.mpPaymentId || '-'}</td>
+										<td className="py-2 px-3">{p.mpPreferenceId || '-'}</td>
 										<td className="py-2 px-3">{typeof p.amount === 'number' ? p.amount.toLocaleString('es-AR') : '-'}</td>
 										<td className="py-2 px-3">{p.currency || '-'}</td>
                                         <td className="py-2 px-3">{typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
@@ -459,7 +555,7 @@ export default function AdminHome() {
 								))}
 								{!filteredPayments.length && (
 									<tr>
-										<td className="py-6 px-3 text-gray-500" colSpan={7}>{paymentsLoading ? 'Cargando…' : 'Sin datos'}</td>
+										<td className="py-6 px-3 text-gray-500" colSpan={11}>{paymentsLoading ? 'Cargando…' : 'Sin datos'}</td>
 									</tr>
 								)}
 							</tbody>
@@ -603,104 +699,122 @@ export default function AdminHome() {
 
 			{/* Entrenadores */}
 			{activeTab === 'coaches' && (
-				<div className="space-y-3">
-					<div className="flex items-center justify-between gap-2 flex-wrap">
-						<h2 className="text-lg font-medium">Entrenadores</h2>
-						<div className="flex items-center gap-2">
-							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Email/Nombre" value={coachesQuery} onChange={(e)=>setCoachesQuery(e.target.value)} />
-							<button className="rounded border px-3 py-1 text-sm" onClick={() => {
-								const headers = ['id','name','email','status','ratePerAnalysis','createdAt'];
-								const rows = filteredCoaches.map((c:any) => [c.id,c.name,c.email,c.status,c.ratePerAnalysis,c.createdAt]);
-								toCsvAndDownload('coaches.csv', headers, rows);
-							}}>Exportar CSV</button>
+				<div className="grid gap-4 lg:grid-cols-3">
+					<div className="space-y-3 lg:col-span-2">
+						<div className="flex items-center justify-between gap-2 flex-wrap">
+							<h2 className="text-lg font-medium">Entrenadores</h2>
+							<div className="flex items-center gap-2">
+								<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Email/Nombre" value={coachesQuery} onChange={(e)=>setCoachesQuery(e.target.value)} />
+								<button className="rounded border px-3 py-1 text-sm" onClick={() => {
+									const headers = ['id','name','email','status','ratePerAnalysis','createdAt'];
+									const rows = filteredCoaches.map((c:any) => [c.id,c.name,c.email,c.status,c.ratePerAnalysis,c.createdAt]);
+									toCsvAndDownload('coaches.csv', headers, rows);
+								}}>Exportar CSV</button>
+							</div>
+							<button
+								className="rounded border px-3 py-1 text-sm"
+								onClick={async () => {
+									try {
+										setCoachesLoading(true);
+										const auth = getAuth();
+										const cu = auth.currentUser;
+										if (!cu) throw new Error('Usuario no autenticado');
+										const token = await getIdToken(cu, true);
+										const url = new URL('/api/admin/coaches', window.location.origin);
+										url.searchParams.set('limit', '50');
+										const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+										const data = await res.json();
+										setCoaches(Array.isArray(data.items) ? data.items : []);
+										setCoachesNext(data.nextCursor);
+									} catch (e) {
+										// noop
+									} finally {
+										setCoachesLoading(false);
+									}
+								}}
+							>
+								{coaches.length ? 'Refrescar' : 'Cargar'}
+							</button>
 						</div>
-						<button
-							className="rounded border px-3 py-1 text-sm"
-							onClick={async () => {
-								try {
-									setCoachesLoading(true);
-									const auth = getAuth();
-									const cu = auth.currentUser;
-									if (!cu) throw new Error('Usuario no autenticado');
-									const token = await getIdToken(cu, true);
-									const url = new URL('/api/admin/coaches', window.location.origin);
-									url.searchParams.set('limit', '50');
-									const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
-									const data = await res.json();
-									setCoaches(Array.isArray(data.items) ? data.items : []);
-									setCoachesNext(data.nextCursor);
-								} catch (e) {
-									// noop
-								} finally {
-									setCoachesLoading(false);
-								}
-							}}
-						>
-							{coaches.length ? 'Refrescar' : 'Cargar'}
-						</button>
-					</div>
-					<div className="rounded border overflow-x-auto">
-						<table className="min-w-[800px] text-sm">
-							<thead>
-								<tr className="text-left">
-									<th className="py-2 px-3">ID</th>
-									<th className="py-2 px-3">Nombre</th>
-									<th className="py-2 px-3">Email</th>
-									<th className="py-2 px-3">Estado</th>
-									<th className="py-2 px-3">Tarifa</th>
-									<th className="py-2 px-3">Creado</th>
-								</tr>
-							</thead>
-							<tbody>
-                                {filteredCoaches.map((c:any) => (
-                                    <tr key={c.id} className="border-t">
-                                        <td className="py-2 px-3">
-                                            <Link href={`/admin/coaches/${c.id}`} className="underline">
-                                                {c.id}
-                                            </Link>
-                                        </td>
-                                        <td className="py-2 px-3">{c.name || '-'}</td>
-                                        <td className="py-2 px-3">{c.email || '-'}</td>
-                                        <td className="py-2 px-3">{c.status || '-'}</td>
-                                        <td className="py-2 px-3">{typeof c.ratePerAnalysis === 'number' ? c.ratePerAnalysis : '-'}</td>
-                                        <td className="py-2 px-3">{typeof c.createdAt === 'string' ? c.createdAt : (c?.createdAt?.toDate?.() ? c.createdAt.toDate().toISOString() : (typeof c?.createdAt?._seconds === 'number' ? new Date(c.createdAt._seconds * 1000 + Math.round((c.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
-                                    </tr>
-                                ))}
-								{!filteredCoaches.length && (
-									<tr>
-										<td className="py-6 px-3 text-gray-500" colSpan={6}>{coachesLoading ? 'Cargando…' : 'Sin datos'}</td>
+						<div className="rounded border overflow-x-auto">
+							<table className="min-w-[800px] text-sm">
+								<thead>
+									<tr className="text-left">
+										<th className="py-2 px-3">ID</th>
+										<th className="py-2 px-3">Nombre</th>
+										<th className="py-2 px-3">Email</th>
+										<th className="py-2 px-3">Estado</th>
+										<th className="py-2 px-3">Tarifa</th>
+										<th className="py-2 px-3">Creado</th>
 									</tr>
-								)}
-							</tbody>
-						</table>
+								</thead>
+								<tbody>
+									{filteredCoaches.map((c:any) => (
+										<tr key={c.id} className={`border-t ${c.hidden === true ? 'opacity-60 bg-muted/30' : ''}`}>
+											<td className="py-2 px-3">
+												<Link href={`/admin/coaches/${c.id}`} className="underline">
+													{c.id}
+												</Link>
+											</td>
+											<td className="py-2 px-3">
+												<div className="flex items-center gap-2">
+													{c.hidden === true && (
+														<span className="text-xs text-muted-foreground bg-orange-100 text-orange-700 px-2 py-0.5 rounded">Oculto</span>
+													)}
+													<span>{c.name || '-'}</span>
+												</div>
+											</td>
+											<td className="py-2 px-3">{c.email || '-'}</td>
+											<td className="py-2 px-3">{c.status || '-'}</td>
+											<td className="py-2 px-3">{typeof c.ratePerAnalysis === 'number' ? c.ratePerAnalysis : '-'}</td>
+											<td className="py-2 px-3">{typeof c.createdAt === 'string' ? c.createdAt : (c?.createdAt?.toDate?.() ? c.createdAt.toDate().toISOString() : (typeof c?.createdAt?._seconds === 'number' ? new Date(c.createdAt._seconds * 1000 + Math.round((c.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
+										</tr>
+									))}
+									{!filteredCoaches.length && (
+										<tr>
+											<td className="py-6 px-3 text-gray-500" colSpan={6}>{coachesLoading ? 'Cargando…' : 'Sin datos'}</td>
+										</tr>
+									)}
+								</tbody>
+							</table>
+						</div>
+						<div className="flex justify-end">
+							<button
+								className="rounded border px-3 py-1 text-sm disabled:opacity-50"
+								disabled={!coachesNext || coachesLoading}
+								onClick={async () => {
+									try {
+										setCoachesLoading(true);
+										const auth = getAuth();
+										const cu = auth.currentUser;
+										if (!cu) throw new Error('Usuario no autenticado');
+										const token = await getIdToken(cu, true);
+										const url = new URL('/api/admin/coaches', window.location.origin);
+										url.searchParams.set('limit', '50');
+										if (coachesNext) url.searchParams.set('startAfter', coachesNext);
+										const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+										const data = await res.json();
+										setCoaches([...coaches, ...(Array.isArray(data.items) ? data.items : [])]);
+										setCoachesNext(data.nextCursor);
+									} catch (e) {
+										// noop
+									} finally {
+										setCoachesLoading(false);
+									}
+							}}
+							>
+								Cargar más
+							</button>
+						</div>
 					</div>
-					<div className="flex justify-end">
-						<button
-							className="rounded border px-3 py-1 text-sm disabled:opacity-50"
-							disabled={!coachesNext || coachesLoading}
-							onClick={async () => {
-								try {
-									setCoachesLoading(true);
-									const auth = getAuth();
-									const cu = auth.currentUser;
-									if (!cu) throw new Error('Usuario no autenticado');
-									const token = await getIdToken(cu, true);
-									const url = new URL('/api/admin/coaches', window.location.origin);
-									url.searchParams.set('limit', '50');
-									if (coachesNext) url.searchParams.set('startAfter', coachesNext);
-									const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
-									const data = await res.json();
-									setCoaches([...coaches, ...(Array.isArray(data.items) ? data.items : [])]);
-									setCoachesNext(data.nextCursor);
-								} catch (e) {
-									// noop
-								} finally {
-									setCoachesLoading(false);
-								}
-						}}
-						>
-							Cargar más
-						</button>
+					<div className="space-y-3">
+						<CoachAdminForm />
+						<div className="rounded border p-4 text-sm space-y-2">
+							<h3 className="font-medium">Gestión rápida</h3>
+							<p>1. Creá un perfil nuevo con foto y datos reales. El alta genera un usuario en Firebase Auth.</p>
+							<p>2. En el detalle del entrenador podés editar bio, tarifas, visibilidad y estado (activo, pendiente o suspendido).</p>
+							<p>3. También desde el detalle hay botones para enviar o regenerar contraseña y bloquear/desbloquear.</p>
+						</div>
 					</div>
 				</div>
 			)}
@@ -709,6 +823,125 @@ export default function AdminHome() {
 			{activeTab === 'emails' && (
 				<div className="space-y-6">
 					<EmailCampaignForm />
+				</div>
+			)}
+
+			{/* Estadísticas */}
+			{activeTab === 'stats' && (
+				<div className="space-y-6">
+					{error && <p className="text-sm text-red-600">{error}</p>}
+					{loading && <p className="text-sm">Cargando…</p>}
+					{!metrics && !loading && (
+						<p className="text-sm text-gray-600">No hay métricas disponibles.</p>
+					)}
+					{metrics && stats && (
+						<>
+							<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+								<div className="rounded border p-4">
+									<div className="text-xs text-gray-500">Pagos (últimos 28 días)</div>
+									<div className="text-2xl font-semibold">{stats.current.payments}</div>
+									<div className="text-xs text-gray-500">Vs. previos 28 días: {formatPct(stats.trends.payments)}</div>
+								</div>
+								<div className="rounded border p-4">
+									<div className="text-xs text-gray-500">Ingresos ARS (últimos 28 días)</div>
+									<div className="text-2xl font-semibold">{stats.current.revenue.toLocaleString('es-AR')}</div>
+									<div className="text-xs text-gray-500">Vs. previos 28 días: {formatPct(stats.trends.revenue)}</div>
+								</div>
+								<div className="rounded border p-4">
+									<div className="text-xs text-gray-500">Análisis (últimos 28 días)</div>
+									<div className="text-2xl font-semibold">{stats.current.analyses}</div>
+									<div className="text-xs text-gray-500">Vs. previos 28 días: {formatPct(stats.trends.analyses)}</div>
+								</div>
+								<div className="rounded border p-4">
+									<div className="text-xs text-gray-500">Ticket promedio (últimos 28 días)</div>
+									<div className="text-2xl font-semibold">
+										{stats.current.payments > 0
+											? (stats.current.revenue / stats.current.payments).toLocaleString('es-AR', { maximumFractionDigits: 0 })
+											: '—'}
+									</div>
+									<div className="text-xs text-gray-500">ARS por pago aprobado</div>
+								</div>
+								<div className="rounded border p-4">
+									<div className="text-xs text-gray-500">Análisis por semana (promedio)</div>
+									<div className="text-2xl font-semibold">
+										{stats.weekly.length ? Math.round(sumBy(stats.weekly, 'analysesCount') / stats.weekly.length) : 0}
+									</div>
+									<div className="text-xs text-gray-500">Últimas {stats.weekly.length} semanas</div>
+								</div>
+								<div className="rounded border p-4">
+									<div className="text-xs text-gray-500">Usuarios con pago (total)</div>
+									<div className="text-2xl font-semibold">{metrics.payingUsers}</div>
+									<div className="text-xs text-gray-500">Pagos aprobados totales: {metrics.approvedPaymentsCount}</div>
+								</div>
+							</div>
+
+							<div className="rounded border p-4 space-y-4">
+								<h2 className="text-lg font-medium">Tendencia semanal (últimas 8 semanas)</h2>
+								<div className="space-y-3">
+									{stats.weekly.map((w) => (
+										<div key={w.weekStart} className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-center">
+											<div className="text-sm text-gray-700">{w.weekStart}</div>
+											<div className="flex items-center gap-2">
+												<div className="w-24 text-xs text-gray-500">Pagos</div>
+												<div className="flex-1 h-2 rounded bg-gray-100">
+													<div
+														className="h-2 rounded bg-blue-500"
+														style={{ width: `${(w.paymentsCount / stats.max.payments) * 100}%` }}
+													/>
+												</div>
+												<div className="w-12 text-xs text-gray-500 text-right">{w.paymentsCount}</div>
+											</div>
+											<div className="flex items-center gap-2">
+												<div className="w-24 text-xs text-gray-500">ARS</div>
+												<div className="flex-1 h-2 rounded bg-gray-100">
+													<div
+														className="h-2 rounded bg-emerald-500"
+														style={{ width: `${(w.paymentsAmountARS / stats.max.revenue) * 100}%` }}
+													/>
+												</div>
+												<div className="w-16 text-xs text-gray-500 text-right">
+													{w.paymentsAmountARS.toLocaleString('es-AR')}
+												</div>
+											</div>
+											<div className="flex items-center gap-2">
+												<div className="w-24 text-xs text-gray-500">Análisis</div>
+												<div className="flex-1 h-2 rounded bg-gray-100">
+													<div
+														className="h-2 rounded bg-violet-500"
+														style={{ width: `${(w.analysesCount / stats.max.analyses) * 100}%` }}
+													/>
+												</div>
+												<div className="w-12 text-xs text-gray-500 text-right">{w.analysesCount}</div>
+											</div>
+										</div>
+									))}
+								</div>
+							</div>
+
+							<div className="rounded border overflow-x-auto">
+								<table className="min-w-[700px] text-sm">
+									<thead>
+										<tr className="text-left">
+											<th className="py-2 px-3">Semana</th>
+											<th className="py-2 px-3">Pagos</th>
+											<th className="py-2 px-3">Ingresos (ARS)</th>
+											<th className="py-2 px-3">Análisis</th>
+										</tr>
+									</thead>
+									<tbody>
+										{stats.weekly.map((w) => (
+											<tr key={w.weekStart} className="border-t">
+												<td className="py-2 px-3">{w.weekStart}</td>
+												<td className="py-2 px-3">{w.paymentsCount}</td>
+												<td className="py-2 px-3">{w.paymentsAmountARS.toLocaleString('es-AR')}</td>
+												<td className="py-2 px-3">{w.analysesCount}</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						</>
+					)}
 				</div>
 			)}
 		</div>

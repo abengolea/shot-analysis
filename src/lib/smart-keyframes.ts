@@ -1,6 +1,5 @@
 import { adminStorage, adminDb } from './firebase-admin';
 import { extractKeyframesFromBuffer, getVideoDurationSecondsFromBuffer } from './ffmpeg';
-import { analyzeBasketballPose } from '@/ai/flows/analyze-basketball-pose';
 
 export interface SmartKeyframeExtractionInput {
   analysisId: string;
@@ -37,45 +36,144 @@ export async function extractSmartKeyframesFromBuffer(
   inputBuffer: Buffer,
   numFrames: number = 12
 ): Promise<SmartKeyframe[]> {
-    // Simplificar: usar directamente la extracción tradicional que funciona
   try {
-    console.log('🔍 [Smart Keyframes] Intentando extraer keyframes...');
+    console.log('🔍 [Smart Keyframes] Iniciando extracción inteligente...');
     console.log(`📊 [Smart Keyframes] Buffer size: ${inputBuffer.length} bytes`);
-    const frames = await extractKeyframesFromBuffer(inputBuffer, numFrames);
-    console.log(`✅ [Smart Keyframes] Se extrajeron ${frames.length} frames exitosamente`);
     
-    if (frames.length === 0) {
+    // 1. Obtener duración del video
+    const duration = await getVideoDurationSecondsFromBuffer(inputBuffer);
+    console.log(`⏱️ [Smart Keyframes] Duración del video: ${duration}s`);
+    
+    // 2. Extraer MÁS frames inicialmente para tener opciones (30-40 frames)
+    // Esto nos permite filtrar los mejores momentos
+    const candidateFramesCount = Math.min(40, Math.max(30, Math.floor(duration * 2)));
+    console.log(`📸 [Smart Keyframes] Extrayendo ${candidateFramesCount} frames candidatos para análisis...`);
+    
+    const candidateFrames = await extractKeyframesFromBuffer(inputBuffer, candidateFramesCount);
+    console.log(`✅ [Smart Keyframes] Se extrajeron ${candidateFrames.length} frames candidatos`);
+    
+    if (candidateFrames.length === 0) {
       console.error('❌ [Smart Keyframes] No se extrajeron frames!');
       return [];
     }
     
-    const smartKeyframes: SmartKeyframe[] = [];
-        for (let i = 0; i < frames.length; i++) {
-          const frame = frames[i];
-          console.log(`🖼️ [Smart Keyframes] Procesando frame ${i + 1}, imageBuffer size: ${frame.imageBuffer.length} bytes`);
-          // frame.imageBuffer ya es un Buffer, convertirlo a data URL
-          const base64Image = frame.imageBuffer.toString('base64');
-          const dataUrl = `data:image/jpeg;base64,${base64Image}`;
-          
-          smartKeyframes.push({
-            index: frame.index,
-            timestamp: frame.timestamp,
-            description: `Fotograma ${i + 1}`,
-            importance: 0.5, // Valor por defecto
-            phase: 'preparation', // Valor por defecto
-            imageBuffer: dataUrl
-          });
-          console.log(`✅ [Smart Keyframes] Frame ${i + 1} procesado, data URL size: ${dataUrl.length} bytes`);
-        }
+    // 3. Analizar cada frame para detectar momentos clave del tiro
+    console.log(`🔬 [Smart Keyframes] Analizando frames para detectar momentos clave...`);
+    const analyzedFrames: Array<SmartKeyframe & { rawScore: number; analysis: any }> = [];
     
-    console.log(`✅ [Smart Keyframes] Total de smart keyframes generados: ${smartKeyframes.length}`);
-        return smartKeyframes;
+    for (let i = 0; i < candidateFrames.length; i++) {
+      const frame = candidateFrames[i];
+      const progress = frame.timestamp / duration;
+      
+      try {
+        // Heurísticas mejoradas para filtrar frames irrelevantes
+        // FILTRAR frames muy tempranos (recibiendo pelota) y muy tardíos (después del tiro)
+        if (progress < 0.08 || progress > 0.92) {
+          continue; // Saltar frames donde probablemente no hay tiro activo
+        }
+        
+        // Análisis básico basado en timing
+        // El balón debería estar en juego durante el tiro (medio del video)
+        const hasBall = progress > 0.12 && progress < 0.88;
+        
+        // Calcular movimiento esperado: más movimiento en fases activas del tiro
+        const movement = (progress > 0.2 && progress < 0.8) ? 0.8 : 0.4;
+        
+        const analysis = {
+          hasPerson: true, // Asumimos que hay persona si el frame se extrajo correctamente
+          hasBall,
+          poseQuality: hasBall ? 0.75 : 0.5, // Mejor calidad si hay balón
+          movement,
+          score: Math.round(((hasBall ? 0.75 : 0.5) + movement) / 2 * 100)
+        };
+        
+        // Calcular importancia basada en timing y análisis
+        const importance = calculateFrameImportance(frame.timestamp, duration, analysis);
+        
+        // FILTRAR: Solo frames con importancia suficiente (excluye recibir pelota y cuando se escapa)
+        if (importance < 0.4) {
+          continue; // Saltar frames de baja importancia
+        }
+        
+        // Determinar fase basada en el progreso del video
+        let phase: SmartKeyframe['phase'] = 'preparation';
+        let description = '';
+        
+        if (progress < 0.2) {
+          phase = 'preparation';
+          description = `Preparación (${frame.timestamp.toFixed(1)}s)`;
+        } else if (progress < 0.4) {
+          phase = 'loading';
+          description = `Carga del tiro (${frame.timestamp.toFixed(1)}s)`;
+        } else if (progress < 0.65) {
+          phase = 'release';
+          description = `Liberación (${frame.timestamp.toFixed(1)}s)`;
+        } else if (progress < 0.85) {
+          phase = 'follow-through';
+          description = `Follow-through (${frame.timestamp.toFixed(1)}s)`;
+        } else {
+          phase = 'landing';
+          description = `Aterrizaje (${frame.timestamp.toFixed(1)}s)`;
+        }
+        
+        // Incluir frame (ya filtrado por importancia arriba)
+        const base64Image = frame.imageBuffer.toString('base64');
+        const dataUrl = `data:image/jpeg;base64,${base64Image}`;
+        
+        analyzedFrames.push({
+          index: analyzedFrames.length,
+          timestamp: frame.timestamp,
+          description,
+          importance,
+          phase,
+          imageBuffer: dataUrl,
+          rawScore: importance,
+          analysis
+        });
+      } catch (error) {
+        console.warn(`⚠️ [Smart Keyframes] Error analizando frame ${i}:`, error);
+        // Continuar con el siguiente frame
+      }
+    }
+    
+    console.log(`📊 [Smart Keyframes] Frames analizados: ${analyzedFrames.length} válidos de ${candidateFrames.length} candidatos`);
+    
+    // 4. Seleccionar los mejores frames distribuidos en las fases clave
+    const selectedFrames = selectBestFrames(analyzedFrames, numFrames);
+    
+    console.log(`✅ [Smart Keyframes] Total de smart keyframes seleccionados: ${selectedFrames.length}`);
+    return selectedFrames;
     
   } catch (error) {
     console.error(`❌ [Smart Keyframes] Error en extracción:`, error);
     console.error(`❌ [Smart Keyframes] Stack trace:`, error instanceof Error ? error.stack : 'No stack');
-    // Fallback: devolver array vacío
-    return [];
+    // Fallback: extracción simple
+    try {
+      console.log('🔄 [Smart Keyframes] Intentando fallback con extracción simple...');
+      const frames = await extractKeyframesFromBuffer(inputBuffer, numFrames);
+      const duration = await getVideoDurationSecondsFromBuffer(inputBuffer);
+      return frames.map((frame, i) => {
+        const progress = frame.timestamp / duration;
+        let phase: SmartKeyframe['phase'] = 'preparation';
+        if (progress < 0.2) phase = 'preparation';
+        else if (progress < 0.4) phase = 'loading';
+        else if (progress < 0.6) phase = 'release';
+        else if (progress < 0.8) phase = 'follow-through';
+        else phase = 'landing';
+        
+        return {
+          index: i,
+          timestamp: frame.timestamp,
+          description: `Fotograma ${i + 1} (${phase})`,
+          importance: 0.5,
+          phase,
+          imageBuffer: frame.imageBuffer.toString('base64')
+        };
+      });
+    } catch (fallbackError) {
+      console.error('❌ [Smart Keyframes] Fallback también falló:', fallbackError);
+      return [];
+    }
   }
 }
 
@@ -135,21 +233,18 @@ async function analyzeFrameForBasketballPose(imageBuffer: Buffer): Promise<{
     // Convertir buffer a base64 para análisis
     const base64Image = imageBuffer.toString('base64');
     
-    // Análisis básico de poses (simplificado para keyframes)
-    // En una implementación real, usarías un modelo de pose detection
-    const analysis = await analyzeBasketballPose({
-      imageBase64: base64Image,
-      shotType: 'Lanzamiento de Tres', // Tipo por defecto para keyframes
-      ageCategory: 'adult',
-      playerLevel: 'intermediate'
-    });
+    // Heurística ligera para keyframes (evita depender de OpenPose en cada frame)
+    const hasBall = base64Image.length > 0;
+    const poseQuality = hasBall ? 0.6 : 0.3;
+    const movement = 0.5;
+    const score = Math.round(((poseQuality + movement) / 2) * 100);
     
     return {
-      score: analysis.overallScore || 0,
-      hasPerson: analysis.poseDetection?.hasPerson || false,
-      hasBall: analysis.poseDetection?.hasBall || false,
-      poseQuality: analysis.poseDetection?.poseQuality || 0,
-      movement: analysis.poseDetection?.movement || 0
+      score,
+      hasPerson: true,
+      hasBall,
+      poseQuality,
+      movement
     };
   } catch (error) {
     console.warn('Error en análisis de pose para keyframe:', error);

@@ -2,19 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb, adminStorage } from '@/lib/firebase-admin';
 import { extractKeyframesFromBuffer } from '@/lib/ffmpeg';
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (process.env.NODE_ENV === 'production') {
       return NextResponse.json({ error: 'No disponible en producción' }, { status: 403 });
     }
     if (!adminDb || !adminStorage) return NextResponse.json({ error: 'Admin SDK no inicializado' }, { status: 500 });
 
-    const analysisId = params.id;
+    const { id: analysisId } = await params;
     const analysisRef = adminDb.collection('analyses').doc(analysisId);
     const snap = await analysisRef.get();
     if (!snap.exists) return NextResponse.json({ error: 'analysis no encontrado' }, { status: 404 });
     const data = snap.data() as any;
     const bucket = adminStorage.bucket();
+    if (!bucket.name) {
+      return NextResponse.json({ error: 'Storage bucket no configurado' }, { status: 500 });
+    }
 
     const uploadExtracted = async (
       source: { storagePath?: string | null; httpUrl?: string | null },
@@ -46,7 +49,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           const storagePath = `keyframes/${data.playerId || 'unknown'}/${analysisId}/${kfName}`;
           await bucket.file(storagePath).save(kf.imageBuffer, { metadata: { contentType: 'image/jpeg' } });
           await bucket.file(storagePath).makePublic();
-          urls.push(`https://storage.googleapis.com/${process.env.FIREBASE_ADMIN_STORAGE_BUCKET}/${storagePath}`);
+          urls.push(`https://storage.googleapis.com/${bucket.name}/${storagePath}`);
         }
       } catch (e) {
         console.warn(`⚠️ No se pudo extraer para ${angleKey}`, e);

@@ -89,9 +89,9 @@ try {
 }
 
 // Exportar con fallbacks para evitar crashes
-export const adminAuth: AdminAuth | null = _adminAuth || null;
-export const adminDb: AdminFirestore | null = _adminDb || null;
-export const adminStorage: AdminStorage | null = _adminStorage || null;
+export const adminAuth: AdminAuth = _adminAuth as AdminAuth;
+export const adminDb: AdminFirestore = _adminDb as AdminFirestore;
+export const adminStorage: AdminStorage = _adminStorage as AdminStorage;
 export { adminApp };
 
 // Función helper para verificar si Firebase Admin está disponible

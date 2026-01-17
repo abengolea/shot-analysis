@@ -66,12 +66,13 @@ Antes de analizar, DEMUESTRA que ves el video respondiendo:
 - No es necesario analizar cada frame, solo los momentos clave del tiro
 
 🎯 SISTEMA DE PESOS ACTUALIZADO (para calcular score_global):
-- FLUIDEZ: 50% peso (CRÍTICO - más importante)
-- RESTO DE CATEGORÍAS: 26.38% peso (ALTO)
-- SET POINT: 8.27% peso (MEDIO)
-- CODO: 7.24% peso (MEDIO) 
-- MANO LIBERACIÓN: 3.26% peso (BAJO)
-- MANO ASCENSO: 2.18% peso (BAJO)
+- FLUIDEZ: 47.5% peso (CRÍTICO - más importante)
+- RESTO DE CATEGORÍAS: 25.06% peso (ALTO)
+- SET POINT: 7.86% peso (MEDIO)
+- CODO: 6.88% peso (MEDIO) 
+- ÁNGULO CODO ESTABLE: 5% peso (MEDIO)
+- MANO LIBERACIÓN: 3.10% peso (BAJO)
+- MANO ASCENSO: 2.07% peso (BAJO)
 
 🔍 REGLAS FUNDAMENTALES:
 1. Si NO puedes ver claramente un parámetro, usa "no_evaluable" en lugar de inventar un score
@@ -116,12 +117,13 @@ Checklist obligatorio (22 parámetros):
 2) ASCENSO:
    - id: "mano_no_dominante_ascenso", name: "Posición de la mano no dominante (ascenso)"
    - id: "codos_cerca_cuerpo", name: "Codos cerca del cuerpo"
+   - id: "angulo_codo_fijo_ascenso", name: "Ángulo de codo estable en ascenso"
    - id: "subida_recta_balon", name: "Subida recta del balón"
    - id: "trayectoria_hasta_set_point", name: "Trayectoria del balón hasta el set point"
    - id: "set_point", name: "Set point"
    - id: "tiempo_lanzamiento", name: "Tiempo de lanzamiento (captura → liberación)"
 
-3) FLUIDEZ (PESO: 50% - CRÍTICO):
+3) FLUIDEZ (PESO: 47.5% - CRÍTICO):
    - id: "tiro_un_solo_tiempo", name: "Tiro en un solo tiempo"
      CUENTA pausas > 0.2s, marca timestamps de inicio/fin
    - id: "sincronia_piernas", name: "Transferencia energética – sincronía con piernas"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from "next/link";
 import {
   FileText,
@@ -147,18 +147,26 @@ interface CoachPlayerProfileClientProps {
 export function CoachPlayerProfileClient({ player, analyses, evaluations, comments }: CoachPlayerProfileClientProps) {
   const { userProfile } = useAuth();
   const [timeFilter, setTimeFilter] = useState<'semanal' | 'mensual' | 'anual'>('mensual');
-  const chartData = getChartData(analyses, timeFilter);
+  const userRole = (userProfile as any)?.role;
+  const coachId = userRole === 'coach' ? userProfile?.id : null;
+  const visibleAnalyses = useMemo(() => {
+    if (userRole === 'coach') {
+      if (!coachId) return [];
+      return analyses.filter((analysis) => {
+        const access = (analysis as any)?.coachAccess;
+        return Boolean(access && access[coachId]?.status === 'paid');
+      });
+    }
+    return analyses;
+  }, [analyses, coachId, userRole]);
+  const chartData = getChartData(visibleAnalyses, timeFilter);
   const [filter, setFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("overview");
-  const latestAnalysisId = [...analyses].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]?.id;
-  
-        if (latestAnalysisId) {
-    const latestAnalysis = analyses.find(a => a.id === latestAnalysisId);
-              }
+  const latestAnalysisId = [...visibleAnalyses].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]?.id;
 
   const filteredAnalyses = filter === 'all' 
-    ? analyses 
-    : analyses.filter(a => a.shotType === filter);
+    ? visibleAnalyses 
+    : visibleAnalyses.filter(a => a.shotType === filter);
 
   // Verificar si el entrenador actual es el entrenador asignado al jugador
   const isAssignedCoach = userProfile?.role === 'coach' && userProfile.id === player.coachId;
@@ -203,10 +211,10 @@ export function CoachPlayerProfileClient({ player, analyses, evaluations, commen
         </div>
         <div className="text-right self-start sm:self-auto">
           <div className="text-xl sm:text-2xl font-bold text-primary">
-            {analyses.length > 0 
+            {visibleAnalyses.length > 0 
               ? (
                 (() => {
-                  const vals = analyses
+                  const vals = visibleAnalyses
                     .map(a => (typeof a.score === 'number' ? toPct(a.score as number) : null))
                     .filter((v): v is number => typeof v === 'number');
                   if (!vals.length) return 'N/A';
@@ -315,7 +323,7 @@ export function CoachPlayerProfileClient({ player, analyses, evaluations, commen
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Total de Análisis</span>
-                    <span className="font-semibold">{analyses.length}</span>
+                    <span className="font-semibold">{visibleAnalyses.length}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Evaluaciones</span>
@@ -350,7 +358,7 @@ export function CoachPlayerProfileClient({ player, analyses, evaluations, commen
 
         {/* Pestaña: Videos */}
         <TabsContent value="videos" className="space-y-6">
-          <PlayerVideosSection analyses={analyses} />
+          <PlayerVideosSection analyses={visibleAnalyses} />
         </TabsContent>
 
         {/* Pestaña: Evaluaciones */}
@@ -394,7 +402,7 @@ export function CoachPlayerProfileClient({ player, analyses, evaluations, commen
         {/* Pestaña: Análisis de tiro (listado) */}
         <TabsContent value="checklist" className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">Total: {analyses.length}</Badge>
+            <Badge variant="outline">Total: {visibleAnalyses.length}</Badge>
             <div className="ml-auto flex items-center gap-2">
               <select
                 value={filter}
@@ -531,12 +539,12 @@ export function CoachPlayerProfileClient({ player, analyses, evaluations, commen
                     <div>
                       <h4 className="font-semibold mb-2 text-green-600">Fortalezas Identificadas</h4>
                       {(() => {
-                        const latestAnalysis = analyses.find(a => a.id === latestAnalysisId);
+                        const latestAnalysis = visibleAnalyses.find(a => a.id === latestAnalysisId);
                         const strengths = latestAnalysis?.strengths;
                                                 return strengths && Array.isArray(strengths) && strengths.length > 0;
                       })() ? (
                         <ul className="space-y-1">
-                          {analyses.find(a => a.id === latestAnalysisId)!.strengths.map((strength, index) => (
+                          {visibleAnalyses.find(a => a.id === latestAnalysisId)!.strengths.map((strength, index) => (
                             <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
                               <div className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0" />
                               {strength}
@@ -551,12 +559,12 @@ export function CoachPlayerProfileClient({ player, analyses, evaluations, commen
                     <div>
                       <h4 className="font-semibold mb-2 text-orange-600">Áreas de Mejora</h4>
                       {(() => {
-                        const latestAnalysis = analyses.find(a => a.id === latestAnalysisId);
+                        const latestAnalysis = visibleAnalyses.find(a => a.id === latestAnalysisId);
                         const weaknesses = latestAnalysis?.weaknesses;
                                                 return weaknesses && Array.isArray(weaknesses) && weaknesses.length > 0;
                       })() ? (
                         <ul className="space-y-1">
-                          {analyses.find(a => a.id === latestAnalysisId)!.weaknesses.map((weakness, index) => (
+                          {visibleAnalyses.find(a => a.id === latestAnalysisId)!.weaknesses.map((weakness, index) => (
                             <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
                               <div className="w-1.5 h-1.5 bg-orange-600 rounded-full mt-2 flex-shrink-0" />
                               {weakness}

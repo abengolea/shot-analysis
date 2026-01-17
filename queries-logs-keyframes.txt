@@ -1,0 +1,25 @@
+QUERIAS PARA ENCONTRAR LOGS DE KEYFRAMES:
+
+1. Buscar logs de extracción de keyframes:
+textPayload=~"\[Keyframes\]" OR jsonPayload.message=~"\[Keyframes\]"
+
+2. Buscar específicamente "Iniciando extracción":
+textPayload=~"Iniciando extracción de keyframes" OR jsonPayload.message=~"Iniciando extracción"
+
+3. Buscar "Se extrajeron X keyframes":
+textPayload=~"Se extrajeron.*keyframes" OR jsonPayload.message=~"Se extrajeron.*keyframes"
+
+4. Buscar TODOS los logs relacionados con keyframes (más amplio):
+"Keyframes" OR "keyframes" OR "extractKeyframesForAI"
+
+5. Buscar en funciones de Genkit específicamente:
+resource.type="cloud_function"
+resource.labels.function_name=~"process.*"
+("Keyframes" OR "extractKeyframesForAI")
+
+6. Buscar errores relacionados con keyframes:
+severity>=ERROR
+("Keyframes" OR "keyframes" OR "extractKeyframesForAI")
+
+
+

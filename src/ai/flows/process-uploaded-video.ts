@@ -138,8 +138,9 @@ const processUploadedVideoFlow = ai.defineFlow(
     
     // Usar análisis real de frames (no solo URL)
     const contentValidation = await analyzeVideoFrames({
-      videoBuffer: videoBuffer,
-      framesPerSecond: 1
+      videoBuffer,
+      videoUrl,
+      shotType: pendingData.shotType,
     });
 
     console.log('Resultado de validación:', contentValidation);

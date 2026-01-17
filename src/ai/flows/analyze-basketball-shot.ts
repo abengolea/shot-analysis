@@ -333,7 +333,7 @@ Antes de analizar, DEMUESTRA que ves el video real respondiendo:
 6. ¿Qué elementos del entorno son visibles?
 
 ANÁLISIS TÉCNICO:
-Para CADA tiro detectado, evalúa los 21 parámetros canónicos:
+Para CADA tiro detectado, evalúa los 22 parámetros canónicos:
 
 📋 PREPARACIÓN (6 parámetros):
 1. Alineación de los pies - Posición respecto al aro
@@ -343,28 +343,29 @@ Para CADA tiro detectado, evalúa los 21 parámetros canónicos:
 5. Hombros relajados - Sin tensión excesiva
 6. Enfoque visual - Mirada fija en el aro
 
-📋 ASCENSO (6 parámetros):
+📋 ASCENSO (7 parámetros):
 7. Posición de la mano no dominante (ascenso) - Acompaña sin empujar
 8. Codos cerca del cuerpo - Alineados y cercanos al eje
-9. Subida recta del balón - Ascenso vertical y cercano
-10. Trayectoria del balón hasta el set point - Recto y cercano al eje
-11. Set point - Altura adecuada y estable
-12. Tiempo de lanzamiento - Rapidez y continuidad del gesto
+9. Ángulo de codo estable en ascenso - Mantiene ángulo fijo hasta el set point
+10. Subida recta del balón - Ascenso vertical y cercano
+11. Trayectoria del balón hasta el set point - Recto y cercano al eje
+12. Set point - Altura adecuada y estable
+13. Tiempo de lanzamiento - Rapidez y continuidad del gesto
 
 📋 FLUIDEZ (2 parámetros):
-13. Tiro en un solo tiempo - Sin detención en el set point
-14. Transferencia energética - Sincronía con piernas
+14. Tiro en un solo tiempo - Sin detención en el set point
+15. Transferencia energética - Sincronía con piernas
 
 📋 LIBERACIÓN (4 parámetros):
-15. Mano no dominante en la liberación - Se suelta antes
-16. Extensión completa del brazo - Follow-through completo
-17. Giro de la pelota - Backspin uniforme
-18. Ángulo de salida - Recomendado 45°-52°
+16. Mano no dominante en la liberación - Se suelta antes
+17. Extensión completa del brazo - Follow-through completo
+18. Giro de la pelota - Backspin uniforme
+19. Ángulo de salida - Recomendado 45°-52°
 
 📋 SEGUIMIENTO/POST-LIBERACIÓN (3 parámetros):
-19. Equilibrio general - Estabilidad y aterrizaje controlado
-20. Duración del follow-through - Mantener extensión
-21. Consistencia general - Repetibilidad del gesto
+20. Equilibrio general - Estabilidad y aterrizaje controlado
+21. Duración del follow-through - Mantener extensión
+22. Consistencia general - Repetibilidad del gesto
 
 FORMATO DE RESPUESTA:
 {
@@ -820,12 +821,13 @@ Antes de analizar, DEMUESTRA que ves el video respondiendo:
 6. ¿Qué elementos del entorno son visibles? (pared, suelo, otros objetos)
 
 🎯 SISTEMA DE PESOS ACTUALIZADO (para calcular score_global):
-- FLUIDEZ: 50% peso (CRÍTICO - más importante)
-- RESTO DE CATEGORÍAS: 26.38% peso (ALTO)
-- SET POINT: 8.27% peso (MEDIO)
-- CODO: 7.24% peso (MEDIO) 
-- MANO LIBERACIÓN: 3.26% peso (BAJO)
-- MANO ASCENSO: 2.18% peso (BAJO)`;
+- FLUIDEZ: 47.5% peso (CRÍTICO - más importante)
+- RESTO DE CATEGORÍAS: 25.06% peso (ALTO)
+- SET POINT: 7.86% peso (MEDIO)
+- CODO: 6.88% peso (MEDIO) 
+- ÁNGULO CODO ESTABLE: 5% peso (MEDIO)
+- MANO LIBERACIÓN: 3.10% peso (BAJO)
+- MANO ASCENSO: 2.07% peso (BAJO)`;
   }
 
   prompt += `
@@ -920,11 +922,14 @@ Checklist obligatorio (22 parámetros):
     prompt += sectionPrompts.ascenso;
   } else {
     prompt += `2) ASCENSO:
-   - id: "mano_no_dominante_ascenso", name: "Posición de la mano no dominante (ascenso)" - PESO: 2.18%
-   - id: "codos_cerca_cuerpo", name: "Codos cerca del cuerpo" - PESO: 7.24%
+   - id: "mano_no_dominante_ascenso", name: "Posición de la mano no dominante (ascenso)" - PESO: 2.07%
+   - id: "codos_cerca_cuerpo", name: "Codos cerca del cuerpo" - PESO: 6.88%
+   - id: "angulo_codo_fijo_ascenso", name: "Ángulo de codo estable en ascenso" - PESO: 5%
+     EVALÚA: Mantener el ángulo del codo fijo desde la toma del balón hasta el set point.
+     NOTA: En video lateral, este parámetro suele ser evaluable; solo marcar no_evaluable si el codo no se ve durante el ascenso.
    - id: "subida_recta_balon", name: "Subida recta del balón"
    - id: "trayectoria_hasta_set_point", name: "Trayectoria del balón hasta el set point"
-   - id: "set_point", name: "Set point" - PESO: 8.27%`;
+   - id: "set_point", name: "Set point" - PESO: 7.86%`;
 
     // ✨ INYECTAR GUÍA PERSONALIZADA DE SET POINT (solo si no hay prompt personalizado)
     if (config.setPointHelp) {
@@ -941,7 +946,7 @@ Checklist obligatorio (22 parámetros):
   if (sectionPrompts.fluidez) {
     prompt += sectionPrompts.fluidez;
   } else {
-    prompt += `3) FLUIDEZ (PESO: 50% - CRÍTICO):`;
+    prompt += `3) FLUIDEZ (PESO: 47.5% - CRÍTICO):`;
 
     // ✨ INYECTAR GUÍA PERSONALIZADA DE FLUIDEZ (solo si no hay prompt personalizado)
     if (config.fluidezHelp) {
@@ -971,7 +976,7 @@ Checklist obligatorio (22 parámetros):
     prompt += sectionPrompts.liberacion;
   } else {
     prompt += `4) LIBERACIÓN:
-   - id: "mano_no_dominante_liberacion", name: "Mano no dominante en la liberación" - PESO: 3.26%
+   - id: "mano_no_dominante_liberacion", name: "Mano no dominante en la liberación" - PESO: 3.10%
    - id: "extension_completa_brazo", name: "Extensión completa del brazo (follow-through)"
    - id: "giro_pelota", name: "Giro de la pelota (backspin)"
    - id: "angulo_salida", name: "Ángulo de salida"`;
@@ -1033,7 +1038,7 @@ Si un parámetro es "no_evaluable", NO lo incluyas en el cálculo.
 - parametros_evaluados: Cuenta TODOS los parámetros donde na: false Y status !== "no_evaluable"
 - parametros_no_evaluables: Cuenta TODOS los parámetros donde na: true O status === "no_evaluable"
 - lista_no_evaluables: Lista cada parámetro no evaluable con su razón específica
-- VERIFICACIÓN: parametros_evaluados + parametros_no_evaluables = 21 (total de parámetros canónicos)
+- VERIFICACIÓN: parametros_evaluados + parametros_no_evaluables = 22 (total de parámetros canónicos)
 
 🔍 VALIDACIÓN FINAL:
 Lista 3 características ÚNICAS de ESTE video:
@@ -1135,7 +1140,7 @@ Cada análisis debe ser TAN específico que SOLO aplique a ESTE video.
 2. Cuenta los que tienen na: false Y status !== "no_evaluable" → parametros_evaluados
 3. Cuenta los que tienen na: true O status === "no_evaluable" → parametros_no_evaluables
 4. Lista los no evaluables con sus razones → lista_no_evaluables
-5. VERIFICA: parametros_evaluados + parametros_no_evaluables = 21
+5. VERIFICA: parametros_evaluados + parametros_no_evaluables = 22
 
 ⚠️ CRÍTICO: NO uses valores hardcodeados como "0" o "22". 
 DEBES contar REALMENTE cada parámetro del detailedChecklist que generes.
@@ -1144,7 +1149,7 @@ Si no cuentas correctamente, el análisis será RECHAZADO.
 🎯 RECORDATORIO FINAL:
 - Si el video tiene limitaciones (pies fuera de encuadre, ángulo frontal, etc.), marca esos parámetros como "no_evaluable"
 - Es NORMAL tener 3-5 parámetros no evaluables en la mayoría de videos
-- parametros_evaluados + parametros_no_evaluables DEBE sumar exactamente 21
+- parametros_evaluados + parametros_no_evaluables DEBE sumar exactamente 22
 
 🚨 INSTRUCCIÓN CRÍTICA PARA resumen_evaluacion:
 ANTES de responder, DEBES:
@@ -1152,10 +1157,10 @@ ANTES de responder, DEBES:
 2. Contar los que tienen na: true O status === "no_evaluable" → parametros_no_evaluables
 3. Contar los que tienen na: false Y status !== "no_evaluable" → parametros_evaluados
 4. Listar los no evaluables con sus razones → lista_no_evaluables
-5. VERIFICAR: parametros_evaluados + parametros_no_evaluables = 21
+5. VERIFICAR: parametros_evaluados + parametros_no_evaluables = 22
 
 EJEMPLO DE CÁLCULO CORRECTO:
-Si tienes 21 parámetros y 2 tienen na: true o status === "no_evaluable":
+Si tienes 22 parámetros y 2 tienen na: true o status === "no_evaluable":
 - parametros_evaluados: 19
 - parametros_no_evaluables: 2
 - lista_no_evaluables: ["alineacion_pies: pies fuera de encuadre", "flexion_rodillas: ángulo frontal no muestra flexión"]

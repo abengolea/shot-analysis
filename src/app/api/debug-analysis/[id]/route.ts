@@ -3,10 +3,10 @@ import { adminDb } from '@/lib/firebase-admin';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const analysisId = params.id;
+    const { id: analysisId } = await params;
     
     console.log('🔍 Debugging analysis:', analysisId);
     
@@ -91,8 +91,7 @@ export async function GET(
     console.error('❌ Debug error:', error);
     return NextResponse.json({
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      analysisId: params.id
+      error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
 }

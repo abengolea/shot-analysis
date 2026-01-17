@@ -30,6 +30,54 @@ export interface ShotPoseSample {
   frames: FramePose[];
 }
 
+let poseDetectionModulePromise: Promise<typeof import('@tensorflow-models/pose-detection')> | null = null;
+let poseDetectorPromise: Promise<import('@tensorflow-models/pose-detection').PoseDetector> | null = null;
+let tfBackendPromise: Promise<any> | null = null;
+let warnedAboutTfjsNode = false;
+
+async function loadPoseDetectionModule() {
+  if (!poseDetectionModulePromise) {
+    poseDetectionModulePromise = import('@tensorflow-models/pose-detection');
+  }
+  return poseDetectionModulePromise;
+}
+
+async function loadTfBackend() {
+  if (!tfBackendPromise) {
+    tfBackendPromise = (async () => {
+      const tf = await import('@tensorflow/tfjs');
+      await import('@tensorflow/tfjs-backend-cpu');
+      await tf.setBackend('cpu');
+      await tf.ready();
+      if (!warnedAboutTfjsNode) {
+        warnedAboutTfjsNode = true;
+        console.warn('⚠️ Ejecutando TensorFlow.js con backend CPU puro. Instalar @tensorflow/tfjs-node permitiría aceleración nativa opcional.');
+      }
+      return tf;
+    })();
+  }
+  return tfBackendPromise;
+}
+
+async function getPoseDetector() {
+  if (!poseDetectorPromise) {
+    await loadTfBackend();
+    const poseDetection = await loadPoseDetectionModule();
+    poseDetectorPromise = poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, {
+      modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
+      enableSmoothing: false,
+    });
+  }
+  return poseDetectorPromise;
+}
+
+function clamp01(value: number) {
+  if (Number.isNaN(value)) return 0;
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
 // Mapeo de MoveNet a nuestros nombres
 const MOVENET_KEYPOINT_NAMES: KPName[] = [
   'nose','left_eye','right_eye','left_ear','right_ear',
@@ -48,39 +96,33 @@ function mapKeypoints(kps: any[]): Keypoint[] {
   }));
 }
 
+function frameNameToMs(fileName: string, index: number, fps: number) {
+  const match = fileName.match(/(\d+)/);
+  const frameIndex = match ? parseInt(match[1], 10) : index + 1;
+  return Math.round(Math.max(frameIndex - 1, 0) * 1000 / Math.max(fps, 1));
+}
+
 // Función principal para extraer poses con ARQUITECTURA OPTIMIZADA
 export async function extractPosesFromFolder(folderPath: string, fps: number = 8): Promise<ShotPoseSample> {
-    // Leer archivos de frames
   const fs = await import('fs');
   const path = await import('path');
-  
+
   const files = fs.readdirSync(folderPath)
     .filter(f => f.endsWith('.jpg'))
     .sort();
-  
+
   console.log(`📁 Encontrados ${files.length} frames para procesar`);
-  
-  try {
-    // PASO 1: Detectar ventanas de tiro con FFmpeg
-        const shotWindows = await detectShotWindows(folderPath);
-        // PASO 2: Extraer frames de alta resolución en ventanas
-    console.log('🎬 Paso 2: Extrayendo frames de alta resolución...');
-    const highResFrames = await extractHighResFrames(folderPath, shotWindows);
-        // PASO 3: Procesar con MoveNet/MediaPipe
-        const poseData = await processFramesWithPoseDetection(highResFrames, fps);
-        return {
-      videoId: path.basename(folderPath),
-      fps,
-      frames: poseData
-    };
-    
-  } catch (error) {
-    console.error('❌ Error en arquitectura optimizada:', error);
-    
-    // Fallback: usar detección básica
-    console.log('🔄 Fallback: usando detección básica...');
-    return await extractPosesBasic(folderPath, fps);
-  }
+
+  const frames = await processFramesWithPoseDetection(
+    files.map(file => ({ file, absolute: path.join(folderPath, file) })),
+    fps
+  );
+
+  return {
+    videoId: path.basename(folderPath),
+    fps,
+    frames,
+  };
 }
 
 // PASO 1: Detectar lanzamientos reales con FFmpeg
@@ -194,98 +236,87 @@ function analyzeFFmpegOutput(ffmpegOutput: string, videoPath: string): Array<{st
   return windows;
 }
 
-// PASO 2: Extraer frames de alta resolución en ventanas
-async function extractHighResFrames(folderPath: string, windows: Array<{start: number, end: number, confidence: number}>): Promise<string[]> {
-  console.log('🎬 Extrayendo frames de alta resolución en ventanas...');
-  
+// PASO 2: Procesar con pose detection (MoveNet/MediaPipe)
+async function processFramesWithPoseDetection(
+  framePaths: Array<{ file: string; absolute: string }>,
+  fps: number
+): Promise<FramePose[]> {
   const fs = await import('fs');
-  const path = await import('path');
-  const { exec } = await import('child_process');
-  const { promisify } = await import('util');
-  const execAsync = promisify(exec);
-  
-  const highResFrames: string[] = [];
-  
-  // Buscar el archivo de video procesado
-  const parentDir = path.dirname(folderPath);
-  const videoFiles = fs.readdirSync(parentDir)
-    .filter(f => f.startsWith('temp_processed_') && f.endsWith('.mp4'));
-  
-  if (videoFiles.length === 0) {
-    console.warn('⚠️ No se encontró video procesado, usando frames existentes');
-    // Usar frames existentes como fallback
-    const existingFrames = fs.readdirSync(folderPath)
-      .filter(f => f.endsWith('.jpg'))
-      .sort()
-      .map(f => path.join(folderPath, f));
-    return existingFrames;
-  }
-  
-  const videoPath = path.join(parentDir, videoFiles[0]);
-  
-  for (const window of windows) {
-    try {
-      // Extraer frames de alta resolución en esta ventana
-      const windowDir = path.join(folderPath, `window_${window.start}_${window.end}`);
-      await fs.promises.mkdir(windowDir, { recursive: true });
-      
-      // FFmpeg para extraer frames de alta resolución (12-15 FPS)
-      const extractCommand = `ffmpeg -i "${videoPath}" -ss ${window.start} -t ${window.end - window.start} -vf "fps=15,scale=1280:-1:flags=lanczos" "${windowDir}/frame_%05d.jpg" -y`;
-            await execAsync(extractCommand);
-      
-      // Leer frames extraídos
-      const frames = fs.readdirSync(windowDir)
-        .filter(f => f.endsWith('.jpg'))
-        .sort();
-      
-      highResFrames.push(...frames.map(f => path.join(windowDir, f)));
-      
-          } catch (error) {
-      console.warn(`⚠️ Error extrayendo ventana ${window.start}-${window.end}:`, error);
-    }
-  }
-  
-  // Si no se extrajeron frames, usar los existentes
-  if (highResFrames.length === 0) {
-    console.log('🔄 Usando frames existentes como fallback...');
-    const existingFrames = fs.readdirSync(folderPath)
-      .filter(f => f.endsWith('.jpg'))
-      .sort()
-      .map(f => path.join(folderPath, f));
-    return existingFrames;
-  }
-  
-    return highResFrames;
-}
+  const tf = await loadTfBackend();
+  const detector = await getPoseDetector();
 
-// PASO 3: Procesar con pose detection (MoveNet/MediaPipe)
-async function processFramesWithPoseDetection(framePaths: string[], fps: number): Promise<FramePose[]> {
-    const frames: FramePose[] = [];
-  
+  const hasNodeDecode = typeof (tf as any).node?.decodeImage === 'function';
+
+  const frames: FramePose[] = [];
+  let framesWithPose = 0;
+
   for (let i = 0; i < framePaths.length; i++) {
-    const framePath = framePaths[i];
-        try {
-      // Simular pose detection (en producción sería MoveNet/MediaPipe real)
-      const keypoints = await simulatePoseDetection(framePath);
-      
-      frames.push({
-        tMs: Math.round((i * 1000) / fps),
-        keypoints: keypoints
+    const { file, absolute } = framePaths[i];
+    let tensor: any = null;
+
+    try {
+      if (hasNodeDecode) {
+        const buffer = await fs.promises.readFile(absolute);
+        tensor = (tf as any).node.decodeImage(buffer, 3);
+      } else {
+        const { createCanvas, loadImage } = await import('canvas');
+        const img = await loadImage(absolute);
+        const canvas = createCanvas(img.width, img.height);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        tensor = tf.browser.fromPixels(canvas);
+      }
+
+      const [height, width] = tensor.shape;
+      const poses = await detector.estimatePoses(tensor, {
+        maxPoses: 1,
+        flipHorizontal: false,
       });
-      
-          } catch (error) {
-      console.warn(`⚠️ Error procesando frame ${i + 1}:`, error);
-      
-      // Fallback: usar detección básica
-      const basicKeypoints = generateBasicKeypoints();
+
+      let keypoints: Keypoint[] = [];
+      const pose = poses[0];
+      if (pose?.keypoints?.length) {
+        keypoints = pose.keypoints
+          .map((kp, idx) => {
+            const rawName = kp.name || MOVENET_KEYPOINT_NAMES[idx];
+            if (!rawName) return null;
+            const name = rawName as KPName;
+            if (!MOVENET_KEYPOINT_NAMES.includes(name)) return null;
+            const x = kp.x > 1 ? kp.x / width : kp.x;
+            const y = kp.y > 1 ? kp.y / height : kp.y;
+            return {
+              name,
+              x: clamp01(x),
+              y: clamp01(y),
+              score: kp.score ?? 0,
+            } as Keypoint;
+          })
+          .filter((kp): kp is Keypoint => kp !== null);
+
+        if (keypoints.length > 0) {
+          framesWithPose++;
+        }
+      }
+
       frames.push({
-        tMs: Math.round((i * 1000) / fps),
-        keypoints: basicKeypoints
+        tMs: frameNameToMs(file, i, fps),
+        keypoints,
       });
+    } catch (error) {
+      console.warn(`⚠️ Error procesando frame ${file}:`, (error as Error).message);
+      frames.push({
+        tMs: frameNameToMs(file, i, fps),
+        keypoints: [],
+      });
+    } finally {
+      if (tensor && typeof tensor.dispose === 'function') {
+        tensor.dispose();
+      }
     }
   }
-  
-    return frames;
+
+  console.log(`🤖 Pose detection (MoveNet Thunder): ${framesWithPose}/${framePaths.length} frames con landmarks válidos`);
+  return frames;
 }
 
 // Simular pose detection (placeholder para MoveNet/MediaPipe real)
@@ -451,61 +482,43 @@ async function analyzeFrameForBasketball(imagePath: string): Promise<{
 
 // Función para calcular ángulos biomecánicos (CÁLCULO REAL)
 export function calculateBiomechanicalAngles(frames: FramePose[]) {
-  console.log('📐 Calculando ángulos biomecánicos (CÁLCULO REAL)...');
-  
-  const angles = frames.map(frame => {
-    const kps = frame.keypoints;
-    
-    // Encontrar keypoints específicos (MediaPipe)
-    const rightShoulder = kps.find(kp => kp.name === 'right_shoulder');
-    const rightElbow = kps.find(kp => kp.name === 'right_elbow');
-    const rightWrist = kps.find(kp => kp.name === 'right_wrist');
-    const rightHip = kps.find(kp => kp.name === 'right_hip');
-    const rightKnee = kps.find(kp => kp.name === 'right_knee');
-    const rightAnkle = kps.find(kp => kp.name === 'right_ankle');
-    
-    // Calcular ángulos basados en keypoints reales con validación
-    let elbowAngle = 0;
-    let kneeAngle = 0;
-    let hipAngle = 0;
-    let wristAngle = 0;
-    
-    // Validar keypoints antes de calcular ángulos
-    if (rightShoulder && rightElbow && rightWrist && 
-        rightShoulder.score > 0.3 && rightElbow.score > 0.3 && rightWrist.score > 0.3) {
-      elbowAngle = calculateAngle(rightShoulder, rightElbow, rightWrist);
-      if (isNaN(elbowAngle) || elbowAngle < 0) elbowAngle = 0;
-    }
-    
-    if (rightHip && rightKnee && rightAnkle && 
-        rightHip.score > 0.3 && rightKnee.score > 0.3 && rightAnkle.score > 0.3) {
-      kneeAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
-      if (isNaN(kneeAngle) || kneeAngle < 0) kneeAngle = 0;
-    }
-    
-    if (rightShoulder && rightHip && rightKnee && 
-        rightShoulder.score > 0.3 && rightHip.score > 0.3 && rightKnee.score > 0.3) {
-      hipAngle = calculateAngle(rightShoulder, rightHip, rightKnee);
-      if (isNaN(hipAngle) || hipAngle < 0) hipAngle = 0;
-    }
-    
-    if (rightElbow && rightWrist && 
-        rightElbow.score > 0.3 && rightWrist.score > 0.3) {
-      // Ángulo de la muñeca basado en la dirección del movimiento
-      wristAngle = Math.atan2(rightWrist.y - rightElbow.y, rightWrist.x - rightElbow.x) * 180 / Math.PI;
-      if (isNaN(wristAngle)) wristAngle = 0;
-    }
-    
+  if (!frames || frames.length === 0) {
+    return [];
+  }
+
+  const dominantSide = determineDominantSide(frames);
+  const shoulderName: KPName = dominantSide === 'right' ? 'right_shoulder' : 'left_shoulder';
+  const elbowName: KPName = dominantSide === 'right' ? 'right_elbow' : 'left_elbow';
+  const wristName: KPName = dominantSide === 'right' ? 'right_wrist' : 'left_wrist';
+  const hipName: KPName = dominantSide === 'right' ? 'right_hip' : 'left_hip';
+  const kneeName: KPName = dominantSide === 'right' ? 'right_knee' : 'left_knee';
+  const ankleName: KPName = dominantSide === 'right' ? 'right_ankle' : 'left_ankle';
+
+  console.log(`💪 Dominant side detectado para ángulos: ${dominantSide}`);
+
+  return frames.map(frame => {
+    const shoulder = getConfidentKeypoint(frame, shoulderName);
+    const elbow = getConfidentKeypoint(frame, elbowName);
+    const wrist = getConfidentKeypoint(frame, wristName);
+    const hip = getConfidentKeypoint(frame, hipName);
+    const knee = getConfidentKeypoint(frame, kneeName);
+    const ankle = getConfidentKeypoint(frame, ankleName);
+
+    const elbowAngle = shoulder && elbow && wrist ? calculateAngle(shoulder, elbow, wrist) : 0;
+    const kneeAngle = hip && knee && ankle ? calculateAngle(hip, knee, ankle) : 0;
+    const hipAngle = shoulder && hip && knee ? calculateAngle(shoulder, hip, knee) : 0;
+    const shoulderAngle = shoulder && hip && knee ? calculateAngle(hip, shoulder, wrist ?? hip) : hipAngle;
+    const wristAngle = elbow && wrist ? calculateWristFlexion(elbow, wrist) : 0;
+
     return {
       tMs: frame.tMs,
-      elbowR: Math.round(elbowAngle * 10) / 10,
-      kneeR: Math.round(kneeAngle * 10) / 10,
-      hip: Math.round(hipAngle * 10) / 10,
-      wrist: Math.round(wristAngle * 10) / 10,
+      elbowR: round1(elbowAngle),
+      kneeR: round1(kneeAngle),
+      hip: round1(hipAngle),
+      wrist: round1(wristAngle),
+      shoulder: round1(shoulderAngle),
     };
   });
-  
-    return angles;
 }
 
 // Función auxiliar para calcular ángulo entre 3 puntos
@@ -810,4 +823,49 @@ export function detectShotPhases(angles: any[], frames: FramePose[]) {
   
   console.log('✅ Fases detectadas (REALES):', phases);
   return phases;
+}
+
+function determineDominantSide(frames: FramePose[]): 'left' | 'right' {
+  let rightScore = 0;
+  let leftScore = 0;
+  let countRight = 0;
+  let countLeft = 0;
+
+  for (const frame of frames) {
+    const rightWrist = frame.keypoints.find(k => k.name === 'right_wrist');
+    const leftWrist = frame.keypoints.find(k => k.name === 'left_wrist');
+
+    if (rightWrist?.score) {
+      rightScore += rightWrist.score;
+      countRight++;
+    }
+    if (leftWrist?.score) {
+      leftScore += leftWrist.score;
+      countLeft++;
+    }
+  }
+
+  const avgRight = countRight > 0 ? rightScore / countRight : 0;
+  const avgLeft = countLeft > 0 ? leftScore / countLeft : 0;
+
+  return avgRight >= avgLeft ? 'right' : 'left';
+}
+
+function getConfidentKeypoint(frame: FramePose, name: KPName, minScore = 0.3): Keypoint | null {
+  const kp = frame.keypoints.find(k => k.name === name);
+  if (!kp) return null;
+  if ((kp.score ?? 0) < minScore) return null;
+  return kp;
+}
+
+function calculateWristFlexion(elbow: Keypoint, wrist: Keypoint): number {
+  const dx = wrist.x - elbow.x;
+  const dy = wrist.y - elbow.y;
+  const angleRad = Math.atan2(dy, dx);
+  const angleDeg = angleRad * 180 / Math.PI;
+  return Math.abs(angleDeg);
+}
+
+function round1(value: number) {
+  return Math.round(value * 10) / 10;
 }

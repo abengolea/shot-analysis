@@ -515,7 +515,7 @@ Video proporcionado.`;
     return parsed;
   }
 
-  // PROMPT SIMPLIFICADO - Solo lo esencial para los 21 parámetros (tres puntos)
+  // PROMPT SIMPLIFICADO - Solo lo esencial para los 22 parámetros (tres puntos)
   const prompt = `Analiza este video de baloncesto y devuelve EXACTAMENTE este JSON:
 
 🚨 INSTRUCCIONES CRÍTICAS PARA TODOS LOS PARÁMETROS:
@@ -533,6 +533,7 @@ CRITERIOS ESPECÍFICOS:
 - "Hombros relajados": Busca CUALQUIER tensión en hombros
 - "Enfoque visual": Busca CUALQUIER pérdida de enfoque
 - "Codos cerca del cuerpo": Busca CUALQUIER separación excesiva
+- "Ángulo de codo estable en ascenso": En video lateral suele ser evaluable; busca cambios antes del set point
 - "Subida recta del balón": Busca CUALQUIER desviación
 - "Trayectoria hasta set point": Busca CUALQUIER trayectoria incorrecta
 - "Set point": Busca CUALQUIER posición incorrecta
@@ -612,6 +613,7 @@ REGLAS DE PUNTUACIÓN:
       {"name": "Enfoque visual", "score": 88, "status": "Excelente", "comment": "Mantiene foco constante en el aro durante todo el tiro", "evidencia": "Visible en el video"},
       {"name": "Mano no dominante en ascenso", "score": 58, "status": "Mejorable", "comment": "La mano guía interfiere ligeramente durante el ascenso", "evidencia": "Visible en el video"},
       {"name": "Codos cerca del cuerpo", "score": 52, "status": "Deficiente", "comment": "Los codos se abren excesivamente alejándose del cuerpo", "evidencia": "Visible en el video"},
+      {"name": "Ángulo de codo estable en ascenso", "score": 61, "status": "Mejorable", "comment": "El ángulo del codo varía antes del set point", "evidencia": "Visible en el video"},
       {"name": "Subida recta del balón", "score": 64, "status": "Mejorable", "comment": "El balón sube en trayectoria mayormente recta", "evidencia": "Visible en el video"},
       {"name": "Trayectoria hasta set point", "score": 84, "status": "Excelente", "comment": "Trayectoria fluida y controlada hasta el set point", "evidencia": "Visible en el video"},
       {"name": "Set point", "score": 69, "status": "Mejorable", "comment": "El set point está ligeramente bajo para la distancia", "evidencia": "Visible en el video"},
@@ -649,7 +651,7 @@ REGLAS DE PUNTUACIÓN:
 }
 
 IMPORTANTE - SISTEMA DE PUNTUACIÓN:
-- Devuelve EXACTAMENTE 21 parámetros en technicalAnalysis.parameters
+- Devuelve EXACTAMENTE 22 parámetros en technicalAnalysis.parameters
 - **CRÍTICO: USA EXACTAMENTE ESTOS NOMBRES DE PARÁMETROS:**
   * "Equilibrio general" (NO uses "Mantenimiento del equilibrio" ni "Equilibrio en el aterrizaje")
   * "Duración del follow-through" (con guión, NO "Duración del follow through")

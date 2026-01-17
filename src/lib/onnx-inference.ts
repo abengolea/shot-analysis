@@ -2,15 +2,21 @@ import * as path from "path";
 
 // Lazy import to avoid bundling issues when not present in environment
 let ort: any = null;
-try {
-	// eslint-disable-next-line @typescript-eslint/no-var-requires
-	ort = require("onnxruntime-node");
-	console.log('✅ ONNX Runtime disponible');
-} catch (e) {
-	// Module not available, use fallback
-	console.warn('⚠️ ONNX Runtime no disponible, usando heurística:', e.message);
-	ort = null;
-}
+const loadOrt = () => {
+	if (ort) return ort;
+	try {
+		// Usar require dinámico para evitar resolución en build
+		// eslint-disable-next-line @typescript-eslint/no-implied-eval
+		const req = eval("require") as NodeRequire;
+		ort = req("onnxruntime-node");
+		console.log('✅ ONNX Runtime disponible');
+	} catch (e) {
+		const message = e instanceof Error ? e.message : String(e);
+		console.warn('⚠️ ONNX Runtime no disponible, usando heurística:', message);
+		ort = null;
+	}
+	return ort;
+};
 
 export type AnalyzeResult = {
 	labels: string[];
@@ -22,12 +28,13 @@ export async function runModelOrHeuristic(
 	frames: Array<{ index: number; time_sec: number; keypoints: Array<{ name: string; x: number; y: number; v?: number }> }>,
 	modelPath?: string
 ): Promise<AnalyzeResult> {
-	if (!modelPath || !ort) {
+	const ortInstance = loadOrt();
+	if (!modelPath || !ortInstance) {
 		return heuristic(frames);
 	}
 
 	try {
-		const session = await ort.InferenceSession.create(modelPath);
+		const session = await ortInstance.InferenceSession.create(modelPath);
 		// Build input tensor [1, T, 33, 3]
 		const T = frames.length;
 		const J = 33;

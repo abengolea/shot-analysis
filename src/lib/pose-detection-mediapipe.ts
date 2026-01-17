@@ -8,7 +8,8 @@ try {
   FilesetResolver = mediapipe.FilesetResolver;
   console.log('✅ MediaPipe disponible');
 } catch (e) {
-  console.warn('⚠️ MediaPipe no disponible, usando fallback:', e.message);
+  const message = e instanceof Error ? e.message : String(e);
+  console.warn('⚠️ MediaPipe no disponible, usando fallback:', message);
 }
 
 // Tipos para keypoints

@@ -14,6 +14,7 @@ import {
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import type { Player, Coach } from '@/lib/types';
+import { calculateAgeCategoryFromDob, calculateAgeGroupFromDob } from '@/lib/utils';
 
 interface AuthContextType {
   user: User | null;
@@ -32,6 +33,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<Player | Coach | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const toDateOrNull = (value: any): Date | null => {
+    try {
+      if (!value) return null;
+      if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+      if (typeof value === 'string') {
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+      if (value && typeof value.toDate === 'function') {
+        const d = value.toDate();
+        return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -62,18 +81,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (coachSnap.exists()) {
               const data = coachSnap.data() as any;
               selected = { id: user.uid, ...(data as any) } as Coach;
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('preferredRole', 'coach');
+              }
               // Guardar preferencia de entrenador cuando está viendo perfiles de jugadores
               if (isCoachViewingPlayer && typeof window !== 'undefined') {
                 localStorage.setItem('preferredRole', 'coach');
               }
             } else if (playerSnap.exists()) {
               const data = playerSnap.data() as any;
-              selected = { id: user.uid, ...(data as any) } as Player;
+              const dob = toDateOrNull(data?.dob);
+              const derivedPublicCategory = dob ? calculateAgeCategoryFromDob(dob) : undefined;
+              const derivedAgeGroup = dob ? calculateAgeGroupFromDob(dob) : undefined;
+              const updates: any = {};
+              if (derivedPublicCategory && data?.publicCategory !== derivedPublicCategory) {
+                updates.publicCategory = derivedPublicCategory;
+              }
+              if (derivedAgeGroup && data?.ageGroup !== derivedAgeGroup) {
+                updates.ageGroup = derivedAgeGroup;
+              }
+              if (Object.keys(updates).length > 0) {
+                updates.updatedAt = new Date();
+                await setDoc(doc(db, 'players', user.uid), updates, { merge: true });
+                selected = { id: user.uid, ...(data as any), ...updates } as Player;
+              } else {
+                selected = { id: user.uid, ...(data as any) } as Player;
+              }
             }
           } else {
             if (playerSnap.exists()) {
               const data = playerSnap.data() as any;
-              selected = { id: user.uid, ...(data as any) } as Player;
+              const dob = toDateOrNull(data?.dob);
+              const derivedPublicCategory = dob ? calculateAgeCategoryFromDob(dob) : undefined;
+              const derivedAgeGroup = dob ? calculateAgeGroupFromDob(dob) : undefined;
+              const updates: any = {};
+              if (derivedPublicCategory && data?.publicCategory !== derivedPublicCategory) {
+                updates.publicCategory = derivedPublicCategory;
+              }
+              if (derivedAgeGroup && data?.ageGroup !== derivedAgeGroup) {
+                updates.ageGroup = derivedAgeGroup;
+              }
+              if (Object.keys(updates).length > 0) {
+                updates.updatedAt = new Date();
+                await setDoc(doc(db, 'players', user.uid), updates, { merge: true });
+                selected = { id: user.uid, ...(data as any), ...updates } as Player;
+              } else {
+                selected = { id: user.uid, ...(data as any) } as Player;
+              }
             } else if (coachSnap.exists()) {
               const data = coachSnap.data() as any;
               selected = { id: user.uid, ...(data as any) } as Coach;
@@ -278,7 +332,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Determinar la colección basada en el rol del usuario actual
       const collection = userProfile?.role === 'coach' ? 'coaches' : 'players';
-      await setDoc(doc(db, collection, user.uid), data, { merge: true });
+      const mergedData = { ...data } as any;
+      if (collection === 'players') {
+        const dob = toDateOrNull((data as any)?.dob ?? (userProfile as any)?.dob);
+        if (dob) {
+          const derivedPublicCategory = calculateAgeCategoryFromDob(dob);
+          const derivedAgeGroup = calculateAgeGroupFromDob(dob);
+          if (derivedPublicCategory) mergedData.publicCategory = derivedPublicCategory;
+          if (derivedAgeGroup) mergedData.ageGroup = derivedAgeGroup;
+        }
+      }
+      await setDoc(doc(db, collection, user.uid), mergedData, { merge: true });
       
       // Recargar el perfil del usuario
       if (userProfile) {

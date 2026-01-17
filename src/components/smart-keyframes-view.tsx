@@ -350,7 +350,6 @@ export function SmartKeyframesView({ analysisId, userId }: SmartKeyframesViewPro
                           <div className="flex justify-between items-center">
                             <span>{frame.timestamp.toFixed(1)}s</span>
                             <Badge 
-                              size="sm" 
                               className={`text-xs ${
                                 frame.importance >= 0.8 ? 'bg-green-500' :
                                 frame.importance >= 0.6 ? 'bg-yellow-500' :

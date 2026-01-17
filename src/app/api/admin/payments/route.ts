@@ -69,9 +69,101 @@ export async function GET(req: NextRequest) {
         updatedAt: serializeDate(data?.updatedAt),
       };
     });
+
+    const extractPaymentMethod = (data: any): string | undefined => {
+      const raw = data?.raw;
+      return (
+        data?.paymentMethod ||
+        raw?.payment_method_id ||
+        raw?.payment_method?.id ||
+        raw?.payment_method ||
+        raw?.payment?.method ||
+        raw?.payment?.method_id ||
+        raw?.payment_method_type ||
+        raw?.payment_method_type_id ||
+        raw?.metadata?.paymentMethod ||
+        undefined
+      );
+    };
+
+    const extractMpIds = (data: any): { mpPaymentId?: string; mpPreferenceId?: string } => {
+      const raw = data?.raw;
+      const mpPaymentId =
+        raw?.id ||
+        raw?.payment?.id ||
+        raw?.payment_id ||
+        raw?.paymentId ||
+        data?.providerPaymentId ||
+        undefined;
+      const mpPreferenceId =
+        raw?.preference_id ||
+        raw?.preferenceId ||
+        raw?.metadata?.preferenceId ||
+        data?.preferenceId ||
+        undefined;
+      return {
+        mpPaymentId: mpPaymentId ? String(mpPaymentId) : undefined,
+        mpPreferenceId: mpPreferenceId ? String(mpPreferenceId) : undefined,
+      };
+    };
+
+    const userIds = Array.from(new Set(items.map((i: any) => i.userId).filter(Boolean)));
+    const coachIds = Array.from(
+      new Set(
+        items
+          .map((i: any) => i.coachId || i?.raw?.metadata?.coachId)
+          .filter(Boolean)
+      )
+    );
+
+    const fetchDocs = async (refs: FirebaseFirestore.DocumentReference[]) => {
+      if (!refs.length) return [] as FirebaseFirestore.DocumentSnapshot[];
+      return adminDb.getAll(...refs);
+    };
+
+    const playerRefs = userIds.map((id) => adminDb.collection('players').doc(id));
+    const coachRefs = Array.from(new Set([...userIds, ...coachIds])).map((id) =>
+      adminDb.collection('coaches').doc(id)
+    );
+
+    const [playerSnaps, coachSnaps] = await Promise.all([
+      fetchDocs(playerRefs),
+      fetchDocs(coachRefs),
+    ]);
+
+    const playerMap = new Map<string, any>();
+    playerSnaps.forEach((snap) => {
+      if (snap.exists) playerMap.set(snap.id, snap.data());
+    });
+
+    const coachMap = new Map<string, any>();
+    coachSnaps.forEach((snap) => {
+      if (snap.exists) coachMap.set(snap.id, snap.data());
+    });
+
+    const enriched = items.map((item: any) => {
+      const userName =
+        playerMap.get(item.userId)?.name ||
+        coachMap.get(item.userId)?.name ||
+        item?.raw?.metadata?.playerName ||
+        item?.raw?.metadata?.userName;
+      const resolvedCoachId = item.coachId || item?.raw?.metadata?.coachId;
+      const coachName =
+        (resolvedCoachId ? coachMap.get(resolvedCoachId)?.name : undefined) ||
+        item?.raw?.metadata?.coachName;
+      const mpIds = item.provider === 'mercadopago' ? extractMpIds(item) : {};
+      return {
+        ...item,
+        userName: userName || undefined,
+        coachId: resolvedCoachId || item.coachId,
+        coachName: coachName || undefined,
+        paymentMethod: extractPaymentMethod(item),
+        ...mpIds,
+      };
+    });
     const lastDoc = snap.docs[snap.docs.length - 1];
     const nextCursor = lastDoc ? lastDoc.id : undefined;
-    return NextResponse.json({ items, nextCursor });
+    return NextResponse.json({ items: enriched, nextCursor });
   } catch (e: any) {
     console.error('admin payments list error', e);
     return NextResponse.json({ error: e?.message || 'Error' }, { status: 500 });

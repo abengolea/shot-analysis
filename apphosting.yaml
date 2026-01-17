@@ -45,6 +45,7 @@ env:
 # Declaración explícita del backend de App Hosting
 backends:
   - id: shot-analysis
+  - id: shot-analysis-1
     region: us-central1
 
 # Defines a "flow" that can be deployed to Cloud Functions.

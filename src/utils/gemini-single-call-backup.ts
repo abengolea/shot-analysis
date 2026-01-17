@@ -97,12 +97,13 @@ Combina todos los tiros de todas las sesiones para los 22 parámetros completos.
 IMPORTANTE: DEBES incluir EXACTAMENTE 22 parámetros en technicalAnalysis.parameters
 
 🎯 SISTEMA DE PESOS ACTUALIZADO (para calcular score_global):
-- FLUIDEZ: 50% peso (CRÍTICO - más importante)
-- RESTO DE CATEGORÍAS: 26.38% peso (ALTO)
-- SET POINT: 8.27% peso (MEDIO)
-- CODO: 7.24% peso (MEDIO) 
-- MANO LIBERACIÓN: 3.26% peso (BAJO)
-- MANO ASCENSO: 2.18% peso (BAJO)
+- FLUIDEZ: 47.5% peso (CRÍTICO - más importante)
+- RESTO DE CATEGORÍAS: 25.06% peso (ALTO)
+- SET POINT: 7.86% peso (MEDIO)
+- CODO: 6.88% peso (MEDIO) 
+- ÁNGULO CODO ESTABLE: 5% peso (MEDIO)
+- MANO LIBERACIÓN: 3.10% peso (BAJO)
+- MANO ASCENSO: 2.07% peso (BAJO)
 
 🔍 REGLAS FUNDAMENTALES:
 1. Si NO puedes ver claramente un parámetro, usa "no_evaluable" en lugar de inventar un score
@@ -149,21 +150,22 @@ Checklist obligatorio (22 parámetros):
      Si no ves ojos/cara → na: true, razon: "rostro no visible/muy lejos"
 
 2) ASCENSO:
-   - id: "mano_no_dominante_ascenso", name: "Posición de la mano no dominante (ascenso)" - PESO: 2.18%
-   - id: "codos_cerca_cuerpo", name: "Codos cerca del cuerpo" - PESO: 7.24%
+   - id: "mano_no_dominante_ascenso", name: "Posición de la mano no dominante (ascenso)" - PESO: 2.07%
+   - id: "codos_cerca_cuerpo", name: "Codos cerca del cuerpo" - PESO: 6.88%
+   - id: "angulo_codo_fijo_ascenso", name: "Ángulo de codo estable en ascenso" - PESO: 5%
    - id: "subida_recta_balon", name: "Subida recta del balón"
    - id: "trayectoria_hasta_set_point", name: "Trayectoria del balón hasta el set point"
-   - id: "set_point", name: "Set point" - PESO: 8.27%
+   - id: "set_point", name: "Set point" - PESO: 7.86%
    - id: "tiempo_lanzamiento", name: "Tiempo de lanzamiento (captura → liberación)"
 
-3) FLUIDEZ (PESO: 50% - CRÍTICO):
+3) FLUIDEZ (PESO: 47.5% - CRÍTICO):
    - id: "tiro_un_solo_tiempo", name: "Tiro en un solo tiempo"
      CUENTA pausas > 0.2s, marca observaciones de inicio/fin
    - id: "sincronia_piernas", name: "Transferencia energética – sincronía con piernas"
      COMPARA extensión de piernas vs brazos
 
 4) LIBERACIÓN:
-   - id: "mano_no_dominante_liberacion", name: "Mano no dominante en la liberación" - PESO: 3.26%
+   - id: "mano_no_dominante_liberacion", name: "Mano no dominante en la liberación" - PESO: 3.10%
    - id: "extension_completa_brazo", name: "Extensión completa del brazo (follow-through)"
    - id: "giro_pelota", name: "Giro de la pelota (backspin)"
    - id: "angulo_salida", name: "Ángulo de salida"
@@ -313,12 +315,13 @@ VERIFICACIÓN ESTRICTA - Analiza este video de baloncesto y evalúa los 22 pará
 IMPORTANTE: DEBES incluir EXACTAMENTE 22 parámetros en technicalAnalysis.parameters
 
 🎯 SISTEMA DE PESOS ACTUALIZADO (para calcular score_global):
-- FLUIDEZ: 50% peso (CRÍTICO - más importante)
-- RESTO DE CATEGORÍAS: 26.38% peso (ALTO)
-- SET POINT: 8.27% peso (MEDIO)
-- CODO: 7.24% peso (MEDIO) 
-- MANO LIBERACIÓN: 3.26% peso (BAJO)
-- MANO ASCENSO: 2.18% peso (BAJO)
+- FLUIDEZ: 47.5% peso (CRÍTICO - más importante)
+- RESTO DE CATEGORÍAS: 25.06% peso (ALTO)
+- SET POINT: 7.86% peso (MEDIO)
+- CODO: 6.88% peso (MEDIO)
+- ÁNGULO CODO ESTABLE: 5% peso (MEDIO)
+- MANO LIBERACIÓN: 3.10% peso (BAJO)
+- MANO ASCENSO: 2.07% peso (BAJO)
 
 🔍 REGLAS FUNDAMENTALES:
 1. Si NO puedes ver claramente un parámetro, usa "no_evaluable" en lugar de inventar un score
@@ -365,21 +368,22 @@ Checklist obligatorio (22 parámetros):
      Si no ves ojos/cara → na: true, razon: "rostro no visible/muy lejos"
 
 2) ASCENSO:
-   - id: "mano_no_dominante_ascenso", name: "Posición de la mano no dominante (ascenso)" - PESO: 2.18%
-   - id: "codos_cerca_cuerpo", name: "Codos cerca del cuerpo" - PESO: 7.24%
+   - id: "mano_no_dominante_ascenso", name: "Posición de la mano no dominante (ascenso)" - PESO: 2.07%
+   - id: "codos_cerca_cuerpo", name: "Codos cerca del cuerpo" - PESO: 6.88%
+   - id: "angulo_codo_fijo_ascenso", name: "Ángulo de codo estable en ascenso" - PESO: 5%
    - id: "subida_recta_balon", name: "Subida recta del balón"
    - id: "trayectoria_hasta_set_point", name: "Trayectoria del balón hasta el set point"
-   - id: "set_point", name: "Set point" - PESO: 8.27%
+   - id: "set_point", name: "Set point" - PESO: 7.86%
    - id: "tiempo_lanzamiento", name: "Tiempo de lanzamiento (captura → liberación)"
 
-3) FLUIDEZ (PESO: 50% - CRÍTICO):
+3) FLUIDEZ (PESO: 47.5% - CRÍTICO):
    - id: "tiro_un_solo_tiempo", name: "Tiro en un solo tiempo"
      CUENTA pausas > 0.2s, marca observaciones de inicio/fin
    - id: "sincronia_piernas", name: "Transferencia energética – sincronía con piernas"
      COMPARA extensión de piernas vs brazos
 
 4) LIBERACIÓN:
-   - id: "mano_no_dominante_liberacion", name: "Mano no dominante en la liberación" - PESO: 3.26%
+   - id: "mano_no_dominante_liberacion", name: "Mano no dominante en la liberación" - PESO: 3.10%
    - id: "extension_completa_brazo", name: "Extensión completa del brazo (follow-through)"
    - id: "giro_pelota", name: "Giro de la pelota (backspin)"
    - id: "angulo_salida", name: "Ángulo de salida"

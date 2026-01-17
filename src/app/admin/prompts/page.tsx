@@ -151,12 +151,13 @@ Antes de analizar, DEMUESTRA que ves el video respondiendo:
 6. ¿Qué elementos del entorno son visibles?
 
 🎯 SISTEMA DE PESOS:
-- FLUIDEZ: 50% peso (CRÍTICO)
-- RESTO DE CATEGORÍAS: 26.38% peso (ALTO)
-- SET POINT: 8.27% peso (MEDIO)
-- CODO: 7.24% peso (MEDIO) 
-- MANO LIBERACIÓN: 3.26% peso (BAJO)
-- MANO ASCENSO: 2.18% peso (BAJO)`,
+- FLUIDEZ: 47.5% peso (CRÍTICO)
+- RESTO DE CATEGORÍAS: 25.06% peso (ALTO)
+- SET POINT: 7.86% peso (MEDIO)
+- CODO: 6.88% peso (MEDIO)
+- ÁNGULO CODO ESTABLE: 5% peso (MEDIO)
+- MANO LIBERACIÓN: 3.10% peso (BAJO)
+- MANO ASCENSO: 2.07% peso (BAJO)`,
 
     preparacion: `1) PREPARACIÓN:
    - id: "alineacion_pies", name: "Alineación de los pies"
@@ -173,21 +174,23 @@ Antes de analizar, DEMUESTRA que ves el video respondiendo:
      Si no ves ojos/cara → na: true, razon: "rostro no visible/muy lejos"`,
 
     ascenso: `2) ASCENSO:
-   - id: "mano_no_dominante_ascenso", name: "Posición de la mano no dominante (ascenso)" - PESO: 2.18%
-   - id: "codos_cerca_cuerpo", name: "Codos cerca del cuerpo" - PESO: 7.24%
+   - id: "mano_no_dominante_ascenso", name: "Posición de la mano no dominante (ascenso)" - PESO: 2.07%
+   - id: "codos_cerca_cuerpo", name: "Codos cerca del cuerpo" - PESO: 6.88%
+   - id: "angulo_codo_fijo_ascenso", name: "Ángulo de codo estable en ascenso" - PESO: 5%
+     EVALÚA: Mantener el ángulo del codo fijo desde la toma del balón hasta el set point.
    - id: "subida_recta_balon", name: "Subida recta del balón"
    - id: "trayectoria_hasta_set_point", name: "Trayectoria del balón hasta el set point"
-   - id: "set_point", name: "Set point" - PESO: 8.27%
+   - id: "set_point", name: "Set point" - PESO: 7.86%
    - id: "tiempo_lanzamiento", name: "Tiempo de lanzamiento (captura → liberación)"`,
 
-    fluidez: `3) FLUIDEZ (PESO: 50% - CRÍTICO):
+    fluidez: `3) FLUIDEZ (PESO: 47.5% - CRÍTICO):
    - id: "tiro_un_solo_tiempo", name: "Tiro en un solo tiempo"
      CUENTA pausas > 0.2s, marca timestamps de inicio/fin
    - id: "sincronia_piernas", name: "Transferencia energética – sincronía con piernas"
      COMPARA timestamps de extensión de piernas vs brazos`,
 
     liberacion: `4) LIBERACIÓN:
-   - id: "mano_no_dominante_liberacion", name: "Mano no dominante en la liberación" - PESO: 3.26%
+   - id: "mano_no_dominante_liberacion", name: "Mano no dominante en la liberación" - PESO: 3.10%
    - id: "extension_completa_brazo", name: "Extensión completa del brazo (follow-through)"
    - id: "giro_pelota", name: "Giro de la pelota (backspin)"
    - id: "angulo_salida", name: "Ángulo de salida"`,
@@ -597,11 +600,11 @@ ${sections.formatoRespuesta}`;
                     <div className="flex items-center justify-between">
                       <CardTitle className="flex items-center gap-2">
                         <ChevronUp className="w-5 h-5 text-orange-600" />
-                        Ascenso (6 parámetros)
+                        Ascenso (7 parámetros)
                       </CardTitle>
                       {data.sectionPrompts?.ascenso && <Badge>Personalizado</Badge>}
                     </div>
-                    <CardDescription>Mano no dominante, codos, subida balón, trayectoria, set point, tiempo</CardDescription>
+                    <CardDescription>Mano no dominante, codos, ángulo estable, subida balón, trayectoria, set point, tiempo</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="text-xs text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 p-3 rounded">
@@ -628,7 +631,7 @@ ${sections.formatoRespuesta}`;
                     <div className="flex items-center justify-between">
                       <CardTitle className="flex items-center gap-2">
                         <Zap className="w-5 h-5 text-yellow-600" />
-                        Fluidez (2 parámetros) - PESO 50%
+                        Fluidez (2 parámetros) - PESO 47.5%
                       </CardTitle>
                       {data.sectionPrompts?.fluidez && <Badge className="bg-yellow-500">Personalizado</Badge>}
                     </div>
@@ -759,7 +762,7 @@ ${sections.formatoRespuesta}`;
                   <div className="flex items-center gap-3">
                     <FileText className="w-5 h-5 text-blue-600" />
                     <CardTitle>Introducción Personalizada</CardTitle>
-                    {data.intro?.trim() && <Badge variant="success" className="ml-2">Configurado</Badge>}
+                    {data.intro?.trim() && <Badge variant="default" className="ml-2">Configurado</Badge>}
                   </div>
                   {expandedSections.intro ? <ChevronUp /> : <ChevronDown />}
                 </div>
@@ -793,12 +796,12 @@ ${sections.formatoRespuesta}`;
                   <div className="flex items-center gap-3">
                     <Zap className="w-5 h-5 text-yellow-600" />
                     <CardTitle>Guía sobre Fluidez</CardTitle>
-                    {data.fluidezHelp?.trim() && <Badge variant="success" className="ml-2">Configurado</Badge>}
+                    {data.fluidezHelp?.trim() && <Badge variant="default" className="ml-2">Configurado</Badge>}
                   </div>
                   {expandedSections.fluidez ? <ChevronUp /> : <ChevronDown />}
                 </div>
                 <CardDescription>
-                  Instrucciones específicas para evaluar la fluidez del movimiento (Peso: 50%)
+                  Instrucciones específicas para evaluar la fluidez del movimiento (Peso: 47.5%)
                 </CardDescription>
               </CardHeader>
               {expandedSections.fluidez && (
@@ -807,7 +810,7 @@ ${sections.formatoRespuesta}`;
                     <div className="flex items-start gap-2">
                       <Zap className="w-4 h-4 text-yellow-600 mt-0.5" />
                       <span className="text-xs text-yellow-800 dark:text-yellow-200">
-                        <strong>Peso Crítico:</strong> La fluidez representa el 50% del score total. Las instrucciones aquí son cruciales.
+                        <strong>Peso Crítico:</strong> La fluidez representa el 47.5% del score total. Las instrucciones aquí son cruciales.
                       </span>
                     </div>
                   </div>
@@ -831,12 +834,12 @@ ${sections.formatoRespuesta}`;
                   <div className="flex items-center gap-3">
                     <Target className="w-5 h-5 text-red-600" />
                     <CardTitle>Guía sobre Set Point</CardTitle>
-                    {data.setPointHelp?.trim() && <Badge variant="success" className="ml-2">Configurado</Badge>}
+                    {data.setPointHelp?.trim() && <Badge variant="default" className="ml-2">Configurado</Badge>}
                   </div>
                   {expandedSections.setPoint ? <ChevronUp /> : <ChevronDown />}
                 </div>
                 <CardDescription>
-                  Instrucciones específicas para evaluar el set point (Peso: 8.27%)
+                  Instrucciones específicas para evaluar el set point (Peso: 7.86%)
                 </CardDescription>
               </CardHeader>
               {expandedSections.setPoint && (
@@ -1099,8 +1102,8 @@ ${sections.formatoRespuesta}`;
               </CardHeader>
               <CardContent className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
                 <p><strong>💡 Tip:</strong> Las configuraciones se aplican automáticamente a los nuevos análisis.</p>
-                <p><strong>⚡ Fluidez:</strong> Es el parámetro más importante (50% del score).</p>
-                <p><strong>🎯 Set Point:</strong> Afecta 8.27% del score total.</p>
+                <p><strong>⚡ Fluidez:</strong> Es el parámetro más importante (47.5% del score).</p>
+                <p><strong>🎯 Set Point:</strong> Afecta 7.86% del score total.</p>
               </CardContent>
             </Card>
           </div>

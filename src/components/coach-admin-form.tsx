@@ -36,6 +36,7 @@ function SubmitButton() {
 
 export function CoachAdminForm() {
   const [state, formAction] = useActionState(adminCreateCoach as any, { success: false, message: "" } as any);
+  const [sendState, sendAction] = useActionState(adminSendPasswordReset as any, { success: false, message: "" } as any);
   const { toast } = useToast();
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -52,6 +53,16 @@ export function CoachAdminForm() {
     }
   }, [state, toast]);
 
+  useEffect(() => {
+    if (sendState.message) {
+      toast({
+        title: sendState.success ? "Email enviado" : "No se pudo enviar",
+        description: sendState.message,
+        variant: sendState.success ? "default" : "destructive",
+      });
+    }
+  }, [sendState, toast]);
+
   return (
     <Card>
       <CardHeader>
@@ -60,7 +71,7 @@ export function CoachAdminForm() {
           Completa el formulario para añadir un nuevo entrenador a la plataforma.
         </CardDescription>
       </CardHeader>
-      <form ref={formRef} action={formAction} encType="multipart/form-data">
+      <form ref={formRef} action={formAction}>
         <CardContent className="grid gap-4">
           <div className="space-y-2">
             <Label htmlFor="name">Nombre Completo</Label>
@@ -93,10 +104,18 @@ export function CoachAdminForm() {
         <CardContent>
           <div className="mt-2 grid gap-2">
             <div className="text-sm text-muted-foreground">Entrenador creado: {(state as any).userId}</div>
-            <form action={adminSendPasswordReset as any} className="flex items-center gap-2">
+            <form action={sendAction} className="flex items-center gap-2">
               <input type="hidden" name="userId" value={(state as any).userId} />
               <Button type="submit" size="sm" variant="outline">Enviar link para establecer contraseña</Button>
             </form>
+            {sendState.link && (
+              <div className="text-xs text-muted-foreground break-all">
+                Link de contraseña:{" "}
+                <a href={sendState.link} target="_blank" rel="noreferrer" className="underline text-primary">
+                  {sendState.link}
+                </a>
+              </div>
+            )}
           </div>
         </CardContent>
       )}
