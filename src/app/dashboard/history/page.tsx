@@ -79,17 +79,11 @@ export default function HistoryPage() {
     if (user?.uid) run();
   }, [user?.uid]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
-  }
-  if (!user || !userProfile) {
-    router.push('/login');
-    return null;
-  }
+  useEffect(() => {
+    if (!loading && (!user || !userProfile)) {
+      router.push('/login');
+    }
+  }, [loading, user, userProfile, router]);
 
   const shotTypeMap: Record<string, string> = {
     three: 'Lanzamiento de Tres',
@@ -161,6 +155,17 @@ export default function HistoryPage() {
       setSelectedCategory(categoryLines.categories[0] || "");
     }
   }, [categoryLines.categories, selectedCategory]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+  if (!user || !userProfile) {
+    return null;
+  }
 
   return (
     <div className="flex flex-col gap-8">

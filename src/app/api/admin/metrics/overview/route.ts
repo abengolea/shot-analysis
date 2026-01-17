@@ -37,10 +37,8 @@ export async function GET(req: NextRequest) {
     // Helpers para count() con fallback
     const countCollection = async (name: string): Promise<number> => {
       try {
-        // @ts-ignore - compat con versiones que soportan aggregate count()
         const agg = await (adminDb.collection(name) as any).count().get();
         // Firestore Admin devuelve data().count
-        // @ts-ignore
         const v = agg.data().count as number | undefined;
         if (typeof v === 'number') return v;
       } catch {}

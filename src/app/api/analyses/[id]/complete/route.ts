@@ -19,7 +19,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const snap = await ref.get();
     if (!snap.exists) return NextResponse.json({ error: 'Análisis no encontrado' }, { status: 404 });
     const data = snap.data() as any;
-    const isAdmin = (() => decoded?.claims?.admin === true) as boolean;
+    const isAdmin = decoded?.claims?.admin === true;
     const isCoach = data?.coachId && String(data.coachId) === String(uid);
     if (!isCoach && !isAdmin) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 });

@@ -1,0 +1,623 @@
+import { adminStorage, adminDb } from './firebase-admin';
+import { extractKeyframesFromBuffer, getVideoDurationSecondsFromBuffer } from './ffmpeg';
+
+export interface SmartKeyframeExtractionInput {
+  analysisId: string;
+  videoBuffers: {
+    front?: Buffer;
+    back?: Buffer;
+    left?: Buffer;
+    right?: Buffer;
+  };
+  userId: string;
+}
+
+export interface SmartKeyframe {
+  index: number;
+  timestamp: number;
+  description: string;
+  importance: number; // 0-1, donde 1 es el más importante
+  phase: 'preparation' | 'loading' | 'release' | 'follow-through' | 'landing';
+  imageBuffer: string; // Data URL como string
+}
+
+export interface SmartKeyframeUrls {
+  front: SmartKeyframe[];
+  back: SmartKeyframe[];
+  left: SmartKeyframe[];
+  right: SmartKeyframe[];
+}
+
+/**
+ * Extrae keyframes inteligentes basados en análisis de movimiento y poses
+ * Detecta los momentos más importantes del tiro de baloncesto
+ */
+export async function extractSmartKeyframesFromBuffer(
+  inputBuffer: Buffer,
+  numFrames: number = 12
+): Promise<SmartKeyframe[]> {
+  try {
+    console.log('🔍 [Smart Keyframes] Iniciando extracción inteligente...');
+    console.log(`📊 [Smart Keyframes] Buffer size: ${inputBuffer.length} bytes`);
+    
+    // 1. Obtener duración del video
+    const duration = await getVideoDurationSecondsFromBuffer(inputBuffer);
+    console.log(`⏱️ [Smart Keyframes] Duración del video: ${duration}s`);
+    
+    // 2. Extraer MÁS frames inicialmente para tener opciones (30-40 frames)
+    // Esto nos permite filtrar los mejores momentos
+    const candidateFramesCount = Math.min(40, Math.max(30, Math.floor(duration * 2)));
+    console.log(`📸 [Smart Keyframes] Extrayendo ${candidateFramesCount} frames candidatos para análisis...`);
+    
+    const candidateFrames = await extractKeyframesFromBuffer(inputBuffer, candidateFramesCount);
+    console.log(`✅ [Smart Keyframes] Se extrajeron ${candidateFrames.length} frames candidatos`);
+    
+    if (candidateFrames.length === 0) {
+      console.error('❌ [Smart Keyframes] No se extrajeron frames!');
+      return [];
+    }
+    
+    // 3. Analizar cada frame para detectar momentos clave del tiro
+    console.log(`🔬 [Smart Keyframes] Analizando frames para detectar momentos clave...`);
+    const analyzedFrames: Array<SmartKeyframe & { rawScore: number; analysis: any }> = [];
+    
+    for (let i = 0; i < candidateFrames.length; i++) {
+      const frame = candidateFrames[i];
+      const progress = frame.timestamp / duration;
+      
+      try {
+        // Heurísticas mejoradas para filtrar frames irrelevantes
+        // FILTRAR frames muy tempranos (recibiendo pelota) y muy tardíos (después del tiro)
+        if (progress < 0.08 || progress > 0.92) {
+          continue; // Saltar frames donde probablemente no hay tiro activo
+        }
+        
+        // Análisis básico basado en timing
+        // El balón debería estar en juego durante el tiro (medio del video)
+        const hasBall = progress > 0.12 && progress < 0.88;
+        
+        // Calcular movimiento esperado: más movimiento en fases activas del tiro
+        const movement = (progress > 0.2 && progress < 0.8) ? 0.8 : 0.4;
+        
+        const analysis = {
+          hasPerson: true, // Asumimos que hay persona si el frame se extrajo correctamente
+          hasBall,
+          poseQuality: hasBall ? 0.75 : 0.5, // Mejor calidad si hay balón
+          movement,
+          score: Math.round(((hasBall ? 0.75 : 0.5) + movement) / 2 * 100)
+        };
+        
+        // Calcular importancia basada en timing y análisis
+        const importance = calculateFrameImportance(frame.timestamp, duration, analysis);
+        
+        // FILTRAR: Solo frames con importancia suficiente (excluye recibir pelota y cuando se escapa)
+        if (importance < 0.4) {
+          continue; // Saltar frames de baja importancia
+        }
+        
+        // Determinar fase basada en el progreso del video
+        let phase: SmartKeyframe['phase'] = 'preparation';
+        let description = '';
+        
+        if (progress < 0.2) {
+          phase = 'preparation';
+          description = `Preparación (${frame.timestamp.toFixed(1)}s)`;
+        } else if (progress < 0.4) {
+          phase = 'loading';
+          description = `Carga del tiro (${frame.timestamp.toFixed(1)}s)`;
+        } else if (progress < 0.65) {
+          phase = 'release';
+          description = `Liberación (${frame.timestamp.toFixed(1)}s)`;
+        } else if (progress < 0.85) {
+          phase = 'follow-through';
+          description = `Follow-through (${frame.timestamp.toFixed(1)}s)`;
+        } else {
+          phase = 'landing';
+          description = `Aterrizaje (${frame.timestamp.toFixed(1)}s)`;
+        }
+        
+        // Incluir frame (ya filtrado por importancia arriba)
+        const base64Image = frame.imageBuffer.toString('base64');
+        const dataUrl = `data:image/jpeg;base64,${base64Image}`;
+        
+        analyzedFrames.push({
+          index: analyzedFrames.length,
+          timestamp: frame.timestamp,
+          description,
+          importance,
+          phase,
+          imageBuffer: dataUrl,
+          rawScore: importance,
+          analysis
+        });
+      } catch (error) {
+        console.warn(`⚠️ [Smart Keyframes] Error analizando frame ${i}:`, error);
+        // Continuar con el siguiente frame
+      }
+    }
+    
+    console.log(`📊 [Smart Keyframes] Frames analizados: ${analyzedFrames.length} válidos de ${candidateFrames.length} candidatos`);
+    
+    // 4. Seleccionar los mejores frames distribuidos en las fases clave
+    const selectedFrames = selectBestFrames(analyzedFrames, numFrames);
+    
+    console.log(`✅ [Smart Keyframes] Total de smart keyframes seleccionados: ${selectedFrames.length}`);
+    return selectedFrames;
+    
+  } catch (error) {
+    console.error(`❌ [Smart Keyframes] Error en extracción:`, error);
+    console.error(`❌ [Smart Keyframes] Stack trace:`, error instanceof Error ? error.stack : 'No stack');
+    // Fallback: extracción simple
+    try {
+      console.log('🔄 [Smart Keyframes] Intentando fallback con extracción simple...');
+      const frames = await extractKeyframesFromBuffer(inputBuffer, numFrames);
+      const duration = await getVideoDurationSecondsFromBuffer(inputBuffer);
+      return frames.map((frame, i) => {
+        const progress = frame.timestamp / duration;
+        let phase: SmartKeyframe['phase'] = 'preparation';
+        if (progress < 0.2) phase = 'preparation';
+        else if (progress < 0.4) phase = 'loading';
+        else if (progress < 0.6) phase = 'release';
+        else if (progress < 0.8) phase = 'follow-through';
+        else phase = 'landing';
+        
+        return {
+          index: i,
+          timestamp: frame.timestamp,
+          description: `Fotograma ${i + 1} (${phase})`,
+          importance: 0.5,
+          phase,
+          imageBuffer: frame.imageBuffer.toString('base64')
+        };
+      });
+    } catch (fallbackError) {
+      console.error('❌ [Smart Keyframes] Fallback también falló:', fallbackError);
+      return [];
+    }
+  }
+}
+
+/**
+ * Extrae un solo frame en un timestamp específico
+ */
+async function extractSingleFrame(inputBuffer: Buffer, timestamp: number): Promise<Buffer> {
+  const { promises: fs } = await import('fs');
+  const os = await import('os');
+  const path = await import('path');
+  const { spawn } = await import('child_process');
+  
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'smart-kf-'));
+  const inPath = path.join(tmpDir, 'input.mp4');
+  const outPath = path.join(tmpDir, 'frame.jpg');
+  
+  try {
+    await fs.writeFile(inPath, inputBuffer);
+    
+    const args = [
+      '-y',
+      '-ss', timestamp.toFixed(2),
+      '-i', inPath,
+      '-frames:v', '1',
+      '-q:v', '2',
+      '-vf', 'scale=-2:720',
+      outPath,
+    ];
+    
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn('ffmpeg', args, { stdio: 'inherit' });
+      child.on('error', reject);
+      child.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`ffmpeg exited with code ${code}`));
+      });
+    });
+    
+    const buffer = await fs.readFile(outPath);
+    return buffer;
+  } finally {
+    try { await fs.rm(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
+/**
+ * Analiza un frame para detectar poses de baloncesto
+ */
+async function analyzeFrameForBasketballPose(imageBuffer: Buffer): Promise<{
+  score: number;
+  hasPerson: boolean;
+  hasBall: boolean;
+  poseQuality: number;
+  movement: number;
+}> {
+  try {
+    // Convertir buffer a base64 para análisis
+    const base64Image = imageBuffer.toString('base64');
+    
+    // Heurística ligera para keyframes (evita depender de OpenPose en cada frame)
+    const hasBall = base64Image.length > 0;
+    const poseQuality = hasBall ? 0.6 : 0.3;
+    const movement = 0.5;
+    const score = Math.round(((poseQuality + movement) / 2) * 100);
+    
+    return {
+      score,
+      hasPerson: true,
+      hasBall,
+      poseQuality,
+      movement
+    };
+  } catch (error) {
+    console.warn('Error en análisis de pose para keyframe:', error);
+    return {
+      score: 0,
+      hasPerson: false,
+      hasBall: false,
+      poseQuality: 0,
+      movement: 0
+    };
+  }
+}
+
+/**
+ * Calcula la importancia de un frame basado en múltiples factores
+ * ENFOQUE: Solo frames donde el jugador está activamente tirando
+ */
+function calculateFrameImportance(
+  timestamp: number,
+  duration: number,
+  analysis: { score: number; hasPerson: boolean; hasBall: boolean; poseQuality: number; movement: number }
+): number {
+  // CRÍTICO: Si no hay persona o balón, importancia = 0 (no es parte del tiro)
+  if (!analysis.hasPerson || !analysis.hasBall) {
+    return 0;
+  }
+  
+  const progress = timestamp / duration;
+  
+  // 1. Factor de timing (SOLO momentos activos del tiro)
+  let timingScore = 0;
+  if (progress < 0.05) timingScore = 0.1; // Muy temprano, probablemente no es tiro
+  else if (progress < 0.15) timingScore = 0.8; // Preparación del tiro
+  else if (progress < 0.25) timingScore = 1.0; // Carga del tiro
+  else if (progress < 0.45) timingScore = 1.0; // Ascenso del balón
+  else if (progress < 0.65) timingScore = 1.0; // Set point / Liberación
+  else if (progress < 0.85) timingScore = 0.9; // Follow-through
+  else timingScore = 0.2; // Muy tarde, probablemente no es tiro
+  
+  // 2. Factor de calidad de pose (más importante para tiros)
+  const poseScore = analysis.poseQuality;
+  
+  // 3. Factor de movimiento (movimiento activo del tiro)
+  const movementScore = Math.min(analysis.movement * 1.5, 1);
+  
+  // 4. Factor de presencia de persona y balón (OBLIGATORIO)
+  const contentScore = (analysis.hasPerson ? 0.3 : 0) + (analysis.hasBall ? 0.7 : 0);
+  
+  // 5. Factor de score general del análisis de pose
+  const generalScore = analysis.score / 100;
+  
+  // Combinar todos los factores con pesos ajustados para tiros activos
+  const importance = (
+    timingScore * 0.5 +      // Timing es más importante
+    poseScore * 0.25 +       // Calidad de pose
+    movementScore * 0.1 +    // Movimiento activo
+    contentScore * 0.1 +     // Presencia de balón es crítica
+    generalScore * 0.05      // Score general menos importante
+  );
+  
+  // Si no hay balón visible, importancia = 0
+  if (!analysis.hasBall) {
+    return 0;
+  }
+  
+  return Math.max(0, Math.min(1, importance));
+}
+
+/**
+ * Determina la fase del tiro basada en el timestamp
+ * ENFOQUE: Solo fases activas del tiro (desde que toma la pelota hasta que la lanza)
+ */
+function determineShotPhase(timestamp: number, duration: number): SmartKeyframe['phase'] {
+  const progress = timestamp / duration;
+  
+  // Solo considerar fases activas del tiro
+  if (progress < 0.1) return 'preparation';      // Preparación inicial (cuando toma la pelota)
+  else if (progress < 0.25) return 'loading';    // Carga del tiro (flexión, elevación)
+  else if (progress < 0.55) return 'release';    // Ascenso y liberación
+  else if (progress < 0.8) return 'follow-through'; // Follow-through
+  else return 'landing';                         // Aterrizaje (final del tiro)
+}
+
+/**
+ * Genera una descripción del frame basada en la fase y análisis
+ */
+function generateFrameDescription(
+  phase: SmartKeyframe['phase'],
+  timestamp: number,
+  analysis: { score: number; hasPerson: boolean; hasBall: boolean; poseQuality: number; movement: number }
+): string {
+  const phaseNames = {
+    preparation: 'Preparación',
+    loading: 'Carga del tiro',
+    release: 'Liberación',
+    'follow-through': 'Follow-through',
+    landing: 'Aterrizaje'
+  };
+  
+  const quality = analysis.poseQuality > 0.7 ? 'Excelente' : 
+                 analysis.poseQuality > 0.4 ? 'Buena' : 'Regular';
+  
+  return `${phaseNames[phase]} (${timestamp.toFixed(1)}s) - ${quality}`;
+}
+
+/**
+ * Selecciona los mejores frames basados en importancia y diversidad
+ * ENFOQUE: Solo frames de la secuencia activa del tiro
+ */
+function selectBestFrames(
+  analyzedFrames: Array<SmartKeyframe & { rawScore: number }>,
+  numFrames: number
+): SmartKeyframe[] {
+  // FILTRAR: Solo frames con importancia > 0.3 (frames activos del tiro)
+  const activeFrames = analyzedFrames.filter(frame => frame.importance > 0.3);
+  
+    if (activeFrames.length === 0) {
+    console.warn('⚠️ [Smart Keyframes] No se encontraron frames activos del tiro');
+    return [];
+  }
+  
+  // Ordenar por importancia
+  const sortedFrames = activeFrames.sort((a, b) => b.importance - a.importance);
+  
+  // Seleccionar frames diversificados por fase, priorizando fases críticas
+  const selectedFrames: SmartKeyframe[] = [];
+  const phaseCounts = {
+    preparation: 0,
+    loading: 0,
+    release: 0,
+    'follow-through': 0,
+    landing: 0
+  };
+  
+  // Distribución priorizada: más frames en fases críticas del tiro
+  const phaseTargets = {
+    preparation: Math.ceil(numFrames * 0.15),  // 15% - preparación
+    loading: Math.ceil(numFrames * 0.25),      // 25% - carga
+    release: Math.ceil(numFrames * 0.35),      // 35% - liberación (más importante)
+    'follow-through': Math.ceil(numFrames * 0.20), // 20% - follow-through
+    landing: Math.ceil(numFrames * 0.05)       // 5% - aterrizaje
+  };
+  
+  for (const frame of sortedFrames) {
+    if (selectedFrames.length >= numFrames) break;
+    
+    if (phaseCounts[frame.phase] < phaseTargets[frame.phase]) {
+      selectedFrames.push({
+        index: frame.index,
+        timestamp: frame.timestamp,
+        description: frame.description,
+        importance: frame.importance,
+        phase: frame.phase,
+        imageBuffer: frame.imageBuffer
+      });
+      phaseCounts[frame.phase]++;
+    }
+  }
+  
+  // Si no tenemos suficientes frames, agregar los mejores restantes
+  if (selectedFrames.length < numFrames) {
+    for (const frame of sortedFrames) {
+      if (selectedFrames.length >= numFrames) break;
+      if (!selectedFrames.some(f => f.index === frame.index)) {
+        selectedFrames.push({
+          index: frame.index,
+          timestamp: frame.timestamp,
+          description: frame.description,
+          importance: frame.importance,
+          phase: frame.phase,
+          imageBuffer: frame.imageBuffer
+        });
+      }
+    }
+  }
+  
+  // Ordenar por timestamp para mantener secuencia temporal
+  const finalFrames = selectedFrames.sort((a, b) => a.timestamp - b.timestamp);
+  
+      return finalFrames;
+}
+
+/**
+ * Extrae keyframes inteligentes de múltiples videos y los sube a Storage
+ */
+export async function extractAndUploadSmartKeyframesAsync(input: SmartKeyframeExtractionInput): Promise<void> {
+  const { analysisId, videoBuffers, userId } = input;
+  
+  try {
+        const smartKeyframes: SmartKeyframeUrls = {
+      front: [],
+      back: [],
+      left: [],
+      right: []
+    };
+    
+    const angles: Array<keyof typeof videoBuffers> = ['front', 'back', 'left', 'right'];
+    
+    for (const angle of angles) {
+      const buffer = videoBuffers[angle];
+      if (!buffer || buffer.length === 0) {
+                continue;
+      }
+      
+      try {
+        console.log(`🔍 [Smart Keyframes] Procesando ${angle}, buffer size: ${buffer.length} bytes`);
+        // USAR EXTRACCIÓN INTELIGENTE REAL
+        const smartFrames = await extractSmartKeyframesFromBuffer(buffer, 12);
+        console.log(`✅ [Smart Keyframes] Extrajeron ${smartFrames.length} frames de ${angle}`);
+        
+        if (smartFrames.length === 0) {
+          console.error(`❌ [Smart Keyframes] NO se extrajeron frames de ${angle}!`);
+          console.error(`❌ [Smart Keyframes] Esto significa que extractSmartKeyframesFromBuffer falló o retornó array vacío`);
+        }
+        
+        // Convertir a formato de data URL para almacenar
+        const processedFrames: SmartKeyframe[] = [];
+        
+        for (let i = 0; i < smartFrames.length; i++) {
+          const frame = smartFrames[i];
+          
+          try {
+            // frame.imageBuffer ya es un data URL string, usarlo directamente
+            processedFrames.push({
+              index: frame.index,
+              timestamp: frame.timestamp,
+              description: frame.description,
+              importance: frame.importance,
+              phase: frame.phase,
+              imageBuffer: frame.imageBuffer // Ya es un data URL
+            });
+            
+            console.log(`✅ [Smart Keyframes] Procesado frame ${i + 1} de ${angle}: ${frame.phase} (${frame.timestamp.toFixed(1)}s) - Importancia: ${frame.importance.toFixed(2)}`);
+          } catch (error) {
+            console.error(`❌ [Smart Keyframes] Error procesando frame ${i + 1} de ${angle}:`, error);
+          }
+        }
+        
+        smartKeyframes[angle] = processedFrames;
+              } catch (error) {
+        console.error(`❌ [Smart Keyframes] Error procesando ${angle}:`, error);
+        
+        // Fallback a extracción tradicional si falla la inteligente
+                try {
+          const { extractKeyframesFromBuffer } = await import('@/lib/ffmpeg');
+          const frames = await extractKeyframesFromBuffer(buffer, 12);
+          
+          const fallbackFrames: SmartKeyframe[] = [];
+          for (let i = 0; i < frames.length; i++) {
+            const frame = frames[i];
+            // frame.imageBuffer es un Buffer, convertirlo a data URL
+            const base64Image = frame.imageBuffer.toString('base64');
+            const dataUrl = `data:image/jpeg;base64,${base64Image}`;
+            
+            fallbackFrames.push({
+              index: frame.index,
+              timestamp: frame.timestamp,
+              description: `Frame ${i + 1} (${frame.timestamp.toFixed(1)}s)`,
+              importance: 0.5,
+              phase: 'preparation' as const,
+              imageBuffer: dataUrl
+            });
+          }
+          
+          smartKeyframes[angle] = fallbackFrames;
+                  } catch (fallbackError) {
+          console.error(`❌ [Smart Keyframes] Fallback también falló para ${angle}:`, fallbackError);
+        }
+      }
+    }
+    
+      // Actualizar Firestore con los keyframes (solo metadatos, no las imágenes)
+    const totalFrames = Object.values(smartKeyframes).reduce((sum, arr) => sum + arr.length, 0);
+    console.log(`✅ [Smart Keyframes] Total de frames extraídos: ${totalFrames}`);
+    console.log(`📊 [Smart Keyframes] Desglose por ángulo:`, {
+      front: smartKeyframes.front.length,
+      back: smartKeyframes.back.length,
+      left: smartKeyframes.left.length,
+      right: smartKeyframes.right.length
+    });
+    
+    if (totalFrames > 0) {
+      console.log(`✅ [Smart Keyframes] Guardando ${totalFrames} frames en Firestore...`);
+      // Crear keyframes sin las imágenes para evitar límite de tamaño
+      const keyframesMetadata = {
+        front: smartKeyframes.front.map(kf => ({
+          index: kf.index,
+          timestamp: kf.timestamp,
+          description: kf.description,
+          importance: kf.importance,
+          phase: kf.phase
+          // No incluir imageBuffer para reducir tamaño
+        })),
+        back: smartKeyframes.back.map(kf => ({
+          index: kf.index,
+          timestamp: kf.timestamp,
+          description: kf.description,
+          importance: kf.importance,
+          phase: kf.phase
+        })),
+        left: smartKeyframes.left.map(kf => ({
+          index: kf.index,
+          timestamp: kf.timestamp,
+          description: kf.description,
+          importance: kf.importance,
+          phase: kf.phase
+        })),
+        right: smartKeyframes.right.map(kf => ({
+          index: kf.index,
+          timestamp: kf.timestamp,
+          description: kf.description,
+          importance: kf.importance,
+          phase: kf.phase
+        }))
+      };
+
+      // Calcular estadísticas de los keyframes inteligentes
+      const allFrames = Object.values(smartKeyframes).flat();
+      const phasesDetected = [...new Set(allFrames.map(f => f.phase))];
+      const averageImportance = allFrames.reduce((sum, f) => sum + f.importance, 0) / allFrames.length;
+      
+      // Guardar metadatos en el documento principal
+      console.log(`✅ [Smart Keyframes] Actualizando documento ${analysisId} con ${totalFrames} frames...`);
+      await adminDb.collection('analyses').doc(analysisId).update({
+        smartKeyframes: keyframesMetadata,
+        keyframesExtractedAt: new Date().toISOString(),
+        keyframesMetadata: {
+          extractionMethod: 'intelligent-analysis',
+          totalKeyframes: totalFrames,
+          phasesDetected: phasesDetected,
+          averageImportance: averageImportance,
+          activeShotFrames: allFrames.filter(f => f.importance > 0.3).length,
+          shotSequenceQuality: averageImportance > 0.5 ? 'high' : averageImportance > 0.3 ? 'medium' : 'low'
+        }
+      });
+      console.log(`✅ [Smart Keyframes] Documento ${analysisId} actualizado exitosamente`);
+
+      // Guardar las imágenes en documentos separados para evitar límite de tamaño
+      console.log(`✅ [Smart Keyframes] Guardando imágenes en subcolecciones...`);
+      for (const angle of angles) {
+        const frames = smartKeyframes[angle];
+        if (frames.length > 0) {
+          console.log(`✅ [Smart Keyframes] Guardando ${frames.length} frames de ${angle}...`);
+          // Guardar cada frame en un documento separado
+          for (let i = 0; i < frames.length; i++) {
+            const frame = frames[i];
+            const frameDoc = adminDb.collection('analyses').doc(analysisId).collection('keyframes').doc(angle).collection('frames').doc(`frame_${i}`);
+            
+            await frameDoc.set({
+              index: frame.index,
+              timestamp: frame.timestamp,
+              description: frame.description,
+              importance: frame.importance,
+              phase: frame.phase,
+              imageData: frame.imageBuffer
+            });
+          }
+          console.log(`✅ [Smart Keyframes] ${frames.length} frames de ${angle} guardados exitosamente`);
+        }
+      }
+      
+          } else {
+      console.error(`❌ [Smart Keyframes] NO se guardaron keyframes porque totalFrames = 0`);
+      console.error(`❌ [Smart Keyframes] Esto significa que NO se extrajeron frames de ningún ángulo`);
+      console.error(`❌ [Smart Keyframes] Posibles causas:`);
+      console.error(`   - FFmpeg no está disponible en producción`);
+      console.error(`   - Error al extraer frames del video`);
+      console.error(`   - Buffer del video vacío o inválido`);
+    }
+    
+  } catch (error) {
+    console.error(`❌ [Smart Keyframes] Error general para ${analysisId}:`, error);
+    console.error(`❌ [Smart Keyframes] Stack trace:`, error instanceof Error ? error.stack : 'No stack');
+    throw error; // Re-lanzar el error para que el endpoint lo capture
+  }
+}

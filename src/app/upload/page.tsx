@@ -50,14 +50,17 @@ interface VideoFrame {
 let _ffmpeg: any | null = null;
 async function getFfmpegInstance() {
   if (_ffmpeg) return _ffmpeg;
-  const { createFFmpeg } = await import('@ffmpeg/ffmpeg');
-  const ffmpeg = createFFmpeg({
-    log: false,
-    corePath: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.js',
+  const { FFmpeg } = await import('@ffmpeg/ffmpeg');
+  const ffmpeg = new FFmpeg();
+  await ffmpeg.load({
+    coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
   });
-  await ffmpeg.load();
   _ffmpeg = ffmpeg;
   return ffmpeg;
+}
+
+async function fileToUint8Array(file: File): Promise<Uint8Array> {
+  return new Uint8Array(await file.arrayBuffer());
 }
 
 function SubmitButton({ analyzing }: { analyzing: boolean }) {
@@ -189,13 +192,18 @@ export default function UploadPage() {
         setCompressing(true);
         setCompressionProgress((p) => ({ ...p, [label]: 0 }));
         const ffmpeg = await getFfmpegInstance();
-        try { ffmpeg.setProgress(({ ratio }: any) => { setCompressionProgress((p) => ({ ...p, [label]: Math.min(99, Math.round((ratio || 0) * 100)) })); }); } catch {}
+        const onProgress = ({ progress }: { progress: number }) => {
+          setCompressionProgress((p) => ({
+            ...p,
+            [label]: Math.min(99, Math.round((progress || 0) * 100)),
+          }));
+        };
+        try { ffmpeg.on('progress', onProgress); } catch {}
         const inName = `${label}_in.mp4`;
         const outName = `${label}_out.mp4`;
-        const { fetchFile } = await import('@ffmpeg/ffmpeg');
-        ffmpeg.FS('writeFile', inName, await fetchFile(file));
+        await ffmpeg.writeFile(inName, await fileToUint8Array(file));
         try {
-          await ffmpeg.run(
+          await ffmpeg.exec([
             '-y',
             '-i', inName,
             '-vf', 'scale=-2:720,fps=24',
@@ -205,18 +213,20 @@ export default function UploadPage() {
             '-c:a', 'aac',
             '-b:a', '96k',
             '-movflags', '+faststart',
-            outName
-          );
+            outName,
+          ]);
         } catch (e) {
           console.warn('[ffmpeg] Falla al usar libx264; devolviendo original.', e);
-          try { ffmpeg.FS('unlink', inName); } catch {}
+          try { await ffmpeg.deleteFile(inName); } catch {}
+          try { ffmpeg.off('progress', onProgress); } catch {}
           return file;
         }
-        const data = ffmpeg.FS('readFile', outName);
-        const blob = new Blob([data.buffer], { type: 'video/mp4' });
+        const data = await ffmpeg.readFile(outName) as Uint8Array;
+        const blob = new Blob([data as unknown as BlobPart], { type: 'video/mp4' });
         const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '') + '-compressed.mp4', { type: 'video/mp4' });
-        try { ffmpeg.FS('unlink', inName); } catch {}
-        try { ffmpeg.FS('unlink', outName); } catch {}
+        try { await ffmpeg.deleteFile(inName); } catch {}
+        try { await ffmpeg.deleteFile(outName); } catch {}
+        try { ffmpeg.off('progress', onProgress); } catch {}
         setCompressionProgress((p) => ({ ...p, [label]: 100 }));
         return compressed.size > 0 ? compressed : file;
       } catch (e) {
