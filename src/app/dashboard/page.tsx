@@ -34,7 +34,15 @@ function FormattedDate({ dateString }: { dateString: string }) {
     const [formattedDate, setFormattedDate] = useState('');
 
     useEffect(() => {
-        setFormattedDate(new Date(dateString).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric'}));
+        setFormattedDate(
+          new Date(dateString).toLocaleString('es-ES', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        );
     }, [dateString]);
 
     return <>{formattedDate || '...'}</>;
@@ -385,6 +393,11 @@ export default function DashboardPage() {
                         <FormattedDate dateString={analysis.createdAt} />
                         {getStatusBadge(analysis.status)}
                       </div>
+                      {analysis.status === 'analyzed' && analysis.coachCompleted && (
+                        <div className="mt-1 text-xs text-blue-700">
+                          Revisado por entrenador.
+                        </div>
+                      )}
                       {analysis.status === 'analyzed' && coachFeedbackByAnalysis[analysis.id] && (
                         <div className="mt-1 text-xs text-green-700">
                           Feedback del entrenador disponible si tu entrenador lo agregó.

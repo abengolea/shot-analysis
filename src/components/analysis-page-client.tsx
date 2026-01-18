@@ -47,7 +47,15 @@ export function AnalysisPageClient({ id }: { id: string }) {
 
   useEffect(() => {
     if (analysis) {
-      setFormattedDate(new Date(analysis.createdAt).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric'}));
+      setFormattedDate(
+        new Date(analysis.createdAt).toLocaleString('es-ES', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      );
     }
   }, [analysis]);
 
