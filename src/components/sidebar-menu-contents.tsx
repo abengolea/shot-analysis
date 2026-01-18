@@ -134,18 +134,6 @@ export function SidebarMenuContents() {
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          asChild
-          isActive={isActive("/rankings")}
-          tooltip="Rankings"
-        >
-          <Link href="/rankings">
-            <Trophy />
-            Rankings
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
       {hasCoachProfile && (
         <SidebarMenuItem>
           <SidebarMenuButton asChild isActive={false} tooltip="Cambiar a Entrenador">

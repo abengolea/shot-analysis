@@ -73,9 +73,14 @@ export default function CoachesPage() {
     return [...new Set(allSpecialties)];
   }, [coaches]);
 
+  const availableCoachesCount = useMemo(() => {
+    return coaches.filter(coach => coach.status !== 'suspended').length;
+  }, [coaches]);
+
   // Búsqueda básica y ordenamiento (sin filtrar por precio/rating)
   const filteredCoaches = useMemo(() => {
     let filtered = coaches.filter(coach => {
+      if (coach.status === 'suspended') return false;
       const matchesSearch = coach.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         coach.bio?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         coach.specialties?.some(s => s.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -186,7 +191,7 @@ export default function CoachesPage() {
 
         {/* Results Count */}
         <div className="text-sm text-muted-foreground">
-          Mostrando {filteredCoaches.length} de {coaches.length} entrenadores
+          Mostrando {filteredCoaches.length} de {availableCoachesCount} entrenadores
         </div>
       </div>
 

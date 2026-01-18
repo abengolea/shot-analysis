@@ -681,6 +681,26 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   // (ya calculados arriba) checklistStrengths, checklistWeaknesses, checklistRecommendations
 
+  const hasCoachFeedback = useMemo(() => {
+    const hasItems = Object.values(coachFeedbackByItemId).some((v) =>
+      (typeof v?.rating === 'number') || (String(v?.comment || '').trim() !== '')
+    );
+    const hasSummary = String(coachSummary || '').trim().length > 0;
+    return hasItems || hasSummary;
+  }, [coachFeedbackByItemId, coachSummary]);
+
+  const coachFeedbackItemsByCategory = useMemo(() => {
+    return checklistState
+      .map((cat) => {
+        const items = cat.items.filter((it) => {
+          const cf = coachFeedbackByItemId[it.id];
+          return Boolean(cf && (typeof cf.rating === 'number' || String(cf.comment || '').trim() !== ''));
+        });
+        return { category: cat.category, items };
+      })
+      .filter((cat) => cat.items.length > 0);
+  }, [checklistState, coachFeedbackByItemId]);
+
   // Resumen dinámico de revisión del entrenador
   const coachReviewSummary = useMemo(() => {
     const items = checklistState.flatMap((c) => c.items.map((it) => ({ id: it.id, name: it.name, ia: it.rating })));
@@ -1214,6 +1234,54 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 </div>
               </CardContent>
             </Card>
+          ) : hasCoachFeedback ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                  <ListChecks /> Checklist del Entrenador
+                </CardTitle>
+                <CardDescription>Devolución realizada por tu entrenador.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {coachFeedbackItemsByCategory.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">
+                    No hay calificaciones por ítem, pero el entrenador dejó un comentario global.
+                  </div>
+                ) : (
+                  coachFeedbackItemsByCategory.map((cat) => (
+                    <div key={`cc-player-${cat.category}`} className="space-y-2">
+                      <div className="text-sm font-semibold">{cat.category}</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {cat.items.map((it) => {
+                          const cf = coachFeedbackByItemId[it.id];
+                          if (!cf) return null;
+                          return (
+                            <div key={`cc-player-item-${it.id}`} className="rounded border p-3 text-sm">
+                              <div className="font-medium mb-1">{it.name}</div>
+                              {typeof cf.rating === 'number' && (
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge>Coach {cf.rating}</Badge>
+                                  <span className="text-muted-foreground">IA {it.rating}</span>
+                                </div>
+                              )}
+                              {cf.comment && (
+                                <div className="text-muted-foreground whitespace-pre-line">{cf.comment}</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div className="space-y-2">
+                  <div className="text-sm font-semibold">Comentario global</div>
+                  <div className="text-sm text-muted-foreground whitespace-pre-line">
+                    {coachSummary || 'Sin comentario global'}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           ) : (
             <Card>
               <CardHeader>
@@ -1316,14 +1384,18 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             <CardContent>
               <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-muted p-8 text-center">
                 <FilePenLine className="h-12 w-12 text-muted-foreground" />
-                <h3 className="font-semibold">Coordina una sesión de mejora técnica</h3>
+                <h3 className="font-semibold">
+                  {hasCoachFeedback ? '¿Querés otra mirada?' : 'Coordina una sesión de mejora técnica'}
+                </h3>
                 <p className="text-sm text-muted-foreground max-w-prose">
-                  Un entrenador revisará tu análisis, definirá objetivos específicos y te guiará en ejercicios correctivos. Puedes contactar a un entrenador desde el siguiente enlace.
+                  {hasCoachFeedback
+                    ? 'Si ya recibiste devolución, podés pedir una segunda opinión o un plan complementario con otro entrenador de la lista.'
+                    : 'Un entrenador revisará tu análisis, definirá objetivos específicos y te guiará en ejercicios correctivos. Puedes contactar a un entrenador desde el siguiente enlace.'}
                 </p>
                 <Button asChild>
                   <a href="/coaches">
                     <ShieldAlert className="mr-2 h-4 w-4" />
-                    Buscar Entrenador
+                    {hasCoachFeedback ? 'Buscar otro entrenador' : 'Buscar Entrenador'}
                   </a>
                 </Button>
               </div>

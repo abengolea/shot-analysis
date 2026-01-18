@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/hooks/use-auth";
 
 type PublicCategory = 'U11' | 'U13' | 'U15' | 'U17' | 'U21' | 'Mayores';
 
@@ -24,6 +26,9 @@ type PublicPlayer = {
 const categories: PublicCategory[] = ['U11', 'U13', 'U15', 'U17', 'U21', 'Mayores'];
 
 export default function RankingsPage() {
+  const { userProfile, loading: authLoading } = useAuth();
+  const router = useRouter();
+  const role = (userProfile as any)?.role;
   const [category, setCategory] = useState<PublicCategory>('U15');
   const [shotType, setShotType] = useState<'libre' | 'media' | 'tres'>('tres');
   const [general, setGeneral] = useState<PublicPlayer[]>([]);
@@ -31,6 +36,15 @@ export default function RankingsPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (authLoading) return;
+    if (role !== 'admin') {
+      const target = role === 'coach' ? '/coach/dashboard' : '/dashboard';
+      router.replace(target);
+    }
+  }, [authLoading, role, router]);
+
+  useEffect(() => {
+    if (authLoading || role !== 'admin') return;
     const fetchData = async () => {
       setLoading(true);
       try {
@@ -48,7 +62,11 @@ export default function RankingsPage() {
       }
     };
     fetchData();
-  }, [category, shotType]);
+  }, [authLoading, role, category, shotType]);
+
+  if (authLoading || role !== 'admin') {
+    return null;
+  }
 
   return (
     <div className="container mx-auto max-w-5xl py-8 space-y-6">

@@ -175,9 +175,14 @@ export default function CoachesPage() {
     return [...new Set(allSpecialties)];
   }, [coaches]);
 
+  const visibleCoachesCount = useMemo(() => {
+    return coaches.filter(coach => coach.hidden !== true && coach.status !== 'suspended').length;
+  }, [coaches]);
+
   // Búsqueda básica y ordenamiento (sin filtrar por precio/rating)
   const filteredCoaches = useMemo(() => {
     let filtered = coaches.filter(coach => {
+      if (coach.status === 'suspended') return false;
       // Filtrar coaches ocultos
       if (coach.hidden === true) return false;
       
@@ -528,7 +533,7 @@ export default function CoachesPage() {
 
         {/* Results Count */}
         <div className="text-sm text-muted-foreground">
-          Mostrando {filteredCoaches.length} de {coaches.length} entrenadores
+          Mostrando {filteredCoaches.length} de {visibleCoachesCount} entrenadores
         </div>
       </div>
 
