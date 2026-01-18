@@ -61,12 +61,12 @@ async function getPlayerData(userId: string) {
     player: playerData,
     wallet: walletSnap.exists ? walletSnap.data() : null,
     analysesCount: new Set([
-      ...analysesByPlayerSnap.docs.map((d) => d.id),
-      ...analysesByUserSnap.docs.map((d) => d.id),
+      ...analysesByPlayerSnap.docs.map((d: any) => d.id),
+      ...analysesByUserSnap.docs.map((d: any) => d.id),
     ]).size,
     latestAnalyses,
-    latestPayments: paymentsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
-    latestTickets: ticketsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
+    latestPayments: paymentsSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+    latestTickets: ticketsSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
     coach: coachSnap && coachSnap.exists ? { id: coachSnap.id, ...(coachSnap.data() as any) } : null,
   };
 }

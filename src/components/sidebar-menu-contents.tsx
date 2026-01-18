@@ -14,6 +14,7 @@ import {
   Users,
   Shield,
   ShieldCheck,
+  Trophy,
 } from 'lucide-react';
 import {
   SidebarMenuItem,
