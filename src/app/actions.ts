@@ -571,6 +571,41 @@ function mapPlayerLevel(playerLevel: string): PlayerLevel {
     }
 }
 
+type ShotTypesMaintenance = {
+    tres: boolean;
+    media: boolean;
+    libre: boolean;
+};
+
+const DEFAULT_MAINTENANCE = {
+    enabled: false,
+    title: '🔧 SITIO EN MANTENIMIENTO',
+    message: 'El sistema está en mantenimiento. Intenta nuevamente más tarde.',
+    shotTypesMaintenance: {
+        tres: false,
+        media: false,
+        libre: false,
+    } as ShotTypesMaintenance,
+};
+
+function normalizeShotTypesMaintenance(input: any): ShotTypesMaintenance {
+    const base: ShotTypesMaintenance = { ...DEFAULT_MAINTENANCE.shotTypesMaintenance };
+    if (input && typeof input === 'object') {
+        base.tres = Boolean((input as any).tres);
+        base.media = Boolean((input as any).media);
+        base.libre = Boolean((input as any).libre);
+    }
+    return base;
+}
+
+function mapShotTypeToKey(shotType: string): keyof ShotTypesMaintenance | null {
+    const value = String(shotType || '').toLowerCase();
+    if (value.includes('tres')) return 'tres';
+    if (value.includes('media')) return 'media';
+    if (value.includes('libre')) return 'libre';
+    return null;
+}
+
 // Obtener usuario actual usando Firebase Admin SDK
 const getCurrentUser = async (userId: string) => {
     try {
@@ -638,6 +673,39 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             return { message: "Error de configuración del servidor.", error: true };
         }
         const db = adminDb;
+
+        // Validar mantenimiento global o por tipo de tiro
+        try {
+            const maintenanceRef = db.collection('config').doc('maintenance');
+            const maintenanceSnap = await maintenanceRef.get();
+            const maintenanceData = maintenanceSnap.exists ? maintenanceSnap.data() as any : {};
+            const maintenanceEnabled = Boolean(maintenanceData?.enabled);
+            const normalizedShotTypes = normalizeShotTypesMaintenance(maintenanceData?.shotTypesMaintenance);
+
+            if (maintenanceEnabled) {
+                return {
+                    message: maintenanceData?.message || DEFAULT_MAINTENANCE.message,
+                    error: true,
+                };
+            }
+
+            const shotKey = mapShotTypeToKey(shotType);
+            if (shotKey && normalizedShotTypes[shotKey]) {
+                const available: string[] = [];
+                if (!normalizedShotTypes.tres) available.push('Lanzamiento de Tres');
+                if (!normalizedShotTypes.media) available.push('Lanzamiento de Media Distancia');
+                if (!normalizedShotTypes.libre) available.push('Tiro Libre');
+                const availableText = available.length > 0
+                    ? `Tipos disponibles: ${available.join(', ')}.`
+                    : 'No hay tipos disponibles en este momento.';
+                return {
+                    message: `El tipo "${shotType}" está en mantenimiento. ${availableText}`,
+                    error: true,
+                };
+            }
+        } catch (e) {
+            console.warn('No se pudo validar mantenimiento:', e);
+        }
 
         // Obtener usuario
         const playerDoc = await db.collection('players').doc(userId).get();

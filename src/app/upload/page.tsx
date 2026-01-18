@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, startTransition } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import { startAnalysis } from "@/app/actions";
@@ -95,6 +95,31 @@ function PendingNotice() {
 
 type StartState = { message: string; error?: boolean; redirectTo?: string; analysisId?: string; videoUrl?: string; shotType?: string; status?: string; analysisResult?: any };
 
+type MaintenanceConfig = {
+  enabled: boolean;
+  title: string;
+  message: string;
+  shotTypesMaintenance?: {
+    tres: boolean;
+    media: boolean;
+    libre: boolean;
+  };
+};
+
+const normalizeShotTypesMaintenance = (input?: MaintenanceConfig['shotTypesMaintenance']) => ({
+  tres: Boolean(input?.tres),
+  media: Boolean(input?.media),
+  libre: Boolean(input?.libre),
+});
+
+const mapShotTypeToKey = (shotType: string): 'tres' | 'media' | 'libre' | null => {
+  const value = String(shotType || '').toLowerCase();
+  if (value.includes('tres')) return 'tres';
+  if (value.includes('media')) return 'media';
+  if (value.includes('libre')) return 'libre';
+  return null;
+};
+
 export default function UploadPage() {
   const [state, formAction] = useActionState<StartState, FormData>(startAnalysis as any, { message: "", error: false });
   const formRef = useRef<HTMLFormElement>(null);
@@ -127,6 +152,8 @@ export default function UploadPage() {
   const [compressEnabled, setCompressEnabled] = useState(true);
   const [compressing, setCompressing] = useState(false);
   const [compressionProgress, setCompressionProgress] = useState<Record<string, number>>({});
+  const [maintenanceConfig, setMaintenanceConfig] = useState<MaintenanceConfig | null>(null);
+  const [maintenanceLoading, setMaintenanceLoading] = useState(true);
 
   const isPlayerProfileComplete = (p: any | null | undefined): boolean => {
     if (!p) return false;
@@ -142,6 +169,32 @@ export default function UploadPage() {
   };
 
   const handleSubmit = async (formData: FormData) => {
+    if (maintenanceConfig?.enabled) {
+      toast({
+        title: maintenanceConfig.title || 'Mantenimiento activo',
+        description: maintenanceConfig.message || 'El sistema está en mantenimiento. Intenta nuevamente más tarde.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const shotKey = mapShotTypeToKey(shotType);
+    const normalizedShotTypes = normalizeShotTypesMaintenance(maintenanceConfig?.shotTypesMaintenance);
+    if (shotKey && normalizedShotTypes[shotKey]) {
+      const available: string[] = [];
+      if (!normalizedShotTypes.tres) available.push('Lanzamiento de Tres');
+      if (!normalizedShotTypes.media) available.push('Lanzamiento de Media Distancia');
+      if (!normalizedShotTypes.libre) available.push('Tiro Libre');
+      const availableText = available.length > 0
+        ? `Tipos disponibles: ${available.join(', ')}.`
+        : 'No hay tipos disponibles en este momento.';
+      toast({
+        title: 'Tipo en mantenimiento',
+        description: `El tipo "${shotType}" está en mantenimiento. ${availableText}`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     // Chequeos de conectividad previos
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       toast({ title: 'Sin conexión', description: 'Estás sin Internet. Conéctate a Wi‑Fi o datos y vuelve a intentar.', variant: 'destructive' });
@@ -423,6 +476,22 @@ export default function UploadPage() {
     fetchWallet();
   }, [user]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const fetchMaintenance = async () => {
+      try {
+        const response = await fetch('/api/admin/maintenance');
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelled) setMaintenanceConfig(data);
+      } catch {} finally {
+        if (!cancelled) setMaintenanceLoading(false);
+      }
+    };
+    fetchMaintenance();
+    return () => { cancelled = true; };
+  }, []);
+
   // Abrir recomendaciones automáticamente la primera vez
   useEffect(() => {
     try {
@@ -499,6 +568,24 @@ export default function UploadPage() {
   }
 
   const anyVideoSelected = !!(selectedVideo || backVideo || leftVideo || rightVideo);
+  const normalizedShotTypes = useMemo(
+    () => normalizeShotTypesMaintenance(maintenanceConfig?.shotTypesMaintenance),
+    [maintenanceConfig?.shotTypesMaintenance]
+  );
+  const availableTypes = useMemo(() => {
+    const available: string[] = [];
+    if (!normalizedShotTypes.tres) available.push('Lanzamiento de Tres');
+    if (!normalizedShotTypes.media) available.push('Lanzamiento de Media Distancia');
+    if (!normalizedShotTypes.libre) available.push('Tiro Libre');
+    return available;
+  }, [normalizedShotTypes.libre, normalizedShotTypes.media, normalizedShotTypes.tres]);
+  const blockedTypes = useMemo(() => {
+    const blocked: string[] = [];
+    if (normalizedShotTypes.tres) blocked.push('Lanzamiento de Tres');
+    if (normalizedShotTypes.media) blocked.push('Lanzamiento de Media Distancia');
+    if (normalizedShotTypes.libre) blocked.push('Tiro Libre');
+    return blocked;
+  }, [normalizedShotTypes.libre, normalizedShotTypes.media, normalizedShotTypes.tres]);
   const addMonths = (date: Date, months: number) => {
     const next = new Date(date);
     next.setMonth(next.getMonth() + months);
@@ -531,6 +618,36 @@ export default function UploadPage() {
           </Button>
         </div>
       </div>
+
+      {!maintenanceLoading && maintenanceConfig && (maintenanceConfig.enabled || blockedTypes.length > 0) && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              {maintenanceConfig.enabled ? (maintenanceConfig.title || 'Mantenimiento activo') : 'Mantenimiento por tipo de tiro'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-amber-900 space-y-2">
+            {maintenanceConfig.enabled ? (
+              <div className="whitespace-pre-line">
+                {maintenanceConfig.message || 'El sistema está en mantenimiento. Intenta nuevamente más tarde.'}
+              </div>
+            ) : (
+              <>
+                <div>
+                  {blockedTypes.length > 0
+                    ? `Tipos bloqueados: ${blockedTypes.join(', ')}.`
+                    : 'No hay tipos bloqueados en este momento.'}
+                </div>
+                <div>
+                  {availableTypes.length > 0
+                    ? `Tipos disponibles: ${availableTypes.join(', ')}.`
+                    : 'No hay tipos disponibles en este momento.'}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {wallet && (
         <Card className="bg-slate-50 border-slate-200">
@@ -565,9 +682,9 @@ export default function UploadPage() {
                 <SelectValue placeholder="Selecciona el tipo de lanzamiento" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Tiro Libre">Tiro Libre</SelectItem>
-                <SelectItem value="Lanzamiento de Media Distancia (Jump Shot)">Lanzamiento de Media Distancia (Jump Shot)</SelectItem>
-                <SelectItem value="Lanzamiento de Tres">Lanzamiento de Tres</SelectItem>
+                <SelectItem value="Tiro Libre" disabled={normalizedShotTypes.libre}>Tiro Libre{normalizedShotTypes.libre ? ' (mantenimiento)' : ''}</SelectItem>
+                <SelectItem value="Lanzamiento de Media Distancia (Jump Shot)" disabled={normalizedShotTypes.media}>Lanzamiento de Media Distancia (Jump Shot){normalizedShotTypes.media ? ' (mantenimiento)' : ''}</SelectItem>
+                <SelectItem value="Lanzamiento de Tres" disabled={normalizedShotTypes.tres}>Lanzamiento de Tres{normalizedShotTypes.tres ? ' (mantenimiento)' : ''}</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">Esto nos ayuda a evaluar con reglas específicas para cada tipo de tiro.</p>

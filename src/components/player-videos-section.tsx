@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Calendar, Target, Play, Star, TrendingUp, TrendingDown } from "lucide-react";
 import { ShotAnalysis } from "@/lib/types";
+import { VideoPlayer } from "@/components/video-player";
 
 interface PlayerVideosSectionProps {
   analyses: ShotAnalysis[];
@@ -80,12 +81,32 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
-  const averageScore = analyses.length > 0 
-    ? Math.round(analyses.reduce((sum, a) => sum + toPct(a.score || 0), 0) / analyses.length)
+  const averageScore = sortedAnalyses.length > 0 
+    ? Math.round(sortedAnalyses.reduce((sum, a) => sum + toPct(a.score || 0), 0) / sortedAnalyses.length)
     : 0;
 
-  const scoreTrend = analyses.length >= 2 ? 
-    (toPct(analyses[analyses.length - 1].score || 0) - toPct(analyses[0].score || 0)) : 0;
+  const scoreTrend = sortedAnalyses.length >= 2 ? (() => {
+    const newest = sortedAnalyses[0];
+    const oldest = sortedAnalyses[sortedAnalyses.length - 1];
+    return toPct(newest.score || 0) - toPct(oldest.score || 0);
+  })() : 0;
+
+  const getThumbnailUrl = (analysis: ShotAnalysis) => {
+    const keyframes = analysis.keyframes || { front: [], back: [], left: [], right: [] };
+    return (
+      keyframes.front?.[0] ||
+      keyframes.back?.[0] ||
+      keyframes.left?.[0] ||
+      keyframes.right?.[0] ||
+      null
+    );
+  };
+
+  const getAnalysisLabel = (analysis: ShotAnalysis) => {
+    const summary = (analysis.analysisSummary || "").trim();
+    if (summary.length > 0) return summary;
+    return `Análisis de ${getShotTypeLabel(analysis.shotType)}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -134,13 +155,20 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
 
       {/* Lista de Videos */}
       <div>
-        <h3 className="text-lg font-semibold mb-4">Videos de Análisis</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <h3 className="text-lg font-semibold">Videos de Análisis</h3>
+          <p className="text-xs text-muted-foreground">Ordenados por fecha (más reciente primero)</p>
+        </div>
         
         {sortedAnalyses.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {sortedAnalyses.map((analysis) => {
               const strengths = Array.isArray(analysis.strengths) ? analysis.strengths : [];
               const weaknesses = Array.isArray(analysis.weaknesses) ? analysis.weaknesses : [];
+              const thumbnailUrl = getThumbnailUrl(analysis);
+              const analysisLabel = getAnalysisLabel(analysis);
+              const shortId = analysis.id ? analysis.id.slice(0, 8).toUpperCase() : "";
+              const hasVideo = Boolean(analysis.videoUrl);
               return (
               <Card 
                 key={analysis.id} 
@@ -158,18 +186,33 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                       </Badge>
                     )}
                   </div>
+                  <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Ref: {shortId || 'N/A'}</span>
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      {formatDate(analysis.createdAt)}
+                    </span>
+                  </div>
                 </CardHeader>
                 
                 <CardContent className="space-y-3">
                   {/* Thumbnail del Video */}
                   <div className="relative aspect-video bg-muted rounded-lg overflow-hidden group-hover:bg-muted/80 transition-colors">
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <Play className="h-12 w-12 text-primary opacity-80 group-hover:opacity-100 transition-opacity" />
-                    </div>
+                    {thumbnailUrl ? (
+                      <img
+                        src={thumbnailUrl}
+                        alt={analysisLabel}
+                        className="absolute inset-0 h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <Play className="h-12 w-12 text-primary opacity-80 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    )}
                     <div className="absolute bottom-2 right-2">
                       <Badge variant="secondary" className="text-xs">
-                        <Calendar className="mr-1 h-3 w-3" />
-                        {formatDate(analysis.createdAt)}
+                        {hasVideo ? "Video disponible" : "Sin video"}
                       </Badge>
                     </div>
                   </div>
@@ -177,7 +220,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                   {/* Información del Análisis */}
                   <div className="space-y-2">
                     <h4 className="font-semibold text-sm line-clamp-2">
-                      {analysis.analysisSummary}
+                      {analysisLabel}
                     </h4>
                     
                     {typeof analysis.score === 'number' && (
@@ -236,17 +279,27 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                   </div>
 
                   {/* Botón de Acción */}
-                  <Button 
-                    asChild
-                    variant="outline" 
-                    size="sm" 
-                    className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
-                  >
-                    <Link href={`/analysis/${analysis.id}`}>
+                  <div className="flex flex-col gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleVideoClick(analysis);
+                      }}
+                      disabled={!hasVideo}
+                    >
                       <Play className="mr-2 h-4 w-4" />
-                      Ver Checklist (IA)
-                    </Link>
-                  </Button>
+                      {hasVideo ? "Ver video" : "Video no disponible"}
+                    </Button>
+                    <Button asChild variant="ghost" size="sm" className="w-full">
+                      <Link href={`/analysis/${analysis.id}`}>
+                        Ver análisis completo
+                      </Link>
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             );})}
@@ -279,16 +332,20 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
               </div>
               
               <div className="space-y-4">
-                {/* Video Player Placeholder */}
-                <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-                  <div className="text-center">
-                    <Play className="h-16 w-16 text-primary mx-auto mb-4" />
-                    <p className="text-muted-foreground">Reproductor de Video</p>
-                    <p className="text-sm text-muted-foreground">
-                      URL: {selectedAnalysis.videoUrl}
-                    </p>
+                {/* Video Player */}
+                {selectedAnalysis.videoUrl ? (
+                  <VideoPlayer src={selectedAnalysis.videoUrl} />
+                ) : (
+                  <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
+                    <div className="text-center">
+                      <Play className="h-16 w-16 text-primary mx-auto mb-4" />
+                      <p className="text-muted-foreground">Video no disponible</p>
+                      <p className="text-sm text-muted-foreground">
+                        Este análisis no tiene un video asociado.
+                      </p>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Información del Análisis */}
                 <div className="grid gap-4 md:grid-cols-2">
