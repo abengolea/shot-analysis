@@ -2,18 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from "next/link";
-import { PlusCircle, User, BarChart, FileText, Eye, Calendar, Video } from "lucide-react";
+import { PlusCircle, User, BarChart, FileText, Eye, Calendar, Video, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import {
   Card,
   CardContent,
@@ -21,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from '@/hooks/use-auth';
@@ -56,14 +47,18 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [userAnalyses, setUserAnalyses] = useState<any[]>([]);
   const [analysesLoading, setAnalysesLoading] = useState(true);
-  const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
-  const [coachFeedbackByAnalysis, setCoachFeedbackByAnalysis] = useState<Record<string, boolean>>({});
-  const [coachReviewStatusByAnalysis, setCoachReviewStatusByAnalysis] = useState<Record<string, { reviewedCoachIds?: string[] }>>({});
-  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
-  const [reviewRating, setReviewRating] = useState<string>("5");
-  const [reviewComment, setReviewComment] = useState("");
-  const [reviewSubmitting, setReviewSubmitting] = useState(false);
-  const [reviewTarget, setReviewTarget] = useState<any | null>(null);
+  const [coachStatusByAnalysis, setCoachStatusByAnalysis] = useState<Record<string, {
+    hasCoachFeedback?: boolean;
+    reviewedCoachIds?: string[];
+    unlockStatus?: {
+      paidCoachIds?: Array<{ coachId: string; coachName: string }>;
+    };
+  }>>({});
+  const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
+  const [ratingTarget, setRatingTarget] = useState<{ analysisId: string; coachId: string; coachName?: string } | null>(null);
+  const [coachRating, setCoachRating] = useState<number>(5);
+  const [coachRatingComment, setCoachRatingComment] = useState<string>("");
+  const [savingCoachRating, setSavingCoachRating] = useState(false);
 
   // Controles de filtro/rango
   const [range, setRange] = useState<string>("12m"); // 3m,6m,12m,5y,all
@@ -96,56 +91,39 @@ export default function DashboardPage() {
     }
   }, [user?.uid]);
 
-  // Cargar disponibilidad de feedback de entrenador para cada análisis listado
+  // Cargar estado de feedback y reseñas del entrenador en batch
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        if (!user || !userAnalyses.length) return;
+        if (!user || !userAnalyses.length) {
+          setCoachStatusByAnalysis({});
+          return;
+        }
         const token = await user.getIdToken();
-        const toCheck = userAnalyses.slice(0, 30); // limitar por rendimiento
-        const results = await Promise.all(toCheck.map(async (a) => {
-          try {
-            const res = await fetch(`/api/analyses/${a.id}/coach-feedback`, { headers: { Authorization: `Bearer ${token}` } });
-            if (!res.ok) return [a.id, false] as const;
-            const data = await res.json();
-            return [a.id, Boolean(data?.feedback)] as const;
-          } catch {
-            return [a.id, false] as const;
-          }
-        }));
+        const analysisIds = userAnalyses.map((a) => a.id).filter(Boolean);
+        if (!analysisIds.length) {
+          setCoachStatusByAnalysis({});
+          return;
+        }
+        const res = await fetch('/api/analyses/batch-coach-status', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ analysisIds }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
         if (cancelled) return;
-        const map: Record<string, boolean> = {};
-        for (const [id, has] of results) map[id] = has;
-        setCoachFeedbackByAnalysis(map);
+        setCoachStatusByAnalysis(data?.statusByAnalysis || {});
       } catch {}
     };
     load();
     return () => { cancelled = true; };
   }, [user, userAnalyses]);
 
-  // Cargar estado de reseñas de coach para los análisis listados
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        if (!user || !userAnalyses.length) return;
-        const token = await user.getIdToken();
-        const analysisIds = userAnalyses.slice(0, 50).map((a) => a.id);
-        const res = await fetch('/api/analyses/batch-coach-status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ analysisIds }),
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (cancelled) return;
-        setCoachReviewStatusByAnalysis(data?.statusByAnalysis || {});
-      } catch {}
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [user, userAnalyses]);
 
   // Redirecciones fuera del render para evitar actualizar durante render
   useEffect(() => {
@@ -234,47 +212,6 @@ export default function DashboardPage() {
     }
   };
 
-  const openReviewDialog = (analysis: any) => {
-    setReviewTarget(analysis);
-    setReviewRating("5");
-    setReviewComment("");
-    setReviewDialogOpen(true);
-  };
-
-  const submitCoachReview = async () => {
-    if (!reviewTarget || !user) return;
-    const rating = Number(reviewRating);
-    if (!rating || rating < 1 || rating > 5) {
-      toast({ title: 'Calificación inválida', description: 'Seleccioná una calificación de 1 a 5.', variant: 'destructive' });
-      return;
-    }
-    try {
-      setReviewSubmitting(true);
-      const token = await user.getIdToken();
-      const res = await fetch(`/api/analyses/${reviewTarget.id}/coach-review`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ rating, comment: reviewComment, coachId: reviewTarget?.coachId }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error || 'No se pudo enviar la reseña.');
-      }
-      toast({ title: 'Reseña enviada', description: 'Gracias por tu devolución.' });
-      setReviewDialogOpen(false);
-      if (reviewTarget?.coachId) {
-        setCoachReviewStatusByAnalysis((prev) => {
-          const current = prev[reviewTarget.id]?.reviewedCoachIds || [];
-          const next = Array.from(new Set([...current, String(reviewTarget.coachId)]));
-          return { ...prev, [reviewTarget.id]: { ...prev[reviewTarget.id], reviewedCoachIds: next } };
-        });
-      }
-    } catch (e: any) {
-      toast({ title: 'Error', description: e?.message || 'No se pudo enviar la reseña.', variant: 'destructive' });
-    } finally {
-      setReviewSubmitting(false);
-    }
-  };
 
   // Mapeos auxiliares
   const shotTypeMap: Record<string, string> = {
@@ -323,6 +260,63 @@ export default function DashboardPage() {
 
     return entries;
   })();
+
+  const openRatingDialog = (analysisId: string, coachId: string, coachName?: string) => {
+    setRatingTarget({ analysisId, coachId, coachName });
+    setCoachRating(5);
+    setCoachRatingComment("");
+    setRatingDialogOpen(true);
+  };
+
+  const submitCoachRating = async () => {
+    if (!user || !ratingTarget) return;
+    try {
+      setSavingCoachRating(true);
+      const token = await user.getIdToken();
+      const res = await fetch('/api/coach-reviews', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          analysisId: ratingTarget.analysisId,
+          coachId: ratingTarget.coachId,
+          rating: coachRating,
+          comment: coachRatingComment.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'No se pudo guardar la calificación.');
+      }
+      toast({
+        title: 'Gracias por tu calificación',
+        description: 'Tu reseña ayuda a mejorar la comunidad.',
+      });
+      setCoachStatusByAnalysis((prev) => {
+        const current = prev[ratingTarget.analysisId] || {};
+        const reviewed = new Set(current.reviewedCoachIds || []);
+        reviewed.add(ratingTarget.coachId);
+        return {
+          ...prev,
+          [ratingTarget.analysisId]: {
+            ...current,
+            reviewedCoachIds: Array.from(reviewed),
+          },
+        };
+      });
+      setRatingDialogOpen(false);
+    } catch (e: any) {
+      toast({
+        title: 'Error al calificar',
+        description: e?.message || 'No se pudo guardar la reseña.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingCoachRating(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-8">
@@ -453,64 +447,65 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-4">
               {userAnalyses.map((analysis) => {
-                const coachIdForReview = (() => {
-                  if (analysis?.coachId) return String(analysis.coachId);
-                  const access = analysis?.coachAccess || {};
-                  const paid = Object.keys(access).find((id) => access?.[id]?.status === 'paid');
-                  return paid ? String(paid) : '';
-                })();
-                const reviewedCoachIds = coachReviewStatusByAnalysis[analysis.id]?.reviewedCoachIds || [];
-                const hasCoachReview = coachIdForReview ? reviewedCoachIds.includes(coachIdForReview) : false;
+                const statusMeta = coachStatusByAnalysis[analysis.id] || {};
+                const hasCoachFeedback = Boolean(statusMeta.hasCoachFeedback) || analysis.coachCompleted === true;
+                const reviewedCoachIds = statusMeta.reviewedCoachIds || [];
+                const paidCoachInfo = statusMeta.unlockStatus?.paidCoachIds?.[0];
+                const coachIdForRating = analysis.coachId || paidCoachInfo?.coachId;
+                const coachNameForRating = paidCoachInfo?.coachName;
+                const isCoachReviewedByPlayer = coachIdForRating ? reviewedCoachIds.includes(coachIdForRating) : false;
+                const canRateCoach = Boolean(hasCoachFeedback && coachIdForRating && !isCoachReviewedByPlayer);
                 return (
-                <div
-                  key={analysis.id}
-                  className={`flex items-center justify-between p-4 border rounded-lg ${analysis.status === 'analyzed' && analysis.coachCompleted ? 'bg-blue-50 border-blue-200' : ''}`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="p-2 bg-blue-100 rounded-full">
-                      <Video className="h-5 w-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-medium">{analysis.shotType}</h3>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
-                        <Calendar className="h-4 w-4" />
-                        <FormattedDate dateString={analysis.createdAt} />
-                        {getStatusBadge(analysis.status)}
+                  <div
+                    key={analysis.id}
+                    className={`flex items-center justify-between p-4 border rounded-lg ${hasCoachFeedback ? 'border-emerald-200 bg-emerald-50' : ''}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`p-2 rounded-full ${hasCoachFeedback ? 'bg-emerald-100' : 'bg-blue-100'}`}>
+                        <Video className={`h-5 w-5 ${hasCoachFeedback ? 'text-emerald-700' : 'text-blue-600'}`} />
                       </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {analysis.status === 'analyzed' && analysis.coachCompleted && (
-                      <div className="hidden sm:flex items-center justify-center px-3 py-2 rounded-md border border-blue-200 bg-blue-100 text-blue-800 text-xs font-semibold">
-                        Revisado por entrenador
-                      </div>
-                    )}
-                    {analysis.status === 'analyzed' && analysis.coachCompleted && coachIdForReview && (
-                      hasCoachReview ? (
-                        <div className="hidden sm:flex items-center justify-center px-3 py-2 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold">
-                          Reseña enviada
+                      <div>
+                        <h3 className="font-medium">{analysis.shotType}</h3>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Calendar className="h-4 w-4" />
+                          <FormattedDate dateString={analysis.createdAt} />
+                          {getStatusBadge(analysis.status)}
                         </div>
-                      ) : (
+                        {analysis.status === 'analyzed' && hasCoachFeedback && (
+                          <div className="mt-1 text-xs text-emerald-700">
+                            Feedback del entrenador disponible.
+                          </div>
+                        )}
+                        {analysis.status === 'analyzed' && isCoachReviewedByPlayer && (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Entrenador calificado.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {analysis.status === 'analyzed' && (
+                        <Button asChild size="sm">
+                          <Link href={`/analysis/${analysis.id}`}>
+                            <Eye className="mr-2 h-4 w-4" />
+                            Ver Resultados
+                          </Link>
+                        </Button>
+                      )}
+                      {analysis.status === 'analyzed' && canRateCoach && coachIdForRating && (
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => openReviewDialog({ ...analysis, coachId: coachIdForReview })}
+                          variant="secondary"
+                          onClick={() => openRatingDialog(analysis.id, coachIdForRating, coachNameForRating)}
                         >
-                          Dejar reseña
+                          <Star className="mr-2 h-4 w-4" />
+                          Calificar entrenador
                         </Button>
-                      )
-                    )}
-                    {analysis.status === 'analyzed' && (
-                      <Button asChild size="sm">
-                        <Link href={`/analysis/${analysis.id}`}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          Ver Resultados
-                        </Link>
-                      </Button>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
-              )})}
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -568,48 +563,57 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      <AlertDialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reseña del entrenador</AlertDialogTitle>
-            <AlertDialogDescription>
-              Compartí tu experiencia para ayudar a otros jugadores.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+      <Dialog
+        open={ratingDialogOpen}
+        onOpenChange={(open) => {
+          setRatingDialogOpen(open);
+          if (!open) setRatingTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Calificar entrenador</DialogTitle>
+            <DialogDescription>
+              {ratingTarget?.coachName
+                ? `¿Cómo fue tu experiencia con ${ratingTarget.coachName}?`
+                : 'Tu calificación ayuda a otros jugadores a elegir entrenador.'}
+            </DialogDescription>
+          </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Calificación</div>
-              <Select value={reviewRating} onValueChange={setReviewRating}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Selecciona una calificación" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="5">5 - Excelente</SelectItem>
-                  <SelectItem value="4">4 - Muy bueno</SelectItem>
-                  <SelectItem value="3">3 - Bueno</SelectItem>
-                  <SelectItem value="2">2 - Regular</SelectItem>
-                  <SelectItem value="1">1 - Malo</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex items-center gap-2">
+              {[1, 2, 3, 4, 5].map((r) => (
+                <button
+                  key={`rate-${r}`}
+                  type="button"
+                  onClick={() => setCoachRating(r)}
+                  className="rounded-full p-1 hover:bg-muted"
+                  aria-label={`Calificar ${r}`}
+                >
+                  <Star className={`h-6 w-6 ${r <= coachRating ? 'fill-yellow-400 text-yellow-500' : 'text-muted-foreground'}`} />
+                </button>
+              ))}
+              <span className="text-sm text-muted-foreground">{coachRating} / 5</span>
             </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Comentario (opcional)</div>
+            <div>
+              <label className="text-sm font-medium">Comentario (opcional)</label>
               <Textarea
-                value={reviewComment}
-                onChange={(e) => setReviewComment(e.target.value)}
-                placeholder="Contá qué te gustó y qué se puede mejorar..."
+                value={coachRatingComment}
+                onChange={(e) => setCoachRatingComment(e.target.value)}
                 rows={4}
+                placeholder="Contanos qué te gustó o qué mejorarías."
               />
             </div>
           </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={reviewSubmitting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={submitCoachReview} disabled={reviewSubmitting}>
-              {reviewSubmitting ? 'Enviando...' : 'Enviar reseña'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setRatingDialogOpen(false)} disabled={savingCoachRating}>
+              Cancelar
+            </Button>
+            <Button onClick={submitCoachRating} disabled={savingCoachRating || !ratingTarget}>
+              {savingCoachRating ? 'Guardando...' : 'Enviar calificación'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de perfil incompleto eliminado: ya no bloquea desde el dashboard */}
     </div>

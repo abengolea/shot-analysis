@@ -1878,6 +1878,26 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   // (ya calculados arriba) checklistStrengths, checklistWeaknesses, checklistRecommendations
 
+  const hasCoachFeedback = useMemo(() => {
+    const hasItems = Object.values(coachFeedbackByItemId).some((v) =>
+      (typeof v?.rating === 'number') || (String(v?.comment || '').trim() !== '')
+    );
+    const hasSummary = String(coachSummary || '').trim().length > 0;
+    return hasItems || hasSummary;
+  }, [coachFeedbackByItemId, coachSummary]);
+
+  const coachFeedbackItemsByCategory = useMemo(() => {
+    return checklistState
+      .map((cat) => {
+        const items = cat.items.filter((it) => {
+          const cf = coachFeedbackByItemId[it.id];
+          return Boolean(cf && (typeof cf.rating === 'number' || String(cf.comment || '').trim() !== ''));
+        });
+        return { category: cat.category, items };
+      })
+      .filter((cat) => cat.items.length > 0);
+  }, [checklistState, coachFeedbackByItemId]);
+
   // Resumen dinámico de revisión del entrenador
   const coachReviewSummary = useMemo(() => {
     const items = checklistState.flatMap((c) => c.items.map((it) => ({ id: it.id, name: it.name, ia: it.rating })));

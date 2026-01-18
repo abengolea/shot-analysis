@@ -190,6 +190,11 @@ export default function AdminHome() {
 								<h2 className="text-lg font-medium">Mantenimiento</h2>
 								<p className="text-sm text-gray-600">Recalcular puntajes históricos a escala 0–100.</p>
 								<div className="flex flex-wrap gap-2">
+									<Link className="rounded border px-3 py-1 text-sm hover:bg-gray-50" href="/admin/maintenance">
+										Abrir panel de mantenimiento
+									</Link>
+								</div>
+								<div className="flex flex-wrap gap-2">
 									<button
 										className="rounded border px-3 py-1 text-sm"
 										onClick={async () => {
@@ -267,6 +272,7 @@ export default function AdminHome() {
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin?tab=coaches">Entrenadores</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin?tab=payments">Pagos</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin?tab=subscriptions">Suscripciones</Link>
+									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin/maintenance">Mantenimiento</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin/revision-ia">Revisión IA</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/rankings">Rankings públicos</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/upload">Subir y analizar video</Link>

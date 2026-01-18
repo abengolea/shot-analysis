@@ -8,6 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
+import { getIdToken } from 'firebase/auth';
 import { Loader2, Save, RefreshCw } from 'lucide-react';
 
 interface MaintenanceConfig {
@@ -24,6 +26,7 @@ interface MaintenanceConfig {
 }
 
 export default function MaintenancePage() {
+  const { user } = useAuth();
   const [config, setConfig] = useState<MaintenanceConfig>({
     enabled: false,
     title: '🔧 SITIO EN MANTENIMIENTO',
@@ -44,7 +47,10 @@ export default function MaintenancePage() {
   const loadConfig = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/maintenance');
+      const token = user ? await getIdToken(user, true) : '';
+      const response = await fetch('/api/admin/maintenance', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       if (response.ok) {
         const data = await response.json();
         setConfig({
@@ -73,9 +79,13 @@ export default function MaintenancePage() {
   const saveConfig = async () => {
     try {
       setSaving(true);
+      const token = user ? await getIdToken(user, true) : '';
       const response = await fetch('/api/admin/maintenance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           ...config,
           updatedBy: 'admin' // Aquí podrías usar el usuario actual
