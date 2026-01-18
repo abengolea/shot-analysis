@@ -406,11 +406,11 @@ export default function CoachesPage() {
             </CardHeader>
 
             <CardContent className="flex-grow space-y-4">
-              {/* Experience */}
+              {/* Curriculum */}
               <div>
                 <h4 className="font-semibold mb-2 flex items-center gap-2">
                   <Briefcase className="h-5 w-5 text-primary" /> 
-                  Experiencia
+                  Curriculum
                 </h4>
                 <p className="text-sm text-muted-foreground">
                   {coach.bio || coach.experience}

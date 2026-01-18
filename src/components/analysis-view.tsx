@@ -458,6 +458,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const [coachFeedbackByItemId, setCoachFeedbackByItemId] = useState<Record<string, { rating?: number; comment?: string }>>({});
   const [coachSummary, setCoachSummary] = useState<string>("");
   const [generatingSummary, setGeneratingSummary] = useState(false);
+  const [savingCoachFeedback, setSavingCoachFeedback] = useState(false);
   const [isEditingCoachFeedback, setIsEditingCoachFeedback] = useState(false);
   const [hasExistingCoachFeedback, setHasExistingCoachFeedback] = useState(false);
   const isCoach = (userProfile as any)?.role === 'coach' || (userProfile as any)?.role === 'admin';
@@ -542,6 +543,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   // Guardar feedback del entrenador
   const saveCoachFeedback = async () => {
     try {
+      setSavingCoachFeedback(true);
       const auth = getAuth();
       const u = auth.currentUser;
       if (!u) {
@@ -554,14 +556,18 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ items: coachFeedbackByItemId, coachSummary }),
       });
-      if (!res.ok) throw new Error('save failed');
-      toast({ title: 'Feedback guardado', description: 'Se enviaron discrepancias a revisión de IA si correspondía.' });
-      // Si había feedback existente, volver a modo lectura después de guardar
-      if (hasExistingCoachFeedback) {
-        setIsEditingCoachFeedback(false);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || 'No se pudo guardar el feedback.');
       }
+      toast({ title: 'Feedback guardado', description: 'Se enviaron discrepancias a revisión de IA si correspondía.' });
+      setHasExistingCoachFeedback(true);
+      setIsEditingCoachFeedback(false);
     } catch (e) {
-      toast({ title: 'Error', description: 'No se pudo guardar el feedback.', variant: 'destructive' });
+      const message = e instanceof Error ? e.message : 'No se pudo guardar el feedback.';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+    } finally {
+      setSavingCoachFeedback(false);
     }
   };
 
@@ -2995,7 +3001,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                         </div>
                       )}
                       <div className="flex items-center gap-2">
-                        <Button onClick={saveCoachFeedback}>Guardar revisión</Button>
+                        <Button onClick={saveCoachFeedback} disabled={savingCoachFeedback}>
+                          {savingCoachFeedback ? 'Guardando…' : 'Guardar revisión'}
+                        </Button>
                         <Button 
                           className="ml-2" 
                           variant="secondary" 

@@ -22,6 +22,21 @@ const SETPOINT_NAME = 'Set point (inicio del empuje de la pelota)';
 const ASCENSO_HAND_ID = 'mano_no_dominante_ascenso';
 const LIBERACION_HAND_ID = 'mano_no_dominante_liberacion';
 
+function removeUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((v) => removeUndefinedDeep(v)).filter((v) => v !== undefined) as unknown as T;
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    Object.entries(value as Record<string, unknown>).forEach(([key, val]) => {
+      const cleaned = removeUndefinedDeep(val);
+      if (cleaned !== undefined) out[key] = cleaned;
+    });
+    return out as T;
+  }
+  return (value === undefined ? undefined : value) as T;
+}
+
 // Pesos exactos por ítem del checklist de Tiro de Tres (default). Suman 100.
 const DEFAULT_ITEM_WEIGHTS_TRES: Record<string, number> = {
   // Fluidez (47.5%)
@@ -270,7 +285,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       };
       if (publicCategory) updatePlayerData.publicCategory = publicCategory;
 
-      await playerRef.set(updatePlayerData, { merge: true });
+      await playerRef.set(removeUndefinedDeep(updatePlayerData), { merge: true });
     }
 
     return NextResponse.json({ success: true, score, fluidezScore10 });

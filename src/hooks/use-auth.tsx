@@ -71,6 +71,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           const selectedRole = (selected as any)?.role as string | undefined;
           if (selected && (user.emailVerified || selectedRole === 'admin')) {
+            try {
+              if (typeof window !== 'undefined' && (selectedRole === 'coach' || selectedRole === 'player')) {
+                localStorage.setItem('preferredRole', selectedRole);
+              }
+            } catch {}
             setUserProfile(selected);
           } else {
             setUserProfile(null);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebase-admin';
+import { adminAuth, adminDb } from '@/lib/firebase-admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +8,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    if (!adminDb || !adminAuth) {
+      return NextResponse.json({ error: 'Admin SDK no inicializado' }, { status: 500 });
+    }
+
     const { id: analysisId } = await params;
 
     if (!analysisId) {
@@ -15,6 +19,25 @@ export async function GET(
         { error: 'ID de análisis es requerido' },
         { status: 400 }
       );
+    }
+
+    const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
+    if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
+      return NextResponse.json({ error: 'Authorization Bearer token requerido' }, { status: 401 });
+    }
+    const token = authHeader.split(' ')[1];
+    const decoded = await adminAuth.verifyIdToken(token);
+    const uid = decoded.uid;
+
+    const [coachSnap, playerSnap] = await Promise.all([
+      adminDb.collection('coaches').doc(uid).get(),
+      adminDb.collection('players').doc(uid).get(),
+    ]);
+    const role = coachSnap.exists
+      ? (coachSnap.data() as any)?.role
+      : (playerSnap.exists ? (playerSnap.data() as any)?.role : undefined);
+    if (!role) {
+      return NextResponse.json({ error: 'Usuario no autorizado' }, { status: 403 });
     }
 
     console.log('🔍 Buscando análisis específico:', analysisId);
@@ -37,6 +60,22 @@ export async function GET(
       id: analysisDoc.id,
       ...analysisData
     };
+
+    const analysisPlayerId = (analysisData as any)?.playerId;
+    const coachAccess = (analysisData as any)?.coachAccess || {};
+    const coachAccessForUser = coachAccess?.[uid];
+
+    if (role !== 'admin') {
+      if (role === 'player') {
+        if (!analysisPlayerId || String(analysisPlayerId) !== String(uid)) {
+          return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+        }
+      } else if (role === 'coach') {
+        if (!coachAccessForUser || coachAccessForUser.status !== 'paid') {
+          return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+        }
+      }
+    }
 
     console.log(`✅ Análisis encontrado: ${analysisId}`);
 

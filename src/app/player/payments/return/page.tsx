@@ -387,7 +387,7 @@ export default function PaymentsReturnPage({ searchParams }: { searchParams: Sea
         ) : (
           <Link 
             className="inline-flex items-center justify-center rounded-md border px-6 py-3 text-sm font-medium hover:bg-accent transition-colors" 
-            href="/player/upload"
+            href="/upload"
           >
             Cargar análisis
           </Link>

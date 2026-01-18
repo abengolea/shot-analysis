@@ -37,6 +37,24 @@ export default function CoachDashboardPage() {
   const [playersSearch, setPlayersSearch] = useState<string>("");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<'all'|'pending'|'analyzed'>("all");
+  const toDate = (value: any) => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (typeof value === "string" || typeof value === "number") {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    if (typeof value?.toDate === "function") return value.toDate();
+    if (typeof value?._seconds === "number") {
+      return new Date(value._seconds * 1000 + Math.round((value._nanoseconds || 0) / 1e6));
+    }
+    return null;
+  };
+  const getTime = (value: any) => toDate(value)?.getTime() ?? 0;
+  const formatDate = (value: any) => {
+    const d = toDate(value);
+    return d ? d.toLocaleString() : "Fecha desconocida";
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -112,7 +130,7 @@ export default function CoachDashboardPage() {
         setMessages(prev => {
           const incoming = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })) as Message[];
           const merged = [...incoming, ...prev].reduce((acc: Record<string, Message>, m: Message) => { acc[m.id] = m; return acc; }, {} as any);
-          return Object.values(merged).sort((a, b) => (new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
+          return Object.values(merged).sort((a, b) => (getTime(b.createdAt) - getTime(a.createdAt)));
         });
       };
       unsubs.push(onSnapshot(q1, apply));
@@ -391,7 +409,7 @@ export default function CoachDashboardPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-sm text-muted-foreground mb-1">
-                    {new Date(m.createdAt || Date.now()).toLocaleString()}
+                    {formatDate(m.createdAt)}
                   </div>
                   <div className="text-sm">{m.text}</div>
                 </CardContent>

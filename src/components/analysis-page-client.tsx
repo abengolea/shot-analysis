@@ -48,6 +48,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [formattedDate, setFormattedDate] = useState("");
+  const [viewerRole, setViewerRole] = useState<string | null>(null);
   const [unlockStatus, setUnlockStatus] = useState<{
     status: 'none' | 'pending_payment' | 'paid_pending_review' | 'reviewed';
     paidCoachIds: Array<{ coachId: string; coachName: string }>;
@@ -56,7 +57,8 @@ export function AnalysisPageClient({ id }: { id: string }) {
   } | null>(null);
   const mpCheckRef = useRef(false);
   const userRole = (userProfile as any)?.role;
-  const isCoach = userRole === 'coach';
+  const resolvedRole = viewerRole || userRole;
+  const isCoach = resolvedRole === 'coach';
   const paidCoachNames = unlockStatus?.paidCoachIds
     ?.map((coach) => coach.coachName)
     .filter((name) => typeof name === 'string' && name.trim().length > 0) || [];
@@ -80,13 +82,20 @@ export function AnalysisPageClient({ id }: { id: string }) {
       }
 
       try {
+        if (!user) {
+          throw new Error('Usuario no autenticado');
+        }
+
         console.log(`[AnalysisPageClient] 🔍 Cargando análisis: ${id}`);
         setLoading(true);
         setError(null);
         
         // Obtener el análisis específico
         console.log(`[AnalysisPageClient] 📡 Llamando a /api/analyses/${id}`);
-        const response = await fetch(`/api/analyses/${id}`);
+        const token = await user.getIdToken();
+        const response = await fetch(`/api/analyses/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         console.log(`[AnalysisPageClient] 📥 Respuesta recibida:`, response.status, response.statusText);
         
         if (!response.ok) {
@@ -95,12 +104,13 @@ export function AnalysisPageClient({ id }: { id: string }) {
           throw new Error(errorData.error || `Error ${response.status}: Análisis no encontrado`);
         }
         
-        const analysisData = await response.json();
+        const rawData = await response.json();
+        const analysisData = (rawData && rawData.analysis) ? rawData.analysis : rawData;
         console.log(`[AnalysisPageClient] ✅ Datos del análisis recibidos:`, {
-          id: analysisData.id,
-          playerId: analysisData.playerId,
-          status: analysisData.status,
-          hasCoachAccess: !!analysisData.coachAccess
+          id: analysisData?.id,
+          playerId: analysisData?.playerId,
+          status: analysisData?.status,
+          hasCoachAccess: !!analysisData?.coachAccess
         });
         
         // Validar que tenemos datos válidos
@@ -221,19 +231,30 @@ export function AnalysisPageClient({ id }: { id: string }) {
           })(),
         } as any;
 
-        // Validar acceso al análisis
-        if (!user) {
-          console.error('[AnalysisPageClient] ❌ Usuario no autenticado');
-          throw new Error('Usuario no autenticado');
+        const analysisPlayerId = analysisData.playerId;
+        const coachAccess = (analysisData.coachAccess || {})[user.uid];
+        const hasCoachAccess = !!coachAccess && coachAccess.status === 'paid';
+        const isOwnerPlayer = analysisPlayerId && String(analysisPlayerId) === String(user.uid);
+        const effectiveRole = userRole === 'admin'
+          ? 'admin'
+          : hasCoachAccess
+            ? 'coach'
+            : isOwnerPlayer
+              ? 'player'
+              : userRole;
+
+        if (hasCoachAccess) {
+          try { localStorage.setItem('preferredRole', 'coach'); } catch {}
         }
+        setViewerRole(effectiveRole || null);
 
         console.log(`[AnalysisPageClient] 👤 Usuario autenticado:`, {
           uid: user.uid,
-          role: userRole
+          role: effectiveRole
         });
 
         // Si es jugador, verificar que el análisis le pertenece
-        if (userRole === 'player' && analysisData.playerId !== user.uid) {
+        if (effectiveRole === 'player' && analysisData.playerId !== user.uid) {
           console.error(`[AnalysisPageClient] ❌ Jugador no tiene permiso:`, {
             analysisPlayerId: analysisData.playerId,
             userUid: user.uid
@@ -242,8 +263,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
         }
 
         // Si es coach, verificar que tenga acceso pagado al análisis
-        if (userRole === 'coach') {
-          const coachAccess = (analysisData.coachAccess || {})[user.uid];
+        if (effectiveRole === 'coach') {
           console.log(`[AnalysisPageClient] 🔐 Verificando acceso del coach:`, {
             coachUid: user.uid,
             hasCoachAccess: !!analysisData.coachAccess,
@@ -308,7 +328,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
         }
         
         // Cargar estado de unlock si es jugador
-        if (!isCoach && user) {
+        if (effectiveRole === 'player' && user) {
           try {
             const token = await user.getIdToken();
             const unlockResponse = await fetch(`/api/analyses/${id}/unlock-status`, {
@@ -347,7 +367,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
   useEffect(() => {
     const tryProcessPendingMp = async () => {
       if (mpCheckRef.current) return;
-      if (!user || userRole !== 'player' || !unlockStatus || unlockStatus.status !== 'pending_payment') return;
+      if (!user || resolvedRole !== 'player' || !unlockStatus || unlockStatus.status !== 'pending_payment') return;
       const mpUnlock = unlockStatus.unlocks.find(
         (u) => u.paymentProvider === 'mercadopago' && u.preferenceId
       );
@@ -391,7 +411,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
     };
 
     tryProcessPendingMp();
-  }, [id, user, userRole, unlockStatus]);
+  }, [id, user, resolvedRole, unlockStatus]);
 
   if (authLoading || loading) {
     console.log(`[AnalysisPageClient] ⏳ Mostrando estado de carga (authLoading: ${authLoading}, loading: ${loading})`);
@@ -481,7 +501,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
         )}
 
         {/* Botón destacado para solicitar revisión con coach real (solo para jugadores) */}
-        {!isCoach && analysis && userRole === 'player' && (
+        {!isCoach && analysis && resolvedRole === 'player' && (
           <div className="mb-6 flex flex-col items-end gap-2">
             {unlockStatus?.hasCoachFeedback ? (
               <div className="flex flex-col items-end gap-2">

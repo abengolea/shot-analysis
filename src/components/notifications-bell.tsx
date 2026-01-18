@@ -26,6 +26,27 @@ export function NotificationsBell() {
   const unread = messages.filter(m => !m.read);
   const totalUnread = (unread?.length || 0) + (ticketsUnread || 0);
   const isAdmin = (userProfile as any)?.role === 'admin';
+  const toDate = (value: any) => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (typeof value === "string" || typeof value === "number") {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    if (typeof value?.toDate === "function") return value.toDate();
+    if (typeof value?._seconds === "number") {
+      return new Date(value._seconds * 1000 + Math.round((value._nanoseconds || 0) / 1e6));
+    }
+    return null;
+  };
+  const getTime = (value: any) => toDate(value)?.getTime() ?? 0;
+  const formatDate = (value: any) => {
+    const d = toDate(value);
+    return d ? d.toLocaleString() : "Fecha desconocida";
+  };
+  const messagesPath = isAdmin
+    ? "/admin/tickets"
+    : ((userProfile as any)?.role === "coach" ? "/coach/dashboard#messages" : "/player/messages");
 
   useEffect(() => {
     if (!user || isAdmin) return; // Admin no ve mensajes directos
@@ -45,7 +66,7 @@ export function NotificationsBell() {
         setMessages(prev => {
           const incoming = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })) as Message[];
           const merged = [...incoming, ...prev].reduce((acc: Record<string, Message>, m: Message) => { acc[m.id] = m; return acc; }, {} as any);
-          return Object.values(merged).sort((a, b) => (new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
+          return Object.values(merged).sort((a, b) => (getTime(b.createdAt) - getTime(a.createdAt)));
         });
       };
       unsubs.push(onSnapshot(q1, apply));
@@ -129,8 +150,8 @@ export function NotificationsBell() {
           <div className="p-3 text-sm text-muted-foreground">Sin mensajes</div>
         )}
         {!isAdmin && messages.slice(0, 10).map((m) => (
-          <DropdownMenuItem key={m.id} className="flex flex-col items-start gap-1 py-3" onClick={() => { try { router.push('/support'); } catch {} }}>
-            <div className="text-xs text-muted-foreground">{new Date(m.createdAt || Date.now()).toLocaleString()}</div>
+          <DropdownMenuItem key={m.id} className="flex flex-col items-start gap-1 py-3" onClick={() => { try { router.push(messagesPath); } catch {} }}>
+            <div className="text-xs text-muted-foreground">{formatDate(m.createdAt)}</div>
             <div className="text-sm">{m.text}</div>
           </DropdownMenuItem>
         ))}

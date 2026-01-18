@@ -151,7 +151,13 @@ export default function CoachesPage() {
       try {
         setAnalysisInfoLoading(true);
         setAnalysisInfoError(null);
-        const res = await fetch(`/api/analyses/${analysisIdFromQuery}`);
+        if (!user) {
+          throw new Error('Usuario no autenticado.');
+        }
+        const token = await user.getIdToken();
+        const res = await fetch(`/api/analyses/${analysisIdFromQuery}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (!res.ok) {
           throw new Error('No pudimos encontrar ese análisis.');
         }
@@ -191,7 +197,7 @@ export default function CoachesPage() {
     return () => {
       cancelled = true;
     };
-  }, [analysisIdFromQuery, unlockCoach]);
+  }, [analysisIdFromQuery, unlockCoach, user]);
 
   // Get unique specialties for filter
   const specialties = useMemo(() => {
@@ -647,17 +653,13 @@ export default function CoachesPage() {
             </CardHeader>
 
             <CardContent className="flex-grow space-y-4">
-              {/* Experience */}
+              {/* Curriculum */}
               <div>
                 <h4 className="font-semibold mb-2 flex items-center gap-2">
                   <Briefcase className="h-5 w-5 text-primary" /> 
-                  Experiencia
+                  Curriculum
                 </h4>
                 <p className="text-sm text-muted-foreground">{coach.experience}</p>
-                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3" />
-                  {coach.yearsOfExperience} años
-                </div>
               </div>
 
               {/* Bio */}

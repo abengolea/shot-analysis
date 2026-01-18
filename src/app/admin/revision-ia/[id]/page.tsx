@@ -115,8 +115,14 @@ export default function AdminRevisionIADetailPage() {
     try {
       setLoading(true);
       setError(null);
+      const auth = getAuth();
+      const cu = auth.currentUser;
+      if (!cu) throw new Error('Usuario no autenticado');
+      const token = await getIdToken(cu, true);
       // analysis
-      const resA = await fetch(`/api/analyses/${encodeURIComponent(analysisId)}?t=${Date.now()}`);
+      const resA = await fetch(`/api/analyses/${encodeURIComponent(analysisId)}?t=${Date.now()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const dataA = await resA.json();
       if (!resA.ok) throw new Error(dataA?.error || `HTTP ${resA.status}`);
       const a = dataA?.analysis || null;
@@ -143,7 +149,9 @@ export default function AdminRevisionIADetailPage() {
         setPlayerId(String(a.playerId || ''));
       }
       // existing feedback
-      const resF = await fetch(`/api/analyses/${encodeURIComponent(analysisId)}/admin-feedback`);
+      const resF = await fetch(`/api/analyses/${encodeURIComponent(analysisId)}/admin-feedback`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const dataF = await resF.json();
       if (resF.ok && dataF?.feedback) {
         const f = dataF.feedback as any;

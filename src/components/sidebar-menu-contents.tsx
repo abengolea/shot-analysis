@@ -15,6 +15,7 @@ import {
   Shield,
   ShieldCheck,
   Trophy,
+  MessageSquare,
 } from 'lucide-react';
 import {
   SidebarMenuItem,
@@ -38,6 +39,7 @@ export function SidebarMenuContents() {
   const [hasCoachProfile, setHasCoachProfile] = useState(false);
   const [hasPlayerProfile, setHasPlayerProfile] = useState(false);
   const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
+  const [preferredRole, setPreferredRole] = useState<string>('');
 
   useEffect(() => {
     const checkProfiles = async () => {
@@ -61,13 +63,21 @@ export function SidebarMenuContents() {
     checkProfiles();
   }, [userProfile]);
 
+  useEffect(() => {
+    try {
+      const stored = typeof window !== 'undefined' ? (localStorage.getItem('preferredRole') || '') : '';
+      setPreferredRole(stored);
+    } catch {}
+  }, []);
+
   const isActive = (path: string, exact: boolean = false) => {
     if (exact) return pathname === path;
     // For root, do exact match. For others, startsWith.
     return path === '/' ? pathname === path : pathname.startsWith(path);
   };
   
-  const isCoachView = pathname === '/coach' || pathname.startsWith('/coach/');
+  const prefersCoach = preferredRole === 'coach' || (hasCoachProfile && !hasPlayerProfile);
+  const isCoachView = pathname === '/coach' || pathname.startsWith('/coach/') || (prefersCoach && hasCoachProfile);
   const isAdminView = pathname === '/admin' || pathname.startsWith('/admin/');
   const isPlayerView = !isCoachView && !isAdminView;
 
@@ -99,6 +109,14 @@ export function SidebarMenuContents() {
           <Link href="/support">
             <Shield />
             Soporte
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuButton asChild isActive={isActive("/player/messages")} tooltip="Mensajes">
+          <Link href="/player/messages">
+            <MessageSquare />
+            Mensajes
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
