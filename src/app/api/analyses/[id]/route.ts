@@ -33,10 +33,10 @@ export async function GET(
       adminDb.collection('coaches').doc(uid).get(),
       adminDb.collection('players').doc(uid).get(),
     ]);
-    const role = coachSnap.exists
-      ? (coachSnap.data() as any)?.role
-      : (playerSnap.exists ? (playerSnap.data() as any)?.role : undefined);
-    if (!role) {
+    const coachData = coachSnap.exists ? (coachSnap.data() as any) : null;
+    const playerData = playerSnap.exists ? (playerSnap.data() as any) : null;
+    const role = coachData?.role || playerData?.role;
+    if (!coachSnap.exists && !playerSnap.exists) {
       return NextResponse.json({ error: 'Usuario no autorizado' }, { status: 403 });
     }
 
@@ -65,16 +65,11 @@ export async function GET(
     const coachAccess = (analysisData as any)?.coachAccess || {};
     const coachAccessForUser = coachAccess?.[uid];
 
-    if (role !== 'admin') {
-      if (role === 'player') {
-        if (!analysisPlayerId || String(analysisPlayerId) !== String(uid)) {
-          return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
-        }
-      } else if (role === 'coach') {
-        if (!coachAccessForUser || coachAccessForUser.status !== 'paid') {
-          return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
-        }
-      }
+    const isAdmin = role === 'admin';
+    const isOwnerPlayer = playerSnap.exists && analysisPlayerId && String(analysisPlayerId) === String(uid);
+    const hasPaidCoachAccess = coachSnap.exists && coachAccessForUser?.status === 'paid';
+    if (!isAdmin && !isOwnerPlayer && !hasPaidCoachAccess) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
     }
 
     console.log(`✅ Análisis encontrado: ${analysisId}`);
