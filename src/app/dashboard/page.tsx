@@ -28,6 +28,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { PlayerProgressChart } from "@/components/player-progress-chart";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 
 function FormattedDate({ dateString }: { dateString: string }) {
@@ -57,6 +58,12 @@ export default function DashboardPage() {
   const [analysesLoading, setAnalysesLoading] = useState(true);
   const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
   const [coachFeedbackByAnalysis, setCoachFeedbackByAnalysis] = useState<Record<string, boolean>>({});
+  const [coachReviewStatusByAnalysis, setCoachReviewStatusByAnalysis] = useState<Record<string, { reviewedCoachIds?: string[] }>>({});
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [reviewRating, setReviewRating] = useState<string>("5");
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewTarget, setReviewTarget] = useState<any | null>(null);
 
   // Controles de filtro/rango
   const [range, setRange] = useState<string>("12m"); // 3m,6m,12m,5y,all
@@ -111,6 +118,29 @@ export default function DashboardPage() {
         const map: Record<string, boolean> = {};
         for (const [id, has] of results) map[id] = has;
         setCoachFeedbackByAnalysis(map);
+      } catch {}
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [user, userAnalyses]);
+
+  // Cargar estado de reseñas de coach para los análisis listados
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        if (!user || !userAnalyses.length) return;
+        const token = await user.getIdToken();
+        const analysisIds = userAnalyses.slice(0, 50).map((a) => a.id);
+        const res = await fetch('/api/analyses/batch-coach-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ analysisIds }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setCoachReviewStatusByAnalysis(data?.statusByAnalysis || {});
       } catch {}
     };
     load();
@@ -201,6 +231,48 @@ export default function DashboardPage() {
         return <Badge className="bg-red-100 text-red-800">Error IA</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
+
+  const openReviewDialog = (analysis: any) => {
+    setReviewTarget(analysis);
+    setReviewRating("5");
+    setReviewComment("");
+    setReviewDialogOpen(true);
+  };
+
+  const submitCoachReview = async () => {
+    if (!reviewTarget || !user) return;
+    const rating = Number(reviewRating);
+    if (!rating || rating < 1 || rating > 5) {
+      toast({ title: 'Calificación inválida', description: 'Seleccioná una calificación de 1 a 5.', variant: 'destructive' });
+      return;
+    }
+    try {
+      setReviewSubmitting(true);
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/analyses/${reviewTarget.id}/coach-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ rating, comment: reviewComment }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || 'No se pudo enviar la reseña.');
+      }
+      toast({ title: 'Reseña enviada', description: 'Gracias por tu devolución.' });
+      setReviewDialogOpen(false);
+      if (reviewTarget?.coachId) {
+        setCoachReviewStatusByAnalysis((prev) => {
+          const current = prev[reviewTarget.id]?.reviewedCoachIds || [];
+          const next = Array.from(new Set([...current, String(reviewTarget.coachId)]));
+          return { ...prev, [reviewTarget.id]: { ...prev[reviewTarget.id], reviewedCoachIds: next } };
+        });
+      }
+    } catch (e: any) {
+      toast({ title: 'Error', description: e?.message || 'No se pudo enviar la reseña.', variant: 'destructive' });
+    } finally {
+      setReviewSubmitting(false);
     }
   };
 
@@ -380,32 +452,44 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {userAnalyses.map((analysis) => (
-                <div key={analysis.id} className="flex items-center justify-between p-4 border rounded-lg">
+              {userAnalyses.map((analysis) => {
+                const reviewedCoachIds = coachReviewStatusByAnalysis[analysis.id]?.reviewedCoachIds || [];
+                const hasCoachReview = analysis?.coachId ? reviewedCoachIds.includes(String(analysis.coachId)) : false;
+                return (
+                <div
+                  key={analysis.id}
+                  className={`flex items-center justify-between p-4 border rounded-lg ${analysis.status === 'analyzed' && analysis.coachCompleted ? 'bg-blue-50 border-blue-200' : ''}`}
+                >
                   <div className="flex items-center gap-4">
                     <div className="p-2 bg-blue-100 rounded-full">
                       <Video className="h-5 w-5 text-blue-600" />
                     </div>
                     <div>
                       <h3 className="font-medium">{analysis.shotType}</h3>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
                         <Calendar className="h-4 w-4" />
                         <FormattedDate dateString={analysis.createdAt} />
                         {getStatusBadge(analysis.status)}
                       </div>
-                      {analysis.status === 'analyzed' && analysis.coachCompleted && (
-                        <div className="mt-1 text-xs text-blue-700">
-                          Revisado por entrenador.
-                        </div>
-                      )}
-                      {analysis.status === 'analyzed' && coachFeedbackByAnalysis[analysis.id] && (
-                        <div className="mt-1 text-xs text-green-700">
-                          Feedback del entrenador disponible si tu entrenador lo agregó.
-                        </div>
-                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {analysis.status === 'analyzed' && analysis.coachCompleted && (
+                      <div className="hidden sm:flex items-center justify-center px-3 py-2 rounded-md border border-blue-200 bg-blue-100 text-blue-800 text-xs font-semibold">
+                        Revisado por entrenador
+                      </div>
+                    )}
+                    {analysis.status === 'analyzed' && analysis.coachCompleted && analysis.coachId && (
+                      hasCoachReview ? (
+                        <div className="hidden sm:flex items-center justify-center px-3 py-2 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold">
+                          Reseña enviada
+                        </div>
+                      ) : (
+                        <Button size="sm" variant="outline" onClick={() => openReviewDialog(analysis)}>
+                          Dejar reseña
+                        </Button>
+                      )
+                    )}
                     {analysis.status === 'analyzed' && (
                       <Button asChild size="sm">
                         <Link href={`/analysis/${analysis.id}`}>
@@ -416,7 +500,7 @@ export default function DashboardPage() {
                     )}
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           )}
         </CardContent>
@@ -473,6 +557,49 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reseña del entrenador</AlertDialogTitle>
+            <AlertDialogDescription>
+              Compartí tu experiencia para ayudar a otros jugadores.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Calificación</div>
+              <Select value={reviewRating} onValueChange={setReviewRating}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Selecciona una calificación" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5 - Excelente</SelectItem>
+                  <SelectItem value="4">4 - Muy bueno</SelectItem>
+                  <SelectItem value="3">3 - Bueno</SelectItem>
+                  <SelectItem value="2">2 - Regular</SelectItem>
+                  <SelectItem value="1">1 - Malo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Comentario (opcional)</div>
+              <Textarea
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                placeholder="Contá qué te gustó y qué se puede mejorar..."
+                rows={4}
+              />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reviewSubmitting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={submitCoachReview} disabled={reviewSubmitting}>
+              {reviewSubmitting ? 'Enviando...' : 'Enviar reseña'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Modal de perfil incompleto eliminado: ya no bloquea desde el dashboard */}
     </div>

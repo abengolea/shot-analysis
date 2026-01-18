@@ -209,6 +209,7 @@ export type Wallet = {
   credits: number; // créditos disponibles para análisis pagos
   freeAnalysesUsed: number; // cuántos gratis usados en el añoEnCurso
   yearInUse: number; // año calendario de referencia para freeAnalysesUsed
+  freeCoachReviews?: number; // revisiones de coach gratis disponibles
   historyPlusActive?: boolean;
   historyPlusValidUntil?: string; // ISO string
   currency: 'ARS';

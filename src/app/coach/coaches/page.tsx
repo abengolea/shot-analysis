@@ -60,9 +60,11 @@ export default function CoachesPage() {
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [creatingUnlock, setCreatingUnlock] = useState(false);
   const [simulatingPayment, setSimulatingPayment] = useState(false);
+  const [usingFreeReview, setUsingFreeReview] = useState(false);
   const [isAlreadyPaid, setIsAlreadyPaid] = useState(false);
   const [paymentProvider, setPaymentProvider] = useState<'mercadopago' | 'dlocal'>('mercadopago');
   const [paidCoachIds, setPaidCoachIds] = useState<string[]>([]);
+  const [freeCoachReviews, setFreeCoachReviews] = useState<number>(0);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -114,6 +116,28 @@ export default function CoachesPage() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setFreeCoachReviews(0);
+      return;
+    }
+    let cancelled = false;
+    const fetchWallet = async () => {
+      try {
+        const res = await fetch(`/api/wallet?userId=${user.uid}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) {
+          setFreeCoachReviews(Number(data?.freeCoachReviews || 0));
+        }
+      } catch {
+        if (!cancelled) setFreeCoachReviews(0);
+      }
+    };
+    fetchWallet();
+    return () => { cancelled = true; };
+  }, [user]);
 
   useEffect(() => {
     if (!analysisIdFromQuery) {
@@ -387,6 +411,52 @@ export default function CoachesPage() {
       setUnlockError(error?.message || 'Error inesperado al iniciar el pago.');
     } finally {
       setCreatingUnlock(false);
+    }
+  };
+
+  const handleUseFreeReview = async () => {
+    if (!analysisIdFromQuery || !unlockCoach) return;
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    try {
+      setUsingFreeReview(true);
+      setUnlockError(null);
+      const token = await user.getIdToken();
+      const res = await fetch('/api/coach-unlocks/free', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          analysisId: analysisIdFromQuery,
+          coachId: unlockCoach.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 409) {
+          setIsAlreadyPaid(true);
+          setUnlockError(null);
+          return;
+        }
+        throw new Error(data?.error || 'No se pudo usar la revisión gratis.');
+      }
+      setIsAlreadyPaid(true);
+      setPaidCoachIds((prev) => prev.includes(unlockCoach.id) ? prev : [...prev, unlockCoach.id]);
+      setFreeCoachReviews(Number(data?.freeCoachReviewsLeft ?? Math.max(0, freeCoachReviews - 1)));
+      toast({
+        title: 'Revisión gratis aplicada',
+        description: 'El entrenador ya tiene acceso al análisis.',
+      });
+      setUnlockDialogOpen(false);
+      router.refresh();
+    } catch (error: any) {
+      setUnlockError(error?.message || 'Error inesperado al usar revisión gratis.');
+    } finally {
+      setUsingFreeReview(false);
     }
   };
 
@@ -876,6 +946,15 @@ export default function CoachesPage() {
               </div>
             </div>
 
+            {freeCoachReviews > 0 && !isAlreadyPaid && (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                <p className="font-medium">Tenés {freeCoachReviews} revisión{freeCoachReviews === 1 ? '' : 'es'} gratis disponible{freeCoachReviews === 1 ? '' : 's'}.</p>
+                <p className="text-emerald-800 text-xs mt-1">
+                  Podés usar una revisión gratis para desbloquear este entrenador sin pagar.
+                </p>
+              </div>
+            )}
+
             {/* Selector de método de pago - SIEMPRE visible */}
             <div className="rounded-md border p-3 text-sm space-y-2 bg-blue-50 border-blue-200">
               <label className="font-medium">Método de pago</label>
@@ -963,10 +1042,27 @@ export default function CoachesPage() {
                 <Button variant="outline" onClick={() => setUnlockDialogOpen(false)} disabled={creatingUnlock || simulatingPayment}>
                   Cancelar
                 </Button>
+                {freeCoachReviews > 0 && (
+                  <Button
+                    variant="secondary"
+                    onClick={handleUseFreeReview}
+                    disabled={
+                      usingFreeReview ||
+                      creatingUnlock ||
+                      simulatingPayment ||
+                      !analysisIdFromQuery ||
+                      !unlockCoach ||
+                      analysisInfoLoading
+                    }
+                  >
+                    {usingFreeReview ? 'Usando revisión...' : 'Usar revisión gratis'}
+                  </Button>
+                )}
                 <Button
                   onClick={handleCreateUnlock}
                   disabled={
                     creatingUnlock ||
+                    usingFreeReview ||
                     simulatingPayment ||
                     !analysisIdFromQuery ||
                     !unlockCoach ||

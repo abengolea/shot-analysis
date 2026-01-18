@@ -27,10 +27,11 @@ export async function POST(req: NextRequest) {
     const userId = String(form.get('userId') || '');
     const credits = Number(form.get('credits') || 0);
     const freeAnalysesUsed = Number(form.get('freeAnalysesUsed') || 0);
+    const freeCoachReviews = Number(form.get('freeCoachReviews') || 0);
     const redirectTo = String(form.get('redirectTo') || '');
     if (!userId) return NextResponse.json({ ok: false, error: 'userId requerido' }, { status: 400 });
     const nowIso = new Date().toISOString();
-    await adminDb.collection('wallets').doc(userId).set({ userId, credits, freeAnalysesUsed, updatedAt: nowIso }, { merge: true });
+    await adminDb.collection('wallets').doc(userId).set({ userId, credits, freeAnalysesUsed, freeCoachReviews, updatedAt: nowIso }, { merge: true });
     if (redirectTo) {
       const url = new URL(redirectTo, req.url);
       return NextResponse.redirect(url, { status: 303 });

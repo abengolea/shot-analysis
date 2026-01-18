@@ -8,6 +8,7 @@ import { adminUpdatePlayerStatus, adminUpdateWallet, adminSetHistoryPlus, adminS
 export async function actionUpdatePlayerStatus(formData: FormData) { 'use server'; return await (adminUpdatePlayerStatus as any)(undefined, formData); }
 export async function actionGiftAnalyses(formData: FormData) { 'use server'; return await (giftAnalyses as any)(undefined, formData); }
 export async function actionGiftCoachReviews(formData: FormData) { 'use server'; return await (giftCoachReviews as any)(undefined, formData); }
+export async function actionUpdateWallet(formData: FormData) { 'use server'; return await (adminUpdateWallet as any)(undefined, formData); }
 export async function actionSetHistoryPlus(formData: FormData) { 'use server'; return await (adminSetHistoryPlus as any)(undefined, formData); }
 export async function actionSendPasswordReset(formData: FormData) { 'use server'; return await (adminSendPasswordReset as any)(undefined, formData); }
 import { Button } from "@/components/ui/button";
@@ -31,17 +32,13 @@ async function getPlayerData(userId: string) {
     }
     return 0;
   };
-  const [
-    analysesByPlayerSnap,
-    analysesByUserSnap,
-    analysesCountByPlayerSnap,
-    analysesCountByUserSnap,
-  ] = await Promise.all([
-    adminDb.collection('analyses').where('playerId', '==', userId).orderBy('createdAt','desc').limit(50).get(),
-    adminDb.collection('analyses').where('userId', '==', userId).orderBy('createdAt','desc').limit(50).get(),
-    adminDb.collection('analyses').where('playerId', '==', userId).get(),
-    adminDb.collection('analyses').where('userId', '==', userId).get(),
-  ]);
+  const analysesByPlayerSnap = await adminDb.collection('analyses').where('playerId', '==', userId).get();
+  let analysesByUserSnap: any = { docs: [], size: 0 };
+  try {
+    analysesByUserSnap = await adminDb.collection('analyses').where('userId', '==', userId).get();
+  } catch (e) {
+    console.warn('⚠️ Query admin por userId falló, usando solo playerId', e);
+  }
   const analysisMap = new Map<string, any>();
   for (const d of analysesByPlayerSnap.docs) {
     analysisMap.set(d.id, { id: d.id, ...(d.data() as any) });
@@ -64,8 +61,8 @@ async function getPlayerData(userId: string) {
     player: playerData,
     wallet: walletSnap.exists ? walletSnap.data() : null,
     analysesCount: new Set([
-      ...analysesCountByPlayerSnap.docs.map((d) => d.id),
-      ...analysesCountByUserSnap.docs.map((d) => d.id),
+      ...analysesByPlayerSnap.docs.map((d) => d.id),
+      ...analysesByUserSnap.docs.map((d) => d.id),
     ]).size,
     latestAnalyses,
     latestPayments: paymentsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
@@ -150,7 +147,7 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
 
             <div className="space-y-2">
               <div className="text-sm font-medium">Wallet</div>
-              <form method="post" action="/api/admin/update-wallet" className="grid grid-cols-2 gap-2">
+              <form action={actionUpdateWallet} className="grid grid-cols-2 gap-2">
                 <input type="hidden" name="userId" defaultValue={data.id} />
                 <input type="hidden" name="redirectTo" defaultValue={`/admin/players/${data.id}`} />
                 <label className="text-sm text-muted-foreground">Créditos</label>
@@ -163,28 +160,50 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
                   <Button type="submit" size="sm">Guardar</Button>
                 </div>
               </form>
-              <div className="flex items-center gap-2">
+              <div className="text-xs text-muted-foreground">Regalar análisis IA</div>
+              <div className="flex flex-wrap items-center gap-2">
                 <form action={actionGiftAnalyses}>
                   <input type="hidden" name="userId" value={data.id} />
                   <input type="hidden" name="count" value={1} />
-                  <Button type="submit" variant="outline" size="sm">Regalar 1</Button>
+                  <Button type="submit" variant="outline" size="sm">1 análisis</Button>
                 </form>
                 <form action={actionGiftAnalyses}>
                   <input type="hidden" name="userId" value={data.id} />
                   <input type="hidden" name="count" value={3} />
-                  <Button type="submit" variant="outline" size="sm">Regalar 3</Button>
+                  <Button type="submit" variant="outline" size="sm">3 análisis</Button>
+                </form>
+                <form action={actionGiftAnalyses}>
+                  <input type="hidden" name="userId" value={data.id} />
+                  <input type="hidden" name="count" value={10} />
+                  <Button type="submit" variant="outline" size="sm">10 análisis</Button>
+                </form>
+                <form action={actionGiftAnalyses}>
+                  <input type="hidden" name="userId" value={data.id} />
+                  <input type="hidden" name="count" value={20} />
+                  <Button type="submit" variant="outline" size="sm">20 análisis</Button>
                 </form>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="text-xs text-muted-foreground">Regalar revisiones de coach</div>
+              <div className="flex flex-wrap items-center gap-2">
                 <form action={actionGiftCoachReviews}>
                   <input type="hidden" name="userId" value={data.id} />
                   <input type="hidden" name="count" value={1} />
-                  <Button type="submit" variant="outline" size="sm">Regalar 1 revisión</Button>
+                  <Button type="submit" variant="outline" size="sm">1 revisión</Button>
                 </form>
                 <form action={actionGiftCoachReviews}>
                   <input type="hidden" name="userId" value={data.id} />
                   <input type="hidden" name="count" value={3} />
-                  <Button type="submit" variant="outline" size="sm">Regalar 3 revisiones</Button>
+                  <Button type="submit" variant="outline" size="sm">3 revisiones</Button>
+                </form>
+                <form action={actionGiftCoachReviews}>
+                  <input type="hidden" name="userId" value={data.id} />
+                  <input type="hidden" name="count" value={10} />
+                  <Button type="submit" variant="outline" size="sm">10 revisiones</Button>
+                </form>
+                <form action={actionGiftCoachReviews}>
+                  <input type="hidden" name="userId" value={data.id} />
+                  <input type="hidden" name="count" value={20} />
+                  <Button type="submit" variant="outline" size="sm">20 revisiones</Button>
                 </form>
               </div>
             </div>

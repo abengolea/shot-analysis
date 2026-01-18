@@ -230,6 +230,7 @@ export async function giftAnalyses(_prevState: any, formData: FormData) {
                 credits: 0,
                 freeAnalysesUsed: 0,
                 yearInUse: new Date().getFullYear(),
+                freeCoachReviews: 0,
                 historyPlusActive: false,
                 historyPlusValidUntil: null,
                 currency: 'ARS',
@@ -242,6 +243,43 @@ export async function giftAnalyses(_prevState: any, formData: FormData) {
     } catch (e) {
         console.error('Error regalando análisis:', e);
         return { success: false, message: 'Error al regalar análisis' };
+    }
+}
+
+// Regalar revisiones de coach gratis a un jugador desde el panel admin
+export async function giftCoachReviews(_prevState: any, formData: FormData) {
+    try {
+        const userId = String(formData.get('userId') || '');
+        const count = Number(formData.get('count') || 0);
+        if (!userId || !count || count <= 0) {
+            return { success: false, message: 'Parámetros inválidos' };
+        }
+        if (!adminDb) {
+            return { success: false, message: 'Servidor sin Admin SDK' };
+        }
+        const db = adminDb!;
+        const nowIso = new Date().toISOString();
+        await db.runTransaction(async (tx: any) => {
+            const walletRef = db.collection('wallets').doc(userId);
+            const walletSnap = await tx.get(walletRef);
+            const base = walletSnap.exists ? walletSnap.data() : {
+                userId,
+                credits: 0,
+                freeAnalysesUsed: 0,
+                yearInUse: new Date().getFullYear(),
+                freeCoachReviews: 0,
+                historyPlusActive: false,
+                historyPlusValidUntil: null,
+                currency: 'ARS',
+                createdAt: nowIso,
+            };
+            const newFreeReviews = (base.freeCoachReviews || 0) + count;
+            tx.set(walletRef, { ...base, freeCoachReviews: newFreeReviews, updatedAt: nowIso }, { merge: true });
+        });
+        return { success: true, message: `Se regalaron ${count} revisiones de coach.` };
+    } catch (e) {
+        console.error('Error regalando revisiones de coach:', e);
+        return { success: false, message: 'Error al regalar revisiones de coach' };
     }
 }
 
@@ -289,14 +327,15 @@ export async function adminUpdateWallet(_prev: any, formData: FormData) {
         const userId = String(formData.get('userId') || '');
         const credits = Number(formData.get('credits') || 0);
         const freeAnalysesUsed = Number(formData.get('freeAnalysesUsed') || 0);
+        const freeCoachReviews = Number(formData.get('freeCoachReviews') || 0);
         const redirectTo = String(formData.get('redirectTo') || '');
-        if (!userId || credits < 0 || freeAnalysesUsed < 0) {
+        if (!userId || credits < 0 || freeAnalysesUsed < 0 || freeCoachReviews < 0) {
             return { success: false, message: 'Parámetros inválidos' };
         }
         if (!adminDb) return { success: false, message: 'Servidor sin Admin SDK' };
         const walletRef = adminDb.collection('wallets').doc(userId);
         const nowIso = new Date().toISOString();
-        await walletRef.set({ userId, credits, freeAnalysesUsed, updatedAt: nowIso }, { merge: true });
+        await walletRef.set({ userId, credits, freeAnalysesUsed, freeCoachReviews, updatedAt: nowIso }, { merge: true });
         revalidatePath('/admin');
         revalidatePath(`/admin/players/${userId}`);
         if (redirectTo) {
@@ -629,6 +668,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                         credits: 0,
                         freeAnalysesUsed: 0,
                         yearInUse: currentYear,
+                        freeCoachReviews: 0,
                         historyPlusActive: false,
                         historyPlusValidUntil: null,
                         currency: 'ARS',

@@ -199,6 +199,7 @@ export async function handleWebhook(event: any) {
             credits: deltaCredits,
             freeAnalysesUsed: 0,
             yearInUse: new Date().getFullYear(),
+            freeCoachReviews: 0,
             historyPlusActive: historyPlus,
             historyPlusValidUntil: historyPlus ? new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString() : null,
             currency: 'ARS',

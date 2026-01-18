@@ -514,12 +514,17 @@ export default function AdminHome() {
 									const cu = auth.currentUser;
 									if (!cu) throw new Error('Usuario no autenticado');
 									const token = await getIdToken(cu, true);
+									const search = playersQuery.trim();
 									const url = new URL('/api/admin/players', window.location.origin);
-									url.searchParams.set('limit', '50');
+									if (search) {
+										url.searchParams.set('q', search);
+									} else {
+										url.searchParams.set('limit', '50');
+									}
 									const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
 									const data = await res.json();
 									setPlayers(Array.isArray(data.items) ? data.items : []);
-									setPlayersNext(data.nextCursor);
+									setPlayersNext(search ? undefined : data.nextCursor);
 								} catch (e) {
 									// noop
 								} finally {
@@ -527,7 +532,7 @@ export default function AdminHome() {
 								}
 							}}
 						>
-							{players.length ? 'Refrescar' : 'Cargar'}
+							{playersQuery.trim() ? 'Buscar' : (players.length ? 'Refrescar' : 'Cargar')}
 						</button>
 					</div>
 					<div className="rounded border overflow-x-auto">

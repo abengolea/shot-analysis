@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
     if (!(await isAdmin(req))) return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
 
     const { searchParams } = new URL(req.url);
+    const searchQuery = (searchParams.get('q') || '').trim();
     const limitParam = Number(searchParams.get('limit') || 50);
     const limit = Math.min(Math.max(limitParam, 1), 200);
     const startAfterVal = searchParams.get('startAfter') || undefined;
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
       }
     };
 
-    const items = snap.docs.map((d) => {
+    const serializeDoc = (d: FirebaseFirestore.DocumentSnapshot) => {
       const data = d.data() as any;
       return {
         id: d.id,
@@ -68,7 +69,94 @@ export async function GET(req: NextRequest) {
         createdAt: serializeDate(data?.createdAt),
         updatedAt: serializeDate(data?.updatedAt),
       };
-    });
+    };
+
+    if (searchQuery) {
+      const items: any[] = [];
+      const seen = new Set<string>();
+      const normalized = searchQuery.toLowerCase();
+
+      const docSnap = await adminDb.collection('players').doc(searchQuery).get();
+      if (docSnap.exists) {
+        items.push(serializeDoc(docSnap));
+        seen.add(docSnap.id);
+      }
+
+      if (searchQuery.includes('@')) {
+        const emailQuery = searchQuery.toLowerCase();
+        const emailSnap = await adminDb.collection('players').where('email', '==', emailQuery).limit(10).get();
+        for (const d of emailSnap.docs) {
+          if (!seen.has(d.id)) {
+            items.push(serializeDoc(d));
+            seen.add(d.id);
+          }
+        }
+        if (emailQuery !== searchQuery) {
+          const altEmailSnap = await adminDb.collection('players').where('email', '==', searchQuery).limit(10).get();
+          for (const d of altEmailSnap.docs) {
+            if (!seen.has(d.id)) {
+              items.push(serializeDoc(d));
+              seen.add(d.id);
+            }
+          }
+        }
+
+        if (!seen.size) {
+          try {
+            const user = await adminAuth.getUserByEmail(searchQuery);
+            if (user?.uid) {
+              const byUidSnap = await adminDb.collection('players').doc(user.uid).get();
+              if (byUidSnap.exists && !seen.has(byUidSnap.id)) {
+                items.push(serializeDoc(byUidSnap));
+                seen.add(byUidSnap.id);
+              }
+            }
+          } catch {
+            // noop
+          }
+        }
+      }
+
+      // Búsqueda amplia por substring (nombre/email/id) recorriendo la colección
+      const matchesQuery = (doc: FirebaseFirestore.DocumentSnapshot): boolean => {
+        const data = doc.data() as any;
+        const haystack = [
+          doc.id,
+          data?.email,
+          data?.name,
+          data?.displayName,
+        ]
+          .filter(Boolean)
+          .map((v: any) => String(v).toLowerCase());
+        return haystack.some((v: string) => v.includes(normalized));
+      };
+
+      let lastDoc: FirebaseFirestore.DocumentSnapshot | undefined = undefined;
+      const batchSize = 500;
+      while (true) {
+        let scanQuery: FirebaseFirestore.Query = adminDb
+          .collection('players')
+          .orderBy('createdAt', 'desc')
+          .limit(batchSize) as any;
+        if (lastDoc) {
+          scanQuery = (scanQuery as FirebaseFirestore.Query).startAfter(lastDoc);
+        }
+        const scanSnap = await scanQuery.get();
+        if (scanSnap.empty) break;
+        for (const d of scanSnap.docs) {
+          if (!seen.has(d.id) && matchesQuery(d)) {
+            items.push(serializeDoc(d));
+            seen.add(d.id);
+          }
+        }
+        lastDoc = scanSnap.docs[scanSnap.docs.length - 1];
+        if (scanSnap.docs.length < batchSize) break;
+      }
+
+      return NextResponse.json({ items, nextCursor: undefined });
+    }
+
+    const items = snap.docs.map((d) => serializeDoc(d));
 
     const lastDoc = snap.docs[snap.docs.length - 1];
     const nextCursor = lastDoc ? lastDoc.id : undefined;

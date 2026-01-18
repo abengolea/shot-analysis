@@ -69,26 +69,31 @@ export async function GET(request: NextRequest) {
       })) as any[];
     } else {
       console.log('🔍 Buscando análisis para usuario:', userId);
-      const [playerSnap, userSnap] = await Promise.all([
-        adminDb
-          .collection('analyses')
-          .where('playerId', '==', userId)
-          .orderBy('createdAt', 'desc')
-          .get(),
-        adminDb
+      const playerSnap = await adminDb
+        .collection('analyses')
+        .where('playerId', '==', userId)
+        .orderBy('createdAt', 'desc')
+        .get();
+      let userSnap: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData> | null = null;
+      try {
+        userSnap = await adminDb
           .collection('analyses')
           .where('userId', '==', userId)
           .orderBy('createdAt', 'desc')
-          .get(),
-      ]);
+          .get();
+      } catch (e) {
+        console.warn('⚠️ Query por userId falló, usando solo playerId', e);
+      }
 
       const merged = new Map<string, any>();
       for (const doc of playerSnap.docs) {
         merged.set(doc.id, { id: doc.id, ...doc.data() });
       }
-      for (const doc of userSnap.docs) {
-        if (!merged.has(doc.id)) {
-          merged.set(doc.id, { id: doc.id, ...doc.data() });
+      if (userSnap) {
+        for (const doc of userSnap.docs) {
+          if (!merged.has(doc.id)) {
+            merged.set(doc.id, { id: doc.id, ...doc.data() });
+          }
         }
       }
 

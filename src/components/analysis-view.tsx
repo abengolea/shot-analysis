@@ -1232,7 +1232,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     Hasta que no contactes a un entrenador y realice la revisión, este apartado permanecerá vacío.
                   </p>
                   <Button asChild>
-                    <a href="/coaches">Buscar Entrenador</a>
+                    <a href={`/coaches?analysisId=${safeAnalysis.id}`}>Buscar Entrenador</a>
                   </Button>
                 </div>
               </CardContent>
@@ -1321,7 +1321,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   Un entrenador revisará tu análisis, definirá objetivos específicos y te guiará en ejercicios correctivos. Puedes contactar a un entrenador desde el siguiente enlace.
                 </p>
                 <Button asChild>
-                  <a href="/coaches">
+                  <a href={`/coaches?analysisId=${safeAnalysis.id}`}>
                     <ShieldAlert className="mr-2 h-4 w-4" />
                     Buscar Entrenador
                   </a>
