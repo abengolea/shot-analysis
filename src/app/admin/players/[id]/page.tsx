@@ -2,11 +2,12 @@ import { adminDb } from "@/lib/firebase-admin";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { adminUpdatePlayerStatus, adminUpdateWallet, adminSetHistoryPlus, adminSendPasswordReset, giftAnalyses } from "@/app/actions";
+import { adminUpdatePlayerStatus, adminUpdateWallet, adminSetHistoryPlus, adminSendPasswordReset, giftAnalyses, giftCoachReviews } from "@/app/actions";
 
 // Server action wrappers with single-parameter signature for <form action>
 export async function actionUpdatePlayerStatus(formData: FormData) { 'use server'; return await (adminUpdatePlayerStatus as any)(undefined, formData); }
 export async function actionGiftAnalyses(formData: FormData) { 'use server'; return await (giftAnalyses as any)(undefined, formData); }
+export async function actionGiftCoachReviews(formData: FormData) { 'use server'; return await (giftCoachReviews as any)(undefined, formData); }
 export async function actionSetHistoryPlus(formData: FormData) { 'use server'; return await (adminSetHistoryPlus as any)(undefined, formData); }
 export async function actionSendPasswordReset(formData: FormData) { 'use server'; return await (adminSendPasswordReset as any)(undefined, formData); }
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,41 @@ async function getPlayerData(userId: string) {
   const playerSnap = await adminDb.collection('players').doc(userId).get();
   if (!playerSnap.exists) return null;
   const walletSnap = await adminDb.collection('wallets').doc(userId).get();
-  const analysesSnap = await adminDb.collection('analyses').where('playerId', '==', userId).orderBy('createdAt','desc').limit(10).get();
+  const getCreatedAtMs = (value: any): number => {
+    if (!value) return 0;
+    if (typeof value === 'number' || typeof value === 'string') {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+    }
+    if (typeof value?.toDate === 'function') return value.toDate().getTime();
+    if (typeof value?._seconds === 'number') {
+      return value._seconds * 1000 + Math.round((value._nanoseconds || 0) / 1e6);
+    }
+    return 0;
+  };
+  const [
+    analysesByPlayerSnap,
+    analysesByUserSnap,
+    analysesCountByPlayerSnap,
+    analysesCountByUserSnap,
+  ] = await Promise.all([
+    adminDb.collection('analyses').where('playerId', '==', userId).orderBy('createdAt','desc').limit(50).get(),
+    adminDb.collection('analyses').where('userId', '==', userId).orderBy('createdAt','desc').limit(50).get(),
+    adminDb.collection('analyses').where('playerId', '==', userId).get(),
+    adminDb.collection('analyses').where('userId', '==', userId).get(),
+  ]);
+  const analysisMap = new Map<string, any>();
+  for (const d of analysesByPlayerSnap.docs) {
+    analysisMap.set(d.id, { id: d.id, ...(d.data() as any) });
+  }
+  for (const d of analysesByUserSnap.docs) {
+    if (!analysisMap.has(d.id)) {
+      analysisMap.set(d.id, { id: d.id, ...(d.data() as any) });
+    }
+  }
+  const latestAnalyses = Array.from(analysisMap.values())
+    .sort((a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt))
+    .slice(0, 10);
   const paymentsSnap = await adminDb.collection('payments').where('userId', '==', userId).orderBy('createdAt','desc').limit(10).get();
   const ticketsSnap = await adminDb.collection('tickets').where('userId', '==', userId).orderBy('updatedAt','desc').limit(10).get();
   const playerData = playerSnap.data() as any;
@@ -28,8 +63,11 @@ async function getPlayerData(userId: string) {
     id: userId,
     player: playerData,
     wallet: walletSnap.exists ? walletSnap.data() : null,
-    analysesCount: (await adminDb.collection('analyses').where('playerId', '==', userId).get()).size,
-    latestAnalyses: analysesSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
+    analysesCount: new Set([
+      ...analysesCountByPlayerSnap.docs.map((d) => d.id),
+      ...analysesCountByUserSnap.docs.map((d) => d.id),
+    ]).size,
+    latestAnalyses,
     latestPayments: paymentsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
     latestTickets: ticketsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
     coach: coachSnap && coachSnap.exists ? { id: coachSnap.id, ...(coachSnap.data() as any) } : null,
@@ -81,6 +119,10 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
               <div className="text-2xl font-semibold">{wallet?.credits ?? 0}</div>
             </div>
             <div>
+              <div className="text-sm text-muted-foreground">Revisiones coach gratis</div>
+              <div className="text-2xl font-semibold">{wallet?.freeCoachReviews ?? 0}</div>
+            </div>
+            <div>
               <div className="text-sm text-muted-foreground">History+ activo</div>
               <div className="text-2xl font-semibold">{wallet?.historyPlusActive ? 'Sí' : 'No'}</div>
             </div>
@@ -115,6 +157,8 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
                 <input name="credits" type="number" defaultValue={wallet?.credits ?? 0} className="border rounded px-2 py-1" />
                 <label className="text-sm text-muted-foreground">Gratis usados</label>
                 <input name="freeAnalysesUsed" type="number" defaultValue={wallet?.freeAnalysesUsed ?? 0} className="border rounded px-2 py-1" />
+                <label className="text-sm text-muted-foreground">Revisiones coach gratis</label>
+                <input name="freeCoachReviews" type="number" defaultValue={wallet?.freeCoachReviews ?? 0} className="border rounded px-2 py-1" />
                 <div className="col-span-2 flex justify-end">
                   <Button type="submit" size="sm">Guardar</Button>
                 </div>
@@ -129,6 +173,18 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
                   <input type="hidden" name="userId" value={data.id} />
                   <input type="hidden" name="count" value={3} />
                   <Button type="submit" variant="outline" size="sm">Regalar 3</Button>
+                </form>
+              </div>
+              <div className="flex items-center gap-2">
+                <form action={actionGiftCoachReviews}>
+                  <input type="hidden" name="userId" value={data.id} />
+                  <input type="hidden" name="count" value={1} />
+                  <Button type="submit" variant="outline" size="sm">Regalar 1 revisión</Button>
+                </form>
+                <form action={actionGiftCoachReviews}>
+                  <input type="hidden" name="userId" value={data.id} />
+                  <input type="hidden" name="count" value={3} />
+                  <Button type="submit" variant="outline" size="sm">Regalar 3 revisiones</Button>
                 </form>
               </div>
             </div>
@@ -226,6 +282,10 @@ export default async function AdminPlayerDetailPage({ params }: { params: { id: 
             <div className="flex items-center justify-between">
               <div className="text-muted-foreground">Créditos</div>
               <div className="font-medium">{wallet?.credits ?? 0}</div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="text-muted-foreground">Revisiones coach gratis</div>
+              <div className="font-medium">{wallet?.freeCoachReviews ?? 0}</div>
             </div>
             <div className="flex items-center justify-between">
               <div className="text-muted-foreground">Gratis usados (año)</div>

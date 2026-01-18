@@ -42,27 +42,60 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ iaQueue });
     }
 
-    let analysesSnapshot: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>;
+    const getCreatedAtMs = (value: any): number => {
+      if (!value) return 0;
+      if (typeof value === 'number' || typeof value === 'string') {
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+      }
+      if (typeof value?.toDate === 'function') return value.toDate().getTime();
+      if (typeof value?._seconds === 'number') {
+        return value._seconds * 1000 + Math.round((value._nanoseconds || 0) / 1e6);
+      }
+      return 0;
+    };
+
+    let analyses: any[] = [];
     if (requestIsAdmin) {
       console.log('🔍 Listando TODOS los análisis (admin)');
-      analysesSnapshot = await adminDb
+      const analysesSnapshot = await adminDb
         .collection('analyses')
         .orderBy('createdAt', 'desc')
         .limit(500)
         .get();
+      analyses = analysesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as any[];
     } else {
       console.log('🔍 Buscando análisis para usuario:', userId);
-      analysesSnapshot = await adminDb
-        .collection('analyses')
-        .where('playerId', '==', userId)
-        .orderBy('createdAt', 'desc')
-        .get();
-    }
+      const [playerSnap, userSnap] = await Promise.all([
+        adminDb
+          .collection('analyses')
+          .where('playerId', '==', userId)
+          .orderBy('createdAt', 'desc')
+          .get(),
+        adminDb
+          .collection('analyses')
+          .where('userId', '==', userId)
+          .orderBy('createdAt', 'desc')
+          .get(),
+      ]);
 
-    let analyses = analysesSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as any[];
+      const merged = new Map<string, any>();
+      for (const doc of playerSnap.docs) {
+        merged.set(doc.id, { id: doc.id, ...doc.data() });
+      }
+      for (const doc of userSnap.docs) {
+        if (!merged.has(doc.id)) {
+          merged.set(doc.id, { id: doc.id, ...doc.data() });
+        }
+      }
+
+      analyses = Array.from(merged.values()).sort(
+        (a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt)
+      );
+    }
 
     // Enriquecer con datos del jugador (solo para admin)
     if (requestIsAdmin) {
