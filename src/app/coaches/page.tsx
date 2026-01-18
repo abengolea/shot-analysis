@@ -12,7 +12,6 @@ import {
   Search, 
   Filter,
   MapPin,
-  Clock,
   Users,
   Trophy,
   GraduationCap
@@ -241,22 +240,10 @@ export default function CoachesPage() {
                   <Briefcase className="h-5 w-5 text-primary" /> 
                   Experiencia
                 </h4>
-                <p className="text-sm text-muted-foreground">{coach.experience}</p>
-                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3" />
-                  {coach.yearsOfExperience} años
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  {coach.bio || coach.experience}
+                </p>
               </div>
-
-              {/* Bio */}
-              {coach.bio && (
-                <div>
-                  <h4 className="font-semibold mb-2">Biografía</h4>
-                  <p className="text-sm text-muted-foreground line-clamp-3">
-                    {coach.bio}
-                  </p>
-                </div>
-              )}
 
               {/* Certifications */}
               {coach.certifications && coach.certifications.length > 0 && (
