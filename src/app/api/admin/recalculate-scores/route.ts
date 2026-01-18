@@ -20,6 +20,7 @@ async function requireAdmin(req: NextRequest): Promise<boolean> {
 const FLUIDEZ_NAME = 'Fluidez / Armonía (transferencia energética)';
 const SETPOINT_NAME = 'Set point (inicio del empuje de la pelota)';
 const ELBOW_NAME = 'Alineación del codo';
+const ELBOW_STABLE_ID = 'angulo_codo_fijo_ascenso';
 const ASCENSO_HAND_ID = 'mano_no_dominante_ascenso';
 const LIBERACION_HAND_ID = 'mano_no_dominante_liberacion';
 
@@ -41,11 +42,13 @@ function computeFinalScoreWithFluidez(
     }
   }
 
-  // Detectar Set Point y Alineación del codo y calcular sus % (1..5 → 0..100)
+  // Detectar Set Point, Alineación del codo y Ángulo de codo estable y calcular sus % (1..5 → 0..100)
   let setPointPercent = 0;
   let foundSetPoint = false;
   let elbowPercent = 0;
   let foundElbow = false;
+  let elbowStablePercent = 0;
+  let foundElbowStable = false;
   // Detectar mano no dominante (ascenso y liberación)
   let ascensoHandRating: number | null = null; // 1..5
   let liberacionHandRating: number | null = null; // 1..5
@@ -64,6 +67,13 @@ function computeFinalScoreWithFluidez(
         const el = Math.max(1, Math.min(5, Number(it.rating) || 0));
         elbowPercent = (el / 5) * 100;
         foundElbow = true;
+        return false;
+      }
+      const isElbowStable = (it.id || '').trim() === ELBOW_STABLE_ID || /angulo.*codo.*(estable|fijo)|codo.*(estable|fijo)/i.test(it.name || '');
+      if (isElbowStable && !foundElbowStable) {
+        const el = Math.max(1, Math.min(5, Number(it.rating) || 0));
+        elbowStablePercent = (el / 5) * 100;
+        foundElbowStable = true;
         return false;
       }
       // Mano no dominante (ascenso/liberación): no excluir del resto, solo capturar rating
@@ -99,12 +109,12 @@ function computeFinalScoreWithFluidez(
   const fluidezPercent = typeof fluidezScore10 === 'number' ? Math.max(0, Math.min(100, (fluidezScore10 / 10) * 100)) : 0;
 
   // Contribuciones especiales mano no dominante
-  const ascensoHandPercent = ascensoHandRating !== null && ascensoHandRating >= 4 ? 2 : 0; // 2% binario
+  const ascensoHandPercent = ascensoHandRating !== null && ascensoHandRating >= 4 ? 2.07 : 0; // 2.18% -> 2.07% prorrateado
   let liberacionHandPercent = 0;
   let penaltyFactor = 1.0;
   if (liberacionHandRating !== null) {
     if (liberacionHandRating >= 4) {
-      liberacionHandPercent = 3;
+      liberacionHandPercent = 3.1; // 3.26% -> 3.10% prorrateado
     } else if (liberacionHandRating === 2) {
       penaltyFactor = 0.8; // -20%
     } else if (liberacionHandRating === 1) {
@@ -112,9 +122,15 @@ function computeFinalScoreWithFluidez(
     }
   }
 
-  // Nueva combinación (rebalanceo global 0.95 para rubros existentes) + 2% ascenso + 3% liberación
-  // 57% Fluidez + 7.6% Set Point + 6.65% Codo + 23.75% resto + 2% + 3%
-  let finalScore = 0.57 * fluidezPercent + 0.076 * setPointPercent + 0.0665 * elbowPercent + 0.2375 * restPercent + ascensoHandPercent + liberacionHandPercent;
+  // Nueva combinación (prorrateo global 0.95 para rubros existentes) + 5% ángulo de codo estable
+  // 47.5% Fluidez + 7.86% Set Point + 6.88% Codo + 25.06% resto + 2.07% + 3.10% + 5%
+  let finalScore = 0.475 * fluidezPercent
+    + 0.0786 * setPointPercent
+    + 0.0688 * elbowPercent
+    + 0.2506 * restPercent
+    + ascensoHandPercent
+    + liberacionHandPercent
+    + (foundElbowStable ? 0.05 * elbowStablePercent : 0);
   finalScore = finalScore * penaltyFactor;
   return Number(Math.max(0, Math.min(100, finalScore)).toFixed(2));
 }
@@ -165,5 +181,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Error interno' }, { status: 500 });
   }
 }
-
 

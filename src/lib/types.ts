@@ -14,6 +14,8 @@ export type BaseUser = {
 export type Player = BaseUser & {
   role: 'player';
   // Campos opcionales que se pueden completar después
+  photoURL?: string;
+  displayName?: string;
   dob?: Date;
   country?: string;
   phone?: string;
@@ -46,14 +48,23 @@ export type DetailedChecklistItem = {
   id: string;
   name: string;
   description: string;
-  // Nuevo sistema de 5 niveles (1..5)
-  rating: 1 | 2 | 3 | 4 | 5;
-  // Marcar cuando no se puede evaluar por falta de datos (no contar en el cálculo)
-  na?: boolean;
-  // Para el ítem especial "Fluidez / Armonía (transferencia energética)" (1..10)
+  // Sistema de evaluación actualizado
+  status: 'Correcto' | 'Mejorable' | 'Incorrecto' | 'no_evaluable';
+  // Rating puede ser 0 para no_evaluable, o undefined si no hay calificación
+  rating?: 0 | 1 | 2 | 3 | 4 | 5;
+  // Rating alternativo en escala 0..10 (si aplica)
   rating10?: number;
-  // Campo legacy (opcional) para compatibilidad con datos antiguos
-  status?: 'Incorrecto' | 'Incorrecto leve' | 'Mejorable' | 'Correcto' | 'Excelente';
+  // Score numérico raw cuando exista
+  score?: number;
+  // Timestamp cuando se observó el parámetro
+  timestamp?: string;
+  // Evidencia de lo que se observó visualmente
+  evidencia?: string;
+  // Marcar cuando no se puede evaluar por limitaciones del video
+  na: boolean;
+  // Razón específica por la que no es evaluable
+  razon?: string;
+  // Comentario basado en evidencia visual o explicación de por qué no es evaluable
   comment: string;
   // Comentario opcional del entrenador (visible para jugador y entrenador; editable solo por entrenador)
   coachComment?: string;
@@ -84,8 +95,46 @@ export type ShotAnalysis = {
   keyframes: KeyframeImages; // URLs or base64 strings of keyframe images, organized by angle
   detailedChecklist?: ChecklistCategory[];
   score?: number;
+  overallScore?: number;
+  status?: string;
+  videoFrontUrl?: string;
+  videoBackUrl?: string;
+  videoLeftUrl?: string;
+  videoRightUrl?: string;
   // Puntuación 1..10 de la categoría principal "Fluidez / Armonía (transferencia energética)"
   fluidezScore10?: number;
+  // Campos de verificación de video real
+  verification?: {
+    isReal: boolean;
+    confidence: number;
+    description: string;
+    canSeeBasket?: boolean;
+    cameraAngle?: string;
+    basketVisible?: boolean;
+    shotResultsVisible?: boolean;
+    environment?: string;
+    videoQuality?: string;
+    specificColors?: string;
+    uniqueObjects?: string;
+    specificEnvironment?: string;
+    specificActions?: string;
+    playerCharacteristics?: {
+      height?: string;
+      build?: string;
+      skinTone?: string;
+      hairColor?: string;
+      clothing?: string;
+      uniqueFeatures?: string[];
+      dominantHand?: string;
+    };
+  };
+  shotSummary?: {
+    totalShots?: number;
+    lateralShots?: number;
+    frontalShots?: number;
+    additionalShots?: number;
+  };
+  shots?: any[];
 };
 
 export type Drill = {
@@ -115,7 +164,6 @@ export type Comment = {
 
 export type Coach = BaseUser & {
   role: 'coach';
-  hidden?: boolean;
   // Campos opcionales que se pueden completar después
   experience?: string;
   ratePerAnalysis?: number; // rate per analysis in USD
@@ -129,6 +177,7 @@ export type Coach = BaseUser & {
   yearsOfExperience?: number;
   education?: string;
   bio?: string;
+  hidden?: boolean; // si es true, el coach está oculto y no aparece en la lista pública
   availability?: {
     monday: boolean;
     tuesday: boolean;
@@ -138,6 +187,9 @@ export type Coach = BaseUser & {
     saturday: boolean;
     sunday: boolean;
   };
+  paymentAccountOwnerId?: string;
+  paymentAccountOwnerEmail?: string | null;
+  paymentAccountOwnerName?: string | null;
 };
 
 export type ConnectionRequest = {
@@ -209,7 +261,7 @@ export type Wallet = {
   credits: number; // créditos disponibles para análisis pagos
   freeAnalysesUsed: number; // cuántos gratis usados en el añoEnCurso
   yearInUse: number; // año calendario de referencia para freeAnalysesUsed
-  freeCoachReviews?: number; // revisiones de coach gratis disponibles
+  lastFreeAnalysisDate?: string; // ISO string - fecha del último análisis gratuito
   historyPlusActive?: boolean;
   historyPlusValidUntil?: string; // ISO string
   currency: 'ARS';
@@ -217,12 +269,12 @@ export type Wallet = {
   createdAt: string; // ISO
 };
 
-export type ProductId = 'analysis_1' | 'pack_3' | 'pack_10' | 'history_plus_annual';
+export type ProductId = 'analysis_1' | 'pack_3' | 'pack_10' | 'history_plus_annual' | 'coach_review';
 
 export type PaymentRecord = {
   id: string; // doc id
   userId: string;
-  provider: 'mercadopago' | 'stripe';
+  provider: 'mercadopago' | 'stripe' | 'dlocal';
   providerPaymentId: string;
   productId: ProductId;
   status: 'created' | 'approved' | 'rejected' | 'refunded' | 'pending';

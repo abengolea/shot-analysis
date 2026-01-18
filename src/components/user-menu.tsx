@@ -180,12 +180,7 @@ export function UserMenu() {
               <Shuffle className="mr-2 h-4 w-4" />
               Cambiar a Entrenador
             </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem onClick={() => { window.location.href = '/coach-register'; }} className="cursor-pointer">
-              <Shuffle className="mr-2 h-4 w-4" />
-              Convertirme en Entrenador
-            </DropdownMenuItem>
-          )
+          ) : null
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer">
