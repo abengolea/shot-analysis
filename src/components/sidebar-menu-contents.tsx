@@ -14,7 +14,6 @@ import {
   Users,
   Shield,
   ShieldCheck,
-  Trophy,
 } from 'lucide-react';
 import {
   SidebarMenuItem,
@@ -131,18 +130,6 @@ export function SidebarMenuContents() {
           <Link href="/coaches">
             <Search />
             Buscar Entrenadores
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          asChild
-          isActive={isActive("/rankings")}
-          tooltip="Rankings"
-        >
-          <Link href="/rankings">
-            <Trophy />
-            Rankings
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
