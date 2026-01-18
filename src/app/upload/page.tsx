@@ -116,7 +116,7 @@ export default function UploadPage() {
   const [rightVideo, setRightVideo] = useState<File | null>(null);
   const [backVideo, setBackVideo] = useState<File | null>(null);
   const [shotType, setShotType] = useState<string>("");
-  const [wallet, setWallet] = useState<{ credits: number; freeLeft: number } | null>(null);
+  const [wallet, setWallet] = useState<{ credits: number; freeLeft: number; freeUsed: number; lastFreeAnalysisDate?: string | null } | null>(null);
   const [buyUrl, setBuyUrl] = useState<string | null>(null);
   const frontInputRef = useRef<HTMLInputElement>(null);
   const leftInputRef = useRef<HTMLInputElement>(null);
@@ -410,7 +410,14 @@ export default function UploadPage() {
       try {
         const res = await fetch(`/api/wallet?userId=${user.uid}`);
         const data = await res.json();
-        setWallet({ credits: data.credits || 0, freeLeft: Math.max(0, 2 - (data.freeAnalysesUsed || 0)) });
+        const freeUsed = Number(data.freeAnalysesUsed || 0);
+        const lastFreeAnalysisDate = typeof data.lastFreeAnalysisDate === 'string' ? data.lastFreeAnalysisDate : null;
+        setWallet({
+          credits: data.credits || 0,
+          freeLeft: Math.max(0, 2 - freeUsed),
+          freeUsed,
+          lastFreeAnalysisDate,
+        });
       } catch {}
     };
     fetchWallet();
@@ -492,6 +499,19 @@ export default function UploadPage() {
   }
 
   const anyVideoSelected = !!(selectedVideo || backVideo || leftVideo || rightVideo);
+  const addMonths = (date: Date, months: number) => {
+    const next = new Date(date);
+    next.setMonth(next.getMonth() + months);
+    return next;
+  };
+  const formatShortDate = (date: Date) =>
+    date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const freeNextEligibility = (() => {
+    if (!wallet?.lastFreeAnalysisDate) return null;
+    const last = new Date(wallet.lastFreeAnalysisDate);
+    if (Number.isNaN(last.getTime())) return null;
+    return addMonths(last, 6);
+  })();
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -511,6 +531,25 @@ export default function UploadPage() {
           </Button>
         </div>
       </div>
+
+      {wallet && (
+        <Card className="bg-slate-50 border-slate-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">📊 Tu estado de análisis gratuitos</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-slate-700 space-y-1">
+            <div>• Análisis gratuitos usados este año: {wallet.freeUsed}/2</div>
+            <div>• Análisis gratuitos disponibles: {wallet.freeLeft}</div>
+            {wallet.freeUsed >= 1 && freeNextEligibility && (
+              <div>
+                • Tu segundo análisis gratuito estará disponible {new Date() < freeNextEligibility ? `el ${formatShortDate(freeNextEligibility)}` : 'desde ahora'}
+              </div>
+            )}
+            <div>• Créditos disponibles: {wallet.credits}</div>
+            <div className="pt-1 text-slate-600">💡 Política: 2 análisis gratuitos por año con 6 meses de separación entre cada uno</div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tipo de lanzamiento (visible siempre) */}
       <Card>

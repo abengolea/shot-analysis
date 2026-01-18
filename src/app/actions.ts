@@ -661,6 +661,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             await db.runTransaction(async (tx: any) => {
                 const walletRef = db.collection('wallets').doc(userId);
                 const walletSnap = await tx.get(walletRef);
+                const nowIso = new Date().toISOString();
                 let data: any = walletSnap.exists ? walletSnap.data() : null;
                 if (!data) {
                     data = {
@@ -669,26 +670,34 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                         freeAnalysesUsed: 0,
                         yearInUse: currentYear,
                         freeCoachReviews: 0,
+                        lastFreeAnalysisDate: null,
                         historyPlusActive: false,
                         historyPlusValidUntil: null,
                         currency: 'ARS',
-                        createdAt: new Date().toISOString(),
-                        updatedAt: new Date().toISOString(),
+                        createdAt: nowIso,
+                        updatedAt: nowIso,
                     };
                     tx.set(walletRef, data);
                 }
                 if (Number(data.yearInUse) !== currentYear) {
                     data.freeAnalysesUsed = 0;
                     data.yearInUse = currentYear;
+                    data.lastFreeAnalysisDate = null;
                 }
                 if ((data.freeAnalysesUsed || 0) < 2) {
                     data.freeAnalysesUsed = (data.freeAnalysesUsed || 0) + 1;
-                    data.updatedAt = new Date().toISOString();
-                    tx.update(walletRef, { freeAnalysesUsed: data.freeAnalysesUsed, yearInUse: data.yearInUse, updatedAt: data.updatedAt });
+                    data.updatedAt = nowIso;
+                    data.lastFreeAnalysisDate = nowIso;
+                    tx.update(walletRef, {
+                        freeAnalysesUsed: data.freeAnalysesUsed,
+                        yearInUse: data.yearInUse,
+                        lastFreeAnalysisDate: data.lastFreeAnalysisDate,
+                        updatedAt: data.updatedAt
+                    });
                     billingInfo = { type: 'free', year: currentYear };
                 } else if ((data.credits || 0) > 0) {
                     data.credits = Number(data.credits) - 1;
-                    data.updatedAt = new Date().toISOString();
+                    data.updatedAt = nowIso;
                     tx.update(walletRef, { credits: data.credits, updatedAt: data.updatedAt });
                     billingInfo = { type: 'credit', year: currentYear };
                 } else {
