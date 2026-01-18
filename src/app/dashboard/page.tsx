@@ -254,7 +254,7 @@ export default function DashboardPage() {
       const res = await fetch(`/api/analyses/${reviewTarget.id}/coach-review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ rating, comment: reviewComment }),
+        body: JSON.stringify({ rating, comment: reviewComment, coachId: reviewTarget?.coachId }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -453,8 +453,14 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-4">
               {userAnalyses.map((analysis) => {
+                const coachIdForReview = (() => {
+                  if (analysis?.coachId) return String(analysis.coachId);
+                  const access = analysis?.coachAccess || {};
+                  const paid = Object.keys(access).find((id) => access?.[id]?.status === 'paid');
+                  return paid ? String(paid) : '';
+                })();
                 const reviewedCoachIds = coachReviewStatusByAnalysis[analysis.id]?.reviewedCoachIds || [];
-                const hasCoachReview = analysis?.coachId ? reviewedCoachIds.includes(String(analysis.coachId)) : false;
+                const hasCoachReview = coachIdForReview ? reviewedCoachIds.includes(coachIdForReview) : false;
                 return (
                 <div
                   key={analysis.id}
@@ -479,13 +485,17 @@ export default function DashboardPage() {
                         Revisado por entrenador
                       </div>
                     )}
-                    {analysis.status === 'analyzed' && analysis.coachCompleted && analysis.coachId && (
+                    {analysis.status === 'analyzed' && analysis.coachCompleted && coachIdForReview && (
                       hasCoachReview ? (
                         <div className="hidden sm:flex items-center justify-center px-3 py-2 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold">
                           Reseña enviada
                         </div>
                       ) : (
-                        <Button size="sm" variant="outline" onClick={() => openReviewDialog(analysis)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openReviewDialog({ ...analysis, coachId: coachIdForReview })}
+                        >
                           Dejar reseña
                         </Button>
                       )

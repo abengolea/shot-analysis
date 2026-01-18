@@ -10,6 +10,19 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 
 interface Analysis {
   id: string;
@@ -33,12 +46,26 @@ interface Player {
 export default function AnalysisPage() {
   const params = useParams();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasCoachReview, setHasCoachReview] = useState(false);
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [reviewRating, setReviewRating] = useState<string>('5');
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
   const analysisId = params.id as string;
+
+  const getCoachIdForReview = (a: any): string => {
+    if (!a) return '';
+    if (a.coachId) return String(a.coachId);
+    const access = a.coachAccess || {};
+    const paid = Object.keys(access).find((id) => access?.[id]?.status === 'paid');
+    return paid ? String(paid) : '';
+  };
 
   useEffect(() => {
     const fetchAnalysis = async () => {
@@ -72,6 +99,61 @@ export default function AnalysisPage() {
 
     fetchAnalysis();
   }, [analysisId, user?.uid]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadReviewStatus = async () => {
+      try {
+        if (!user || !analysisId) return;
+        const token = await user.getIdToken();
+        const res = await fetch('/api/analyses/batch-coach-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ analysisIds: [analysisId] }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const reviewed = data?.statusByAnalysis?.[analysisId]?.reviewedCoachIds || [];
+        const coachId = getCoachIdForReview(analysis as any);
+        setHasCoachReview(coachId ? reviewed.includes(coachId) : reviewed.length > 0);
+      } catch {}
+    };
+    loadReviewStatus();
+    return () => { cancelled = true; };
+  }, [analysisId, user, analysis]);
+
+  const coachIdForReview = getCoachIdForReview(analysis as any);
+  const canReview = analysis?.status === 'analyzed' && (analysis as any)?.coachCompleted && !!coachIdForReview;
+
+  const submitCoachReview = async () => {
+    if (!analysis || !user) return;
+    const rating = Number(reviewRating);
+    if (!rating || rating < 1 || rating > 5) {
+      toast({ title: 'Calificación inválida', description: 'Seleccioná una calificación de 1 a 5.', variant: 'destructive' });
+      return;
+    }
+    try {
+      setReviewSubmitting(true);
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/analyses/${analysis.id}/coach-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ rating, comment: reviewComment, coachId: coachIdForReview }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || 'No se pudo enviar la reseña.');
+      }
+      toast({ title: 'Reseña enviada', description: 'Gracias por tu devolución.' });
+      setHasCoachReview(true);
+      setReviewDialogOpen(false);
+    } catch (e: any) {
+      toast({ title: 'Error', description: e?.message || 'No se pudo enviar la reseña.', variant: 'destructive' });
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -191,11 +273,65 @@ export default function AnalysisPage() {
                   <Badge variant="secondary">{player.ageGroup || 'Grupo: Por definir'}</Badge>
                 </div>
               </div>
-              {/* Botones de compartir movidos debajo del resumen */}
+              <div className="flex flex-col items-end gap-2">
+                {canReview && hasCoachReview && (
+                  <div className="hidden sm:flex items-center justify-center px-3 py-2 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold">
+                    Reseña enviada
+                  </div>
+                )}
+                {canReview && !hasCoachReview && (
+                  <Button size="sm" variant="outline" onClick={() => setReviewDialogOpen(true)}>
+                    Dejar reseña
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      <AlertDialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reseña del entrenador</AlertDialogTitle>
+            <AlertDialogDescription>
+              Compartí tu experiencia para ayudar a otros jugadores.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Calificación</div>
+              <Select value={reviewRating} onValueChange={setReviewRating}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Selecciona una calificación" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5 - Excelente</SelectItem>
+                  <SelectItem value="4">4 - Muy bueno</SelectItem>
+                  <SelectItem value="3">3 - Bueno</SelectItem>
+                  <SelectItem value="2">2 - Regular</SelectItem>
+                  <SelectItem value="1">1 - Malo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Comentario (opcional)</div>
+              <Textarea
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                placeholder="Contá qué te gustó y qué se puede mejorar..."
+                rows={4}
+              />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reviewSubmitting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={submitCoachReview} disabled={reviewSubmitting}>
+              {reviewSubmitting ? 'Enviando...' : 'Enviar reseña'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AnalysisView analysis={shotAnalysis} player={playerStrong} />
     </div>

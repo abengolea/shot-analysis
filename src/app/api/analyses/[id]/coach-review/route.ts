@@ -19,6 +19,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const body = await req.json();
     const rating = Number(body?.rating);
     const comment = String(body?.comment || '').trim();
+    const requestedCoachId = String(body?.coachId || '').trim();
     if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
       return NextResponse.json({ error: 'rating debe ser 1..5' }, { status: 400 });
     }
@@ -34,9 +35,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!analysis?.coachCompleted) {
       return NextResponse.json({ error: 'El entrenador aún no terminó la revisión' }, { status: 400 });
     }
-    const coachId = String(analysis?.coachId || '');
+    const coachId = String(analysis?.coachId || requestedCoachId || '');
     if (!coachId) {
       return NextResponse.json({ error: 'Este análisis no tiene entrenador asignado' }, { status: 400 });
+    }
+    if (analysis?.coachAccess && typeof analysis.coachAccess === 'object') {
+      const access = analysis.coachAccess[coachId];
+      if (!access || access?.status !== 'paid') {
+        return NextResponse.json({ error: 'El entrenador no tiene acceso pagado a este análisis' }, { status: 403 });
+      }
     }
 
     const existingSnap = await adminDb
