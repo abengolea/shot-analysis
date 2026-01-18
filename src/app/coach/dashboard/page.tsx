@@ -16,7 +16,7 @@ import { Users, Video, MessageSquare } from "lucide-react";
 import type { Message, Player } from "@/lib/types";
 import { useAuth } from "@/hooks/use-auth";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, orderBy, query, where, updateDoc, doc, addDoc, serverTimestamp, setDoc, getDoc, limit, getDocs } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query, where, updateDoc, doc, addDoc, serverTimestamp, setDoc, getDoc, limit, getDocs, documentId } from "firebase/firestore";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,8 @@ export default function CoachDashboardPage() {
   const [players, setPlayers] = useState<Player[]>([] as any);
   const [messages, setMessages] = useState<Message[]>([]);
   const [analyses, setAnalyses] = useState<any[]>([]);
+  const [extraPlayerNames, setExtraPlayerNames] = useState<Record<string, string>>({});
+  const [extraPlayers, setExtraPlayers] = useState<Record<string, Player>>({});
   const [activeTab, setActiveTab] = useState<string>("messages");
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false);
   const [playersSearch, setPlayersSearch] = useState<string>("");
@@ -59,29 +61,61 @@ export default function CoachDashboardPage() {
   useEffect(() => {
     if (!user) return;
     try {
-      const q = query(collection(db as any, 'players'), where('coachId', '==', user.uid));
-      const unsub = onSnapshot(q, (snap) => {
-        const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as any[];
-        setPlayers(list as any);
-      });
-      return () => unsub();
+      const q1 = query(collection(db as any, 'players'), where('coachId', '==', user.uid));
+      const q2 = query(collection(db as any, 'players'), where('coachDocId', '==', user.uid));
+      const unsubs: Array<() => void> = [];
+      const apply = (snap: any) => {
+        setPlayers(prev => {
+          const incoming = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })) as any[];
+          const merged = [...prev, ...incoming].reduce((acc: Record<string, Player>, p: any) => {
+            if (p?.id) acc[p.id] = p;
+            return acc;
+          }, {} as any);
+          return Object.values(merged) as any;
+        });
+      };
+      unsubs.push(onSnapshot(q1, apply));
+      unsubs.push(onSnapshot(q2, apply));
+      return () => { unsubs.forEach(u => u()); };
     } catch (e) {
       console.error('Error cargando jugadores del coach:', e);
     }
   }, [user]);
 
   // Cargar análisis de todos los jugadores del coach (en tiempo real, chunked por 10 ids)
+  // y también análisis vinculados directamente al coach (coachId), aunque el jugador ya no esté vinculado.
   useEffect(() => {
     if (!user) return;
     let unsubs: Array<() => void> = [];
     const chunkMap: Record<string, any[]> = {};
     try {
       const ids = players.map((p) => p.id).filter(Boolean);
-      // Limpiar si no hay jugadores
+      const mergeAndSort = () => {
+        const byId: Record<string, any> = {};
+        for (const list of Object.values(chunkMap)) {
+          for (const item of list) byId[item.id] = item;
+        }
+        const merged = Object.values(byId);
+        merged.sort((a: any, b: any) => getTime(b.createdAt) - getTime(a.createdAt));
+        setAnalyses(merged as any[]);
+      };
+
+      // Query adicional por coachId (para no perder análisis si se desvinculó el jugador)
+      const coachKey = `coach:${user.uid}`;
+      const coachQuery = query(collection(db as any, 'analyses'), where('coachId', '==', user.uid));
+      const coachUnsub = onSnapshot(coachQuery, (snap) => {
+        chunkMap[coachKey] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+        mergeAndSort();
+      }, (err) => {
+        console.error('Error cargando análisis por coachId:', err);
+      });
+      unsubs.push(coachUnsub);
+
+      // Si no hay jugadores, dejamos solo el stream por coachId
       if (ids.length === 0) {
-        setAnalyses([]);
-        return;
+        return () => { unsubs.forEach((u) => u()); };
       }
+
       // Partir en chunks de 10 para 'in'
       for (let i = 0; i < ids.length; i += 10) {
         const chunk = ids.slice(i, i + 10);
@@ -90,10 +124,7 @@ export default function CoachDashboardPage() {
         const u = onSnapshot(q, (snap) => {
           const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
           chunkMap[key] = list;
-          const merged = Object.values(chunkMap).flat();
-          // Ordenar por fecha descendente
-          merged.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-          setAnalyses(merged as any[]);
+          mergeAndSort();
         }, (err) => {
           console.error('Error cargando análisis (chunk):', err);
         });
@@ -145,7 +176,48 @@ export default function CoachDashboardPage() {
   const analyzedCount = useMemo(() => analyses.filter((a: any) => String(a.status) === 'analyzed' && a.coachCompleted === true).length, [analyses]);
   const pendingCount = useMemo(() => analyses.filter((a: any) => String(a.status) !== 'analyzed' || a.coachCompleted !== true).length, [analyses]);
   const visibleMessages = useMemo(() => unreadOnly ? messages.filter(m => !m.read) : messages, [messages, unreadOnly]);
-  const playerOptions = useMemo(() => [{ id: 'all', name: 'Todos' }, ...players.map(p => ({ id: p.id, name: p.name }))], [players]);
+  const playerNameLookup = useMemo(() => {
+    const base: Record<string, string> = {};
+    for (const p of players) {
+      if (p?.id) base[p.id] = p.name || p.id;
+    }
+    const extra: Record<string, string> = {};
+    for (const p of Object.values(extraPlayers)) {
+      if ((p as any)?.id) extra[(p as any).id] = (p as any).name || (p as any).id;
+    }
+    return { ...extraPlayerNames, ...extra, ...base };
+  }, [players, extraPlayerNames, extraPlayers]);
+
+  const mergedPlayers = useMemo(() => {
+    const byId: Record<string, any> = {};
+    for (const p of players) {
+      if (p?.id) byId[p.id] = p;
+    }
+    for (const p of Object.values(extraPlayers)) {
+      const pid = (p as any)?.id;
+      if (pid && !byId[pid]) byId[pid] = p;
+    }
+    for (const a of analyses) {
+      const pid = a?.playerId ? String(a.playerId) : '';
+      if (!pid || byId[pid]) continue;
+      byId[pid] = {
+        id: pid,
+        name: playerNameLookup[pid] || pid,
+        avatarUrl: 'https://placehold.co/100x100.png',
+        role: 'player',
+        status: 'active',
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        playerLevel: '-',
+        ageGroup: '-',
+      } as any;
+    }
+    return Object.values(byId) as Player[];
+  }, [players, extraPlayers, analyses, playerNameLookup]);
+  const playerOptions = useMemo(() => {
+    const options = mergedPlayers.map(p => ({ id: p.id, name: p.name }));
+    return [{ id: 'all', name: 'Todos' }, ...options];
+  }, [mergedPlayers]);
   const filteredAnalyses = useMemo(() => {
     let arr = analyses;
     if (selectedPlayerId !== 'all') arr = arr.filter((a: any) => a.playerId === selectedPlayerId);
@@ -155,9 +227,57 @@ export default function CoachDashboardPage() {
   }, [analyses, selectedPlayerId, statusFilter]);
   const filteredPlayers = useMemo(() => {
     const term = playersSearch.trim().toLowerCase();
-    if (!term) return players;
-    return players.filter(p => p.name?.toLowerCase().includes(term));
-  }, [players, playersSearch]);
+    if (!term) return mergedPlayers;
+    return mergedPlayers.filter(p => p.name?.toLowerCase().includes(term));
+  }, [mergedPlayers, playersSearch]);
+
+  const missingPlayerIds = useMemo(() => {
+    const missing: string[] = [];
+    const known = new Set<string>();
+    for (const p of players) if (p?.id) known.add(String(p.id));
+    for (const id of Object.keys(extraPlayerNames)) known.add(id);
+    for (const id of Object.keys(extraPlayers)) known.add(id);
+    const seen = new Set<string>();
+    for (const a of analyses) {
+      const pid = a?.playerId ? String(a.playerId) : '';
+      if (!pid || seen.has(pid) || known.has(pid)) continue;
+      seen.add(pid);
+      missing.push(pid);
+    }
+    return missing;
+  }, [analyses, players, extraPlayerNames, extraPlayers]);
+
+  useEffect(() => {
+    if (missingPlayerIds.length === 0) return;
+    let cancelled = false;
+    const loadMissingNames = async () => {
+      try {
+        for (let i = 0; i < missingPlayerIds.length; i += 10) {
+          const chunk = missingPlayerIds.slice(i, i + 10);
+          const q = query(collection(db as any, 'players'), where(documentId(), 'in', chunk));
+          const snap = await getDocs(q);
+          if (cancelled) return;
+          const found: Record<string, string> = {};
+          const foundPlayers: Record<string, Player> = {};
+          snap.docs.forEach((d) => {
+            const data = d.data() as any;
+            found[d.id] = data?.name || d.id;
+            foundPlayers[d.id] = { id: d.id, ...(data as any) } as Player;
+          });
+          if (Object.keys(found).length > 0) {
+            setExtraPlayerNames((prev) => ({ ...prev, ...found }));
+          }
+          if (Object.keys(foundPlayers).length > 0) {
+            setExtraPlayers((prev) => ({ ...prev, ...foundPlayers }));
+          }
+        }
+      } catch (e) {
+        console.error('Error cargando nombres de jugadores:', e);
+      }
+    };
+    loadMissingNames();
+    return () => { cancelled = true; };
+  }, [missingPlayerIds]);
   const markAsRead = async (m: Message) => {
     try {
       if (!m.read) {
@@ -287,7 +407,7 @@ export default function CoachDashboardPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{players.length}</div>
+            <div className="text-2xl font-bold">{mergedPlayers.length}</div>
             <p className="text-xs text-muted-foreground">
               jugadores actualmente bajo tu tutela
             </p>
@@ -451,10 +571,10 @@ export default function CoachDashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {players.map((player) => (
+            {mergedPlayers.map((player) => (
               <PlayerCard key={player.id} player={player as any} />
             ))}
-            {players.length === 0 && (
+            {mergedPlayers.length === 0 && (
               <div className="col-span-full py-8 text-center text-muted-foreground">
                 <Users className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No tienes jugadores</h3>
@@ -512,7 +632,7 @@ export default function CoachDashboardPage() {
                   return (
                     <div key={a.id} className="flex items-center justify-between gap-3 border rounded-md p-3">
                       <div className="min-w-0">
-                        <div className="font-medium truncate">{p?.name || a.playerId}</div>
+                        <div className="font-medium truncate">{playerNameLookup[String(a.playerId || '')] || p?.name || a.playerId}</div>
                         <div className="text-xs text-muted-foreground truncate">{new Date(a.createdAt || Date.now()).toLocaleString()}</div>
                       </div>
                       <Link href={`/analysis/${a.id}`} className="text-xs text-primary shrink-0">Ver</Link>
@@ -534,7 +654,7 @@ export default function CoachDashboardPage() {
                   return (
                     <div key={a.id} className="flex items-center justify-between gap-3 border rounded-md p-3">
                       <div className="min-w-0">
-                        <div className="font-medium truncate">{p?.name || a.playerId}</div>
+                        <div className="font-medium truncate">{playerNameLookup[String(a.playerId || '')] || p?.name || a.playerId}</div>
                         <div className="text-xs text-muted-foreground truncate">{new Date(a.createdAt || Date.now()).toLocaleString()}</div>
                       </div>
                       <Link href={`/analysis/${a.id}`} className="text-xs text-primary shrink-0">Abrir</Link>
