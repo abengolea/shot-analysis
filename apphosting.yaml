@@ -30,11 +30,11 @@ env:
   - variable: MP_ACCESS_TOKEN_AR
     value: "APP_USR-3647146488744629-091106-8aeb480b57f1bbb536c0d2b1e876db05-799155933"
   - variable: GEMINI_API_KEY
-    value: "AIzaSyBGVlvWqL2FZmOMvNQu8lzxcOQtbmTTEcM"
+    secret: GEMINI_API_KEY
   - variable: GOOGLE_API_KEY
-    value: "AIzaSyBGVlvWqL2FZmOMvNQu8lzxcOQtbmTTEcM"
+    secret: GEMINI_API_KEY
   - variable: GOOGLE_GENAI_API_KEY
-    value: "AIzaSyBGVlvWqL2FZmOMvNQu8lzxcOQtbmTTEcM"
+    secret: GEMINI_API_KEY
   - variable: FIREBASE_ADMIN_PROJECT_ID
     value: "shotanalisys"
 
