@@ -406,7 +406,7 @@ export function detectSetPoint(
       const shoulder = frame.keypoints.find(kp => kp.name === 'right_shoulder');
       
       if (wrist && hip && shoulder && 
-          wrist.score > 0.3 && hip.score > 0.3 && shoulder.score > 0.3) {
+          (wrist.score ?? 0) > 0.3 && (hip.score ?? 0) > 0.3 && (shoulder.score ?? 0) > 0.3) {
         // Elevación normalizada: distancia muñeca-cadera en Y / distancia hombro-cadera
         const shoulderHipDist = Math.sqrt(
           Math.pow(shoulder.x - hip.x, 2) + Math.pow(shoulder.y - hip.y, 2)
@@ -436,7 +436,7 @@ export function detectSetPoint(
       const wrist = frame.keypoints.find(kp => kp.name === 'right_wrist');
       const nose = frame.keypoints.find(kp => kp.name === 'nose');
       
-      if (wrist && nose && wrist.score > 0.3 && nose.score > 0.3) {
+      if (wrist && nose && (wrist.score ?? 0) > 0.3 && (nose.score ?? 0) > 0.3) {
         const dist = Math.sqrt(
           Math.pow(wrist.x - nose.x, 2) + Math.pow(wrist.y - nose.y, 2)
         );
@@ -594,7 +594,7 @@ export function detectRelease(
       const wrist = frame.keypoints.find(kp => kp.name === 'right_wrist');
       const nose = frame.keypoints.find(kp => kp.name === 'nose');
       
-      if (wrist && nose && wrist.score > 0.3 && nose.score > 0.3) {
+      if (wrist && nose && (wrist.score ?? 0) > 0.3 && (nose.score ?? 0) > 0.3) {
         const dist = Math.sqrt(
           Math.pow(wrist.x - nose.x, 2) + Math.pow(wrist.y - nose.y, 2)
         );
@@ -612,7 +612,7 @@ export function detectRelease(
       const wrist = frame.keypoints.find(kp => kp.name === 'right_wrist');
       const nose = frame.keypoints.find(kp => kp.name === 'nose');
       
-      if (wrist && nose && wrist.score > 0.3 && nose.score > 0.3) {
+      if (wrist && nose && (wrist.score ?? 0) > 0.3 && (nose.score ?? 0) > 0.3) {
         const dist = Math.sqrt(
           Math.pow(wrist.x - nose.x, 2) + Math.pow(wrist.y - nose.y, 2)
         );
@@ -970,7 +970,7 @@ export function calculateShoulderHipDistance(frames: FramePose[]): number {
     const shoulder = frame.keypoints.find(kp => kp.name === 'right_shoulder');
     const hip = frame.keypoints.find(kp => kp.name === 'right_hip');
     
-    if (shoulder && hip && shoulder.score > 0.3 && hip.score > 0.3) {
+    if (shoulder && hip && (shoulder.score ?? 0) > 0.3 && (hip.score ?? 0) > 0.3) {
       const dx = shoulder.x - hip.x;
       const dy = shoulder.y - hip.y;
       const dist = Math.sqrt(dx * dx + dy * dy);

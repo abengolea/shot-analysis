@@ -1877,15 +1877,6 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   };
 
   // (ya calculados arriba) checklistStrengths, checklistWeaknesses, checklistRecommendations
-
-  const hasCoachFeedback = useMemo(() => {
-    const hasItems = Object.values(coachFeedbackByItemId).some((v) =>
-      (typeof v?.rating === 'number') || (String(v?.comment || '').trim() !== '')
-    );
-    const hasSummary = String(coachSummary || '').trim().length > 0;
-    return hasItems || hasSummary;
-  }, [coachFeedbackByItemId, coachSummary]);
-
   const coachFeedbackItemsByCategory = useMemo(() => {
     return checklistState
       .map((cat) => {
