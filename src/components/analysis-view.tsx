@@ -966,6 +966,25 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         const unlockData = await unlockCheckRes.json();
         const paidCoachIds = unlockData.paidCoachIds || [];
         const pendingCoachIds = unlockData.pendingCoachIds || [];
+        const otherPending = pendingCoachIds.filter((c: any) => c.coachId !== coach.id);
+        const otherPaid = paidCoachIds.filter((c: any) => c.coachId !== coach.id);
+        if (otherPending.length > 0 || otherPaid.length > 0) {
+          const pendingNames = otherPending.map((c: any) => c.coachName || 'Entrenador');
+          const paidNames = otherPaid.map((c: any) => c.coachName || 'Entrenador');
+          const parts: string[] = [];
+          if (pendingNames.length > 0) {
+            parts.push(`Pago pendiente con ${pendingNames.join(', ')}.`);
+          }
+          if (paidNames.length > 0) {
+            parts.push(`Pago ya realizado con ${paidNames.join(', ')}.`);
+          }
+          parts.push('Si solicitás otra revisión, se generará un nuevo pago.');
+          toast({
+            title: 'Revisión pendiente con otro entrenador',
+            description: parts.join(' '),
+            variant: 'default',
+          });
+        }
         
         // Verificar si este coach ya está en la lista de pagados o pendientes
         const isPaid = paidCoachIds.some((c: any) => c.coachId === coach.id);
