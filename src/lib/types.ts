@@ -166,6 +166,7 @@ export type Comment = {
 
 export type Coach = BaseUser & {
   role: 'coach';
+  photoUrl?: string | null;
   // Campos opcionales que se pueden completar después
   experience?: string;
   ratePerAnalysis?: number; // rate per analysis in USD
