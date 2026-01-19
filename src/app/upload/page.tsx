@@ -556,18 +556,6 @@ export default function UploadPage() {
       }
   }, [state, toast, router]);
 
-  // Ya no abrimos modal automático por perfil incompleto al entrar.
-
-  if (!user) {
-    return (
-      <div className="mx-auto max-w-2xl text-center">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin" />
-        <p>Cargando...</p>
-      </div>
-    );
-  }
-
-  const anyVideoSelected = !!(selectedVideo || backVideo || leftVideo || rightVideo);
   const normalizedShotTypes = useMemo(
     () => normalizeShotTypesMaintenance(maintenanceConfig?.shotTypesMaintenance),
     [maintenanceConfig?.shotTypesMaintenance]
@@ -599,6 +587,19 @@ export default function UploadPage() {
     if (Number.isNaN(last.getTime())) return null;
     return addMonths(last, 6);
   })();
+
+  // Ya no abrimos modal automático por perfil incompleto al entrar.
+
+  if (!user) {
+    return (
+      <div className="mx-auto max-w-2xl text-center">
+        <Loader2 className="mx-auto h-8 w-8 animate-spin" />
+        <p>Cargando...</p>
+      </div>
+    );
+  }
+
+  const anyVideoSelected = !!(selectedVideo || backVideo || leftVideo || rightVideo);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
