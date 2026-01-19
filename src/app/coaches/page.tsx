@@ -476,12 +476,12 @@ export default function CoachesPage() {
                   <DialogTrigger asChild>
                     <Button variant="outline" className="flex-1">
                       <MessageSquare className="mr-2 h-4 w-4" />
-                      Pedir ayuda
+                      Enviar mensaje
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Pedir ayuda a {coach.name}</DialogTitle>
+                      <DialogTitle>Enviar mensaje a {coach.name}</DialogTitle>
                       <DialogDescription>Envía un mensaje breve al entrenador.</DialogDescription>
                     </DialogHeader>
                     <Textarea
@@ -532,7 +532,7 @@ export default function CoachesPage() {
                   }}
                 >
                   <Users className="mr-2 h-4 w-4" /> 
-                  Pedir análisis de entrenador
+                  Solicitar revisión
                 </Button>
               </div>
             </CardFooter>
@@ -565,7 +565,7 @@ export default function CoachesPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {unlockCoach ? `Conectar con ${unlockCoach.name}` : "Conectar con entrenador"}
+              {unlockCoach ? `Solicitar revisión con ${unlockCoach.name}` : "Solicitar revisión"}
             </DialogTitle>
             <DialogDescription>
               Elegí el método de pago para solicitar la revisión del entrenador.
@@ -683,7 +683,7 @@ export default function CoachesPage() {
                 typeof unlockCoach?.ratePerAnalysis !== "number"
               }
             >
-              {creatingUnlock ? "Abriendo pago..." : "Pagar y conectar"}
+              {creatingUnlock ? "Abriendo pago..." : "Pagar y solicitar revisión"}
             </Button>
           </DialogFooter>
         </DialogContent>

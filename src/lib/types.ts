@@ -135,6 +135,8 @@ export type ShotAnalysis = {
     additionalShots?: number;
   };
   shots?: any[];
+  keyframesStatus?: 'pending' | 'ready' | 'error';
+  keyframesUpdatedAt?: string;
 };
 
 export type Drill = {

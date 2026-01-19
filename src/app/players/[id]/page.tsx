@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { PlayerProfileClient } from "@/components/player-profile-client";
 import { adminDb } from "@/lib/firebase-admin";
+import { backfillKeyframesForAnalyses } from "@/lib/keyframes-backfill";
 
 export default async function PlayerProfilePage({
   params,
@@ -27,6 +28,9 @@ export default async function PlayerProfilePage({
   const player = serialize({ id: params.id, ...(playerSnap.data() as any) });
   const analysesSnap = await adminDb.collection('analyses').where('playerId', '==', params.id).orderBy('createdAt', 'desc').limit(100).get();
   const analyses = analysesSnap.docs.map(d => serialize({ id: d.id, ...(d.data() as any) }));
+  try {
+    void backfillKeyframesForAnalyses(analyses, 5);
+  } catch {}
   const evaluations: any[] = [];
   const comments: any[] = [];
 

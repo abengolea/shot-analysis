@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { adminAuth, adminDb, adminStorage } from '@/lib/firebase-admin';
+import { scheduleKeyframesExtraction } from '@/lib/keyframes-backfill';
 import { sendCustomEmail } from '@/lib/email-service';
 // Acción: añadir entrenador desde el formulario de registro de coaches
 const AddCoachSchema = z.object({
@@ -314,6 +315,9 @@ export async function adminUpdateCoachStatus(_prev: any, formData: FormData) {
         await adminDb.collection('coaches').doc(userId).set({ status, updatedAt: new Date().toISOString() }, { merge: true });
         revalidatePath('/admin');
         revalidatePath(`/admin/coaches/${userId}`);
+        revalidatePath('/coaches');
+        revalidatePath('/coach/coaches');
+        revalidatePath('/player/coaches');
         return { success: true };
     } catch (e) {
         console.error('Error actualizando estado de coach:', e);
@@ -820,6 +824,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             return `https://storage.googleapis.com/${bucket.name}/${filePath}`;
         };
 
+
         let videoPath: string = '';
         let videoFrontUrl: string | null = null;
         let videoBackUrl: string | null = null;
@@ -923,8 +928,20 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             analysisResult,
             detailedChecklist: analysisResult.detailedChecklist || [],
             keyframes: { front: [], back: [], left: [], right: [] },
+            keyframesStatus: 'pending',
+            keyframesUpdatedAt: new Date().toISOString(),
             coachCompleted: false,
             updatedAt: new Date().toISOString(),
+        });
+
+        scheduleKeyframesExtraction({
+            analysisId: analysisRef.id,
+            playerId: currentUser.id,
+            videoUrl: videoPath,
+            videoFrontUrl,
+            videoLeftUrl,
+            videoRightUrl,
+            videoBackUrl,
         });
 
         return {

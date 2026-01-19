@@ -166,9 +166,11 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
               const strengths = Array.isArray(analysis.strengths) ? analysis.strengths : [];
               const weaknesses = Array.isArray(analysis.weaknesses) ? analysis.weaknesses : [];
               const thumbnailUrl = getThumbnailUrl(analysis);
+              const videoPreviewUrl = !thumbnailUrl && analysis.videoUrl ? analysis.videoUrl : null;
               const analysisLabel = getAnalysisLabel(analysis);
               const shortId = analysis.id ? analysis.id.slice(0, 8).toUpperCase() : "";
               const hasVideo = Boolean(analysis.videoUrl);
+              const keyframesStatus = analysis.keyframesStatus;
               return (
               <Card 
                 key={analysis.id} 
@@ -205,6 +207,15 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                         className="absolute inset-0 h-full w-full object-cover"
                         loading="lazy"
                       />
+                    ) : videoPreviewUrl ? (
+                      <video
+                        src={videoPreviewUrl}
+                        className="absolute inset-0 h-full w-full object-cover"
+                        muted
+                        playsInline
+                        preload="metadata"
+                        aria-label={`Vista previa de ${analysisLabel}`}
+                      />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center">
                         <Play className="h-12 w-12 text-primary opacity-80 group-hover:opacity-100 transition-opacity" />
@@ -215,6 +226,20 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                         {hasVideo ? "Video disponible" : "Sin video"}
                       </Badge>
                     </div>
+                    {keyframesStatus === 'pending' && (
+                      <div className="absolute bottom-2 left-2">
+                        <Badge variant="secondary" className="text-xs">
+                          Generando preview
+                        </Badge>
+                      </div>
+                    )}
+                    {keyframesStatus === 'error' && (
+                      <div className="absolute bottom-2 left-2">
+                        <Badge variant="destructive" className="text-xs">
+                          Preview fallida
+                        </Badge>
+                      </div>
+                    )}
                   </div>
 
                   {/* Información del Análisis */}
@@ -334,7 +359,16 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
               <div className="space-y-4">
                 {/* Video Player */}
                 {selectedAnalysis.videoUrl ? (
-                  <VideoPlayer src={selectedAnalysis.videoUrl} />
+                  <div className="space-y-2">
+                    <VideoPlayer src={selectedAnalysis.videoUrl} />
+                    <div className="flex items-center justify-end">
+                      <Button asChild variant="outline" size="sm">
+                        <a href={selectedAnalysis.videoUrl} target="_blank" rel="noopener noreferrer">
+                          Abrir video en otra pestaña
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
                   <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
                     <div className="text-center">

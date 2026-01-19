@@ -34,6 +34,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import type { Message } from "@/lib/types";
@@ -65,6 +75,8 @@ export default function CoachesPage() {
   const [paymentProvider, setPaymentProvider] = useState<'mercadopago' | 'dlocal'>('mercadopago');
   const [paidCoachIds, setPaidCoachIds] = useState<string[]>([]);
   const [freeCoachReviews, setFreeCoachReviews] = useState<number>(0);
+  const [reviewNoticeOpen, setReviewNoticeOpen] = useState(false);
+  const [reviewNoticeCoachName, setReviewNoticeCoachName] = useState("");
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -269,11 +281,13 @@ export default function CoachesPage() {
     });
   };
 
+  const openReviewNotice = (coach?: Coach | null) => {
+    const name = coach?.name?.trim();
+    setReviewNoticeCoachName(name && name.length > 0 ? name : 'el entrenador');
+    setReviewNoticeOpen(true);
+  };
+
   const handleRequestReview = async (coach: Coach) => {
-    if (!analysisIdFromQuery) {
-      router.push('/player/dashboard');
-      return;
-    }
     if (!user) {
       router.push('/login');
       return;
@@ -283,6 +297,11 @@ export default function CoachesPage() {
     setUnlockCoach(coach);
     setUnlockError(null);
     setIsAlreadyPaid(false);
+
+    if (!analysisIdFromQuery) {
+      setUnlockDialogOpen(true);
+      return;
+    }
     
     // Verificar si ya está pagado o tiene un pago pendiente ANTES de abrir el diálogo
     try {
@@ -312,6 +331,8 @@ export default function CoachesPage() {
             // No mostrar error, solo indicar que falta la evaluación
             setUnlockError(null);
           }
+          openReviewNotice(coach);
+          return;
         } else if (isPending) {
           console.log('⚠️ Coach tiene pago pendiente');
           setUnlockError('Ya tienes un pago pendiente para este entrenador. Espera a que se complete o contacta soporte si necesitas ayuda.');
@@ -326,6 +347,8 @@ export default function CoachesPage() {
         if (coachAccess && coachAccess.status === 'paid') {
           console.log('✅ Coach ya tiene pago completado (fallback desde analysisInfo)');
           setIsAlreadyPaid(true);
+          openReviewNotice(coach);
+          return;
         }
       }
     }
@@ -374,6 +397,7 @@ export default function CoachesPage() {
           // Ya está pagado - mostrar como información
           setIsAlreadyPaid(true);
           setUnlockError(null);
+          openReviewNotice(unlockCoach);
           return;
         }
         // Si es error de monto mínimo, mostrar mensaje específico
@@ -457,6 +481,7 @@ export default function CoachesPage() {
         title: 'Revisión gratis aplicada',
         description: 'El entrenador ya tiene acceso al análisis.',
       });
+      openReviewNotice(unlockCoach);
       setUnlockDialogOpen(false);
       router.refresh();
     } catch (error: any) {
@@ -501,6 +526,7 @@ export default function CoachesPage() {
         title: 'Pago simulado',
         description: 'El análisis está desbloqueado. El entrenador puede verlo ahora.',
       });
+      openReviewNotice(unlockCoach);
       setUnlockDialogOpen(false);
       // Recargar la página para actualizar el estado
       router.refresh();
@@ -800,12 +826,12 @@ export default function CoachesPage() {
                   <DialogTrigger asChild>
                     <Button variant="outline" className="flex-1">
                       <MessageSquare className="mr-2 h-4 w-4" />
-                      Pedir ayuda
+                      Enviar mensaje
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Pedir ayuda a {coach.name}</DialogTitle>
+                      <DialogTitle>Enviar mensaje a {coach.name}</DialogTitle>
                       <DialogDescription>Envía un mensaje breve al entrenador.</DialogDescription>
                     </DialogHeader>
                     <Textarea
@@ -852,18 +878,14 @@ export default function CoachesPage() {
                 <Button
                   className="flex-1"
                   onClick={() => {
-                    if (analysisIdFromQuery) {
-                      handleRequestReview(coach);
-                    } else {
-                      router.push('/player/messages');
-                    }
+                    handleRequestReview(coach);
                   }}
                   variant={paidCoachIds.includes(coach.id) ? 'outline' : 'default'}
                 >
                   <Users className="mr-2 h-4 w-4" /> 
                   {analysisIdFromQuery 
                     ? (paidCoachIds.includes(coach.id) ? 'Ya abonado' : 'Solicitar revisión')
-                    : 'Conectar'}
+                    : 'Solicitar revisión'}
                 </Button>
               </div>
             </CardFooter>
@@ -1080,6 +1102,25 @@ export default function CoachesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={reviewNoticeOpen} onOpenChange={setReviewNoticeOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revisión solicitada</AlertDialogTitle>
+            <AlertDialogDescription>
+              {reviewNoticeCoachName} ya tiene el análisis a disposición para revisarlo y dejar su devolución. Te avisaremos cuando responda.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cerrar</AlertDialogCancel>
+            {analysisIdFromQuery && (
+              <AlertDialogAction onClick={() => router.push(`/analysis/${analysisIdFromQuery}`)}>
+                Ir al análisis
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* No Results */}
       {filteredCoaches.length === 0 && (

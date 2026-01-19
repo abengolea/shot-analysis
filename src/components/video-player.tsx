@@ -40,6 +40,7 @@ export function VideoPlayer({
   const [bookmarkLabel, setBookmarkLabel] = useState("");
   const [currentFrame, setCurrentFrame] = useState(0);
   const [fps, setFps] = useState(30);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -49,6 +50,7 @@ export function VideoPlayer({
       setDuration(video.duration);
       // Fallback seguro: usar 30fps por defecto para evitar CORS/tainted canvas
       setFps(30);
+      setLoadError(null);
     };
 
     const handleTimeUpdate = () => {
@@ -67,6 +69,26 @@ export function VideoPlayer({
       video.removeEventListener('timeupdate', handleTimeUpdate);
     };
   }, [fps, onFrameChange]);
+
+  useEffect(() => {
+    setLoadError(null);
+    setIsPlaying(false);
+  }, [src]);
+
+  const getErrorMessage = (code?: number) => {
+    switch (code) {
+      case 1:
+        return "La carga fue interrumpida.";
+      case 2:
+        return "Error de red al cargar el video.";
+      case 3:
+        return "El video está corrupto o no puede decodificarse.";
+      case 4:
+        return "Formato de video no soportado.";
+      default:
+        return "No se pudo cargar el video.";
+    }
+  };
 
   const togglePlay = () => {
     if (videoRef.current) {
@@ -141,22 +163,37 @@ export function VideoPlayer({
             src={src}
             className="w-full h-auto max-h-96"
             playsInline
+            preload="metadata"
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
             onEnded={() => setIsPlaying(false)}
             onError={(e) => {
               const el = e.currentTarget as HTMLVideoElement;
               const err = (el && (el.error as any)) || {};
-              console.error('Error loading video:', {
-                code: err?.code,
-                message: err?.message,
-                networkState: el?.networkState,
-                readyState: el?.readyState,
-                src,
-              });
+              const message = getErrorMessage(err?.code);
+              setLoadError(message);
+              if (process.env.NODE_ENV !== 'production') {
+                console.warn('Error loading video:', {
+                  code: err?.code,
+                  message: err?.message,
+                  networkState: el?.networkState,
+                  readyState: el?.readyState,
+                  src,
+                });
+              }
             }}
             controls
           />
+          {loadError && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
+              <div className="text-center px-4">
+                <p className="text-sm font-medium">{loadError}</p>
+                <p className="text-xs opacity-80 mt-1">
+                  Verifica permisos del archivo o intenta abrir el video en otra pestaña.
+                </p>
+              </div>
+            </div>
+          )}
           {!src && (
             <div className="absolute inset-0 flex items-center justify-center text-white">
               <div className="text-center">

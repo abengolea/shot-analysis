@@ -14,9 +14,10 @@ async function requirePlayerOrAdmin(req: NextRequest): Promise<{ ok: true; uid: 
       adminDb.collection('coaches').doc(uid).get(),
       adminDb.collection('players').doc(uid).get(),
     ]);
-    const role = coachSnap.exists ? (coachSnap.data() as any)?.role : (playerSnap.exists ? (playerSnap.data() as any)?.role : undefined);
-    if (role === 'admin') return { ok: true, uid, role: 'admin' };
-    if (role === 'player') return { ok: true, uid, role: 'player' };
+    const coachRole = coachSnap.exists ? (coachSnap.data() as any)?.role : undefined;
+    const playerRole = playerSnap.exists ? (playerSnap.data() as any)?.role : undefined;
+    if (coachRole === 'admin' || playerRole === 'admin') return { ok: true, uid, role: 'admin' };
+    if (playerSnap.exists || playerRole === 'player') return { ok: true, uid, role: 'player' };
     return { ok: false };
   } catch {
     return { ok: false };
