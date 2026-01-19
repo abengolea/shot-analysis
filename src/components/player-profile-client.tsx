@@ -170,9 +170,10 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
   const [progressSummaryDraft, setProgressSummaryDraft] = useState<string>("");
   const [editingProgressSummary, setEditingProgressSummary] = useState(false);
   const [savingProgressSummary, setSavingProgressSummary] = useState(false);
+  const role = (userProfile as any)?.role;
   const canEditProgressSummary = Boolean(
     userProfile?.id &&
-    (userProfile?.role === 'coach' || userProfile?.role === 'admin') &&
+    (role === 'coach' || role === 'admin') &&
     String(player.coachId || '') === String(userProfile?.id)
   );
 
@@ -433,7 +434,7 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
                     .map((a) => {
                       const score = typeof a.score === 'number' ? toPct(a.score as number).toFixed(1) : '-';
                       const isLatest = a.id === latestAnalysisId;
-                      const coachStatus = a.coachCompleted === true
+                      const coachStatus = (a as any).coachCompleted === true
                         ? { label: 'Evaluado', variant: 'default' as const }
                         : { label: 'En revisión', variant: 'secondary' as const };
                       return (
