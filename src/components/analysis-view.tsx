@@ -2367,11 +2367,6 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
           const fixedKeyframe = normalizeKeyframeUrl(keyframe);
                     return (
             <div key={`${angleKey}-${index}`} className="space-y-2 text-center">
-              {/* DEBUG: Mostrar URL */}
-              <div className="text-xs text-gray-500 truncate max-w-32" title={fixedKeyframe}>
-                URL: {fixedKeyframe}
-              </div>
-              
               {/* Botón con imagen */}
               <button 
                 onClick={() => openKeyframeModal(fixedKeyframe, angleKey, index)} 
