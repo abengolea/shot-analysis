@@ -35,7 +35,7 @@ export default function CoachDashboardPage() {
   const [extraPlayers, setExtraPlayers] = useState<Record<string, Player>>({});
   const [activeTab, setActiveTab] = useState<string>("messages");
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false);
-  const [messagesTab, setMessagesTab] = useState<"requests" | "messages">("requests");
+  const [messagesTab, setMessagesTab] = useState<"requests" | "messages" | "system">("requests");
   const [playersSearch, setPlayersSearch] = useState<string>("");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<'all'|'pending'|'analyzed'>("all");
@@ -56,6 +56,40 @@ export default function CoachDashboardPage() {
   const formatDate = (value: any) => {
     const d = toDate(value);
     return d ? d.toLocaleString() : "Fecha desconocida";
+  };
+  const renderMessageText = (text: string) => {
+    if (!text) return null;
+    const urlPattern = /https?:\/\/\S+/g;
+    const segments: Array<{ type: "text" | "link"; value: string }> = [];
+    let lastIndex = 0;
+    for (const match of text.matchAll(urlPattern)) {
+      const matchText = match[0];
+      const matchIndex = match.index ?? 0;
+      if (matchIndex > lastIndex) {
+        segments.push({ type: "text", value: text.slice(lastIndex, matchIndex) });
+      }
+      segments.push({ type: "link", value: matchText });
+      lastIndex = matchIndex + matchText.length;
+    }
+    if (lastIndex < text.length) {
+      segments.push({ type: "text", value: text.slice(lastIndex) });
+    }
+    return segments.map((segment, idx) => {
+      if (segment.type === "link") {
+        return (
+          <a
+            key={`link-${idx}`}
+            href={segment.value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline break-all"
+          >
+            {segment.value}
+          </a>
+        );
+      }
+      return <span key={`text-${idx}`}>{segment.value}</span>;
+    });
   };
   const extractAnalysisIdFromText = (text?: string | null) => {
     if (!text) return "";
@@ -197,6 +231,9 @@ export default function CoachDashboardPage() {
       return !isSystemMessage && !isAnalysisMessage && m.fromId !== user?.uid;
     });
   }, [visibleMessages, user]);
+  const systemMessages = useMemo(() => {
+    return visibleMessages.filter((m) => m.fromId === 'system' || m.toId === 'system');
+  }, [visibleMessages]);
   const playerNameLookup = useMemo(() => {
     const base: Record<string, string> = {};
     for (const p of players) {
@@ -494,13 +531,16 @@ export default function CoachDashboardPage() {
               Solo no leídos
             </label>
           </div>
-          <Tabs value={messagesTab} onValueChange={(v) => setMessagesTab(v as "requests" | "messages")}>
+          <Tabs value={messagesTab} onValueChange={(v) => setMessagesTab(v as "requests" | "messages" | "system")}>
             <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap">
               <TabsTrigger value="requests" className="whitespace-nowrap flex-shrink-0">
                 Solicitudes
               </TabsTrigger>
               <TabsTrigger value="messages" className="whitespace-nowrap flex-shrink-0">
                 Mensajes
+              </TabsTrigger>
+              <TabsTrigger value="system" className="whitespace-nowrap flex-shrink-0">
+                Sistema
               </TabsTrigger>
             </TabsList>
             <TabsContent value="requests" className="mt-4">
@@ -583,7 +623,7 @@ export default function CoachDashboardPage() {
                       <div className="text-sm text-muted-foreground mb-1">
                         {formatDate(m.createdAt)}
                       </div>
-                      <div className="text-sm">{m.text}</div>
+                      <div className="text-sm whitespace-pre-wrap">{renderMessageText(m.text)}</div>
                     </CardContent>
                   </Card>
                   );
@@ -673,7 +713,43 @@ export default function CoachDashboardPage() {
                       <div className="text-sm text-muted-foreground mb-1">
                         {formatDate(m.createdAt)}
                       </div>
-                      <div className="text-sm">{m.text}</div>
+                      <div className="text-sm whitespace-pre-wrap">{renderMessageText(m.text)}</div>
+                    </CardContent>
+                  </Card>
+                  );
+                })}
+              </div>
+            </TabsContent>
+            <TabsContent value="system" className="mt-4">
+              <div className="grid gap-4">
+                {systemMessages.length === 0 && (
+                  <div className="py-8 text-center text-muted-foreground">Sin mensajes de sistema</div>
+                )}
+                {systemMessages.map((m) => {
+                  const analysisHref = m.analysisId ? `/analysis/${m.analysisId}#messages` : '';
+                  return (
+                  <Card key={m.id} className="hover:shadow-sm">
+                    <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                      <CardTitle className="text-base">
+                        {m.fromName || 'Chaaaas.com'}
+                        {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
+                      </CardTitle>
+                      <div className="flex items-center gap-3">
+                        {!m.read && (
+                          <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
+                        )}
+                        {m.analysisId && (
+                          <Link className="text-xs text-primary" href={analysisHref}>
+                            Ir al lanzamiento
+                          </Link>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-sm text-muted-foreground mb-1">
+                        {formatDate(m.createdAt)}
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap">{renderMessageText(m.text)}</div>
                     </CardContent>
                   </Card>
                   );

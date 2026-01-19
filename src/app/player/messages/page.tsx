@@ -23,7 +23,7 @@ export default function PlayerMessagesPage() {
   const [replyText, setReplyText] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
   const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
-  const [activeTab, setActiveTab] = useState<"messages" | "launches">("messages");
+  const [activeTab, setActiveTab] = useState<"messages" | "launches" | "system">("messages");
 
   const toDate = (value: any) => {
     if (!value) return null;
@@ -42,6 +42,40 @@ export default function PlayerMessagesPage() {
   const formatDate = (value: any) => {
     const d = toDate(value);
     return d ? d.toLocaleString() : "Fecha desconocida";
+  };
+  const renderMessageText = (text: string) => {
+    if (!text) return null;
+    const urlPattern = /https?:\/\/\S+/g;
+    const segments: Array<{ type: "text" | "link"; value: string }> = [];
+    let lastIndex = 0;
+    for (const match of text.matchAll(urlPattern)) {
+      const matchText = match[0];
+      const matchIndex = match.index ?? 0;
+      if (matchIndex > lastIndex) {
+        segments.push({ type: "text", value: text.slice(lastIndex, matchIndex) });
+      }
+      segments.push({ type: "link", value: matchText });
+      lastIndex = matchIndex + matchText.length;
+    }
+    if (lastIndex < text.length) {
+      segments.push({ type: "text", value: text.slice(lastIndex) });
+    }
+    return segments.map((segment, idx) => {
+      if (segment.type === "link") {
+        return (
+          <a
+            key={`link-${idx}`}
+            href={segment.value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline break-all"
+          >
+            {segment.value}
+          </a>
+        );
+      }
+      return <span key={`text-${idx}`}>{segment.value}</span>;
+    });
   };
 
   useEffect(() => {
@@ -101,7 +135,10 @@ export default function PlayerMessagesPage() {
     if (activeTab === "launches") {
       return visibleMessages.filter((m) => !!m.analysisId);
     }
-    return visibleMessages;
+    if (activeTab === "system") {
+      return visibleMessages.filter((m) => m.fromId === "system" || m.toId === "system");
+    }
+    return visibleMessages.filter((m) => m.fromId !== "system" && m.toId !== "system");
   }, [activeTab, visibleMessages]);
 
   const markAsRead = async (m: Message) => {
@@ -161,13 +198,16 @@ export default function PlayerMessagesPage() {
         </label>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "messages" | "launches")}>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "messages" | "launches" | "system")}>
         <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap">
           <TabsTrigger value="messages" className="whitespace-nowrap flex-shrink-0">
             Mensajes
           </TabsTrigger>
           <TabsTrigger value="launches" className="whitespace-nowrap flex-shrink-0">
             Lanzamientos
+          </TabsTrigger>
+          <TabsTrigger value="system" className="whitespace-nowrap flex-shrink-0">
+            Sistema
           </TabsTrigger>
         </TabsList>
         <TabsContent value="messages" className="mt-4">
@@ -217,7 +257,7 @@ export default function PlayerMessagesPage() {
                   <div className="text-sm text-muted-foreground mb-1">
                     {formatDate(m.createdAt)}
                   </div>
-                  <div className="text-sm whitespace-pre-wrap">{m.text}</div>
+                  <div className="text-sm whitespace-pre-wrap">{renderMessageText(m.text)}</div>
                 </CardContent>
               </Card>
             ))}
@@ -270,7 +310,43 @@ export default function PlayerMessagesPage() {
                   <div className="text-sm text-muted-foreground mb-1">
                     {formatDate(m.createdAt)}
                   </div>
-                  <div className="text-sm whitespace-pre-wrap">{m.text}</div>
+                  <div className="text-sm whitespace-pre-wrap">{renderMessageText(m.text)}</div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+        <TabsContent value="system" className="mt-4">
+          <div className="grid gap-4">
+            {tabMessages.length === 0 && (
+              <div className="py-10 text-center text-muted-foreground">No hay mensajes de sistema todavía.</div>
+            )}
+            {tabMessages.map((m) => (
+              <Card key={m.id} className="hover:shadow-sm">
+                <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                  <CardTitle className="text-base">
+                    {m.fromName || "Chaaaas.com"}
+                    {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
+                  </CardTitle>
+                  <div className="flex items-center gap-3">
+                    {m.analysisId && (
+                      <Link
+                        className="text-xs text-primary"
+                        href={`/analysis/${m.analysisId}#messages`}
+                      >
+                        Ir al lanzamiento
+                      </Link>
+                    )}
+                    {!m.read && (
+                      <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-sm text-muted-foreground mb-1">
+                    {formatDate(m.createdAt)}
+                  </div>
+                  <div className="text-sm whitespace-pre-wrap">{renderMessageText(m.text)}</div>
                 </CardContent>
               </Card>
             ))}

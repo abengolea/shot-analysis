@@ -474,6 +474,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     return hasItems || coachSummary.trim().length > 0;
   }, [coachFeedbackByItemId, coachSummary]);
   const showCoachChecklistTab = isCoach || hasCoachFeedback;
+  const isCoachCompleted = (analysis as any)?.coachCompleted === true;
+  const analysisTabLabel = isCoachCompleted ? "Análisis" : "Análisis IA";
+  const analysisSummaryTitle = isCoachCompleted ? "Resumen del Análisis" : "Resumen del Análisis de IA";
   const [analysisMessages, setAnalysisMessages] = useState<Message[]>([]);
   const [analysisMessageText, setAnalysisMessageText] = useState("");
   const [sendingAnalysisMessage, setSendingAnalysisMessage] = useState(false);
@@ -1250,6 +1253,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   type KeyframeAnnotation = { id?: string; overlayUrl: string; createdAt: string };
   const [annotations, setAnnotations] = useState<KeyframeAnnotation[]>([]);
+  const [savingAnnotation, setSavingAnnotation] = useState(false);
+  const [annotationStatus, setAnnotationStatus] = useState<string | null>(null);
 
   // Canvas overlay refs y estado de herramienta
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1711,6 +1716,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const saveAnnotation = async () => {
     setIsCommentFocused(false);
     if (!canEdit) {
+      setAnnotationStatus('Sin permisos para guardar.');
       toast({
         title: 'Sin permisos',
         description: 'No tienes permisos para editar este análisis.',
@@ -1720,6 +1726,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
     
     if (!selectedKeyframe) {
+      setAnnotationStatus('No hay fotograma seleccionado.');
       toast({
         title: 'Error',
         description: 'No hay fotograma seleccionado.',
@@ -1729,9 +1736,20 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
     
     if (!canvasRef.current) {
+      setAnnotationStatus('No se pudo acceder al canvas.');
       toast({
         title: 'Error',
         description: 'Error al acceder al canvas de dibujo.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!drawingRef.current && toolRef.current === 'move') {
+      setAnnotationStatus('Selecciona una herramienta para dibujar.');
+      toast({
+        title: 'Selecciona una herramienta',
+        description: 'Elegí lápiz, línea o círculo para dibujar antes de guardar.',
         variant: 'destructive',
       });
       return;
@@ -1779,6 +1797,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
 
     if (!hasContent) {
+      setAnnotationStatus('Canvas vacío. Dibuja algo primero.');
       toast({
         title: 'Canvas vacío',
         description: 'No hay nada dibujado para guardar. Dibuja algo primero.',
@@ -1788,6 +1807,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
 
     try {
+      setSavingAnnotation(true);
+      setAnnotationStatus('Guardando dibujo…');
       console.log('Iniciando guardado de anotación...', {
         analysisId: safeAnalysis.id,
         keyframeUrl: selectedKeyframe,
@@ -1810,6 +1831,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       const cu = auth.currentUser;
       
       if (!cu) {
+        setAnnotationStatus('Debes iniciar sesión para guardar.');
         toast({
           title: 'Sin autenticación',
           description: 'Debes iniciar sesión para guardar dibujos.',
@@ -1820,6 +1842,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
       const token = await getIdToken(cu, true);
       if (!token) {
+        setAnnotationStatus('No se pudo obtener token.');
         throw new Error('No se pudo obtener el token de autenticación');
       }
 
@@ -1890,6 +1913,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       
       clearCanvas();
       await loadCommentsAndAnnotations();
+      setAnnotationStatus('Dibujo guardado correctamente.');
       
       toast({
         title: 'Dibujo guardado',
@@ -1898,11 +1922,14 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     } catch (e) {
       console.error('Error guardando anotación:', e);
       const errorMessage = e instanceof Error ? e.message : 'Error desconocido al guardar el dibujo';
+      setAnnotationStatus(errorMessage);
       toast({
         title: 'Error al guardar',
         description: errorMessage,
         variant: 'destructive',
       });
+    } finally {
+      setSavingAnnotation(false);
     }
   };
 
@@ -2437,7 +2464,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap md:grid md:grid-cols-5">
           <TabsTrigger value="ai-analysis" className="min-w-[140px] md:min-w-0 whitespace-nowrap flex-shrink-0">
-            <Bot className="mr-2" /> Análisis
+            <Bot className="mr-2" /> {analysisTabLabel}
           </TabsTrigger>
           <TabsTrigger value="videos" className="min-w-[180px] md:min-w-0 whitespace-nowrap flex-shrink-0">
             <Camera className="mr-2" /> Videos y fotogramas
@@ -2698,7 +2725,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             <Card>
               <CardHeader>
                 <CardTitle className="font-headline">
-                  Resumen del Análisis de IA
+                  {analysisSummaryTitle}
                 </CardTitle>
                 <Badge variant="outline" className="w-fit">
                   {safeAnalysis.shotType}
@@ -3590,7 +3617,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
           <div className={isExpanded ? "grid grid-cols-1 gap-6" : "grid grid-cols-1 md:grid-cols-2 gap-6"}>
             <div className="relative">
               <Image
-                src={selectedKeyframe || "https://placehold.co/600x600.png"}
+                src={(selectedKeyframe ? normalizeKeyframeUrl(selectedKeyframe) : "") || "https://placehold.co/600x600.png"}
                 alt="Fotograma seleccionado"
                 width={isExpanded ? 800 : 600}
                 height={isExpanded ? 800 : 600}
@@ -3652,9 +3679,16 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                         ))}
                       </div>
                     </div>
-                    <Button variant="secondary" size="sm" onClick={saveAnnotation}>Guardar dibujo</Button>
+                    <Button variant="secondary" size="sm" disabled={savingAnnotation} onClick={() => { void saveAnnotation(); }}>
+                      {savingAnnotation ? 'Guardando…' : 'Guardar dibujo'}
+                    </Button>
                     <Button variant="outline" size="sm" onClick={clearCanvas}>Limpiar</Button>
                   </>
+                )}
+                {annotationStatus && (
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {annotationStatus}
+                  </div>
                 )}
               </div>
               
