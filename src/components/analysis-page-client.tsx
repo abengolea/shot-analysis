@@ -179,6 +179,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
           // Agregar verificación y otros campos del análisis
           verification: analysisData.analysisResult?.verification || analysisData.verification,
           shotSummary: analysisData.analysisResult?.shotSummary || analysisData.shotSummary,
+          coachCompleted: analysisData.coachCompleted === true,
           shots: analysisData.analysisResult?.shots || analysisData.shots,
           // ⚖️ Agregar metadatos del score calculado
           scoreMetadata: analysisData.analysisResult?.scoreMetadata || null,

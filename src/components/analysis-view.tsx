@@ -474,7 +474,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     return hasItems || coachSummary.trim().length > 0;
   }, [coachFeedbackByItemId, coachSummary]);
   const showCoachChecklistTab = isCoach || hasCoachFeedback;
-  const isCoachCompleted = (analysis as any)?.coachCompleted === true;
+  const isCoachCompleted = analysis.coachCompleted === true || hasCoachFeedback;
   const analysisTabLabel = isCoachCompleted ? "Análisis" : "Análisis IA";
   const analysisSummaryTitle = isCoachCompleted ? "Resumen del Análisis" : "Resumen del Análisis de IA";
   const [analysisMessages, setAnalysisMessages] = useState<Message[]>([]);

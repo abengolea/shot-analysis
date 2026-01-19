@@ -134,6 +134,7 @@ export type ShotAnalysis = {
     frontalShots?: number;
     additionalShots?: number;
   };
+  coachCompleted?: boolean;
   shots?: any[];
   keyframesStatus?: 'pending' | 'ready' | 'error';
   keyframesUpdatedAt?: string;
