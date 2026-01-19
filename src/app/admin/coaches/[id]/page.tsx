@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { adminUpdateCoachStatus, adminUpdateCoachProfile, adminSendPasswordReset, adminActivateCoachNow, adminUpdateCoachPhoto, adminActivateCoachAndSendPassword } from "@/app/actions";
 import { Button } from "@/components/ui/button";
+import { CoachPhotoUpload } from "@/components/admin/coach-photo-upload";
 
 export const dynamic = 'force-dynamic';
 
@@ -30,8 +31,9 @@ async function getCoachData(userId: string) {
   };
 }
 
-export default async function AdminCoachDetailPage({ params }: { params: { id: string } }) {
-  const data = await getCoachData(params.id);
+export default async function AdminCoachDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const data = await getCoachData(id);
   if (!data) {
     return (
       <div className="space-y-4">
@@ -43,6 +45,15 @@ export default async function AdminCoachDetailPage({ params }: { params: { id: s
 
   const { coach, playersCount, latestAnalyses, latestPayments } = data as any;
   const statusVariant = coach.status === 'active' ? 'default' : coach.status === 'pending' ? 'secondary' : 'destructive';
+  const photoVersion = coach?.updatedAt
+    ? (typeof coach.updatedAt === 'string'
+      ? coach.updatedAt
+      : (coach?.updatedAt?.toDate?.()
+        ? coach.updatedAt.toDate().toISOString()
+        : (typeof coach?.updatedAt?._seconds === 'number'
+          ? new Date(coach.updatedAt._seconds * 1000 + Math.round((coach.updatedAt._nanoseconds || 0) / 1e6)).toISOString()
+          : '')))
+    : '';
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6">
@@ -146,19 +157,11 @@ export default async function AdminCoachDetailPage({ params }: { params: { id: s
           <CardContent className="space-y-6">
             <div className="space-y-2">
               <div className="text-sm font-medium">Foto de perfil</div>
-              <div className="flex items-center gap-4">
-                {coach?.photoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={coach.photoUrl} alt="Foto" className="h-16 w-16 rounded-full object-cover border" />
-                ) : (
-                  <div className="h-16 w-16 rounded-full border flex items-center justify-center text-xs text-muted-foreground">Sin foto</div>
-                )}
-                <form action={actionUpdateCoachPhoto} className="flex items-center gap-2">
-                  <input type="hidden" name="userId" value={data.id} />
-                  <input name="avatarFile" type="file" accept="image/jpeg,image/png,image/webp" className="text-sm" />
-                  <Button type="submit" size="sm">Subir</Button>
-                </form>
-              </div>
+              <CoachPhotoUpload
+                userId={data.id}
+                photoUrl={coach?.photoUrl || ''}
+                photoVersion={photoVersion}
+              />
             </div>
 
             <div className="flex items-center justify-between gap-2">

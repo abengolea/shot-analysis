@@ -377,7 +377,7 @@ export default function CoachesPage() {
           <Card key={coach.id} className="flex flex-col hover:shadow-lg transition-shadow">
             <CardHeader className="items-center text-center pb-4">
               <Avatar className="h-24 w-24 border-4 border-primary/20">
-                <AvatarImage src={coach.avatarUrl} alt={coach.name} />
+                <AvatarImage src={coach.photoUrl || coach.avatarUrl} alt={coach.name} />
                 <AvatarFallback>{coach.name.charAt(0)}</AvatarFallback>
               </Avatar>
               <CardTitle className="font-headline pt-2 text-2xl">{coach.name}</CardTitle>

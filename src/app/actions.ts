@@ -533,13 +533,17 @@ export async function adminUpdateCoachPhoto(_prev: any, formData: FormData) {
         await gcsFile.makePublic();
         const photoUrl = `https://storage.googleapis.com/${bucket.name}/${path}`;
 
-        await adminDb.collection('coaches').doc(userId).set({ photoUrl, updatedAt: new Date().toISOString() }, { merge: true });
+        await adminDb.collection('coaches').doc(userId).set({
+            photoUrl,
+            avatarUrl: photoUrl,
+            updatedAt: new Date().toISOString(),
+        }, { merge: true });
         revalidatePath('/admin');
         revalidatePath(`/admin/coaches/${userId}`);
-        return { success: true, photoUrl };
-    } catch (e) {
+        return { success: true, message: 'Foto actualizada', photoUrl };
+    } catch (e: any) {
         console.error('Error subiendo foto de coach:', e);
-        return { success: false };
+        return { success: false, message: 'No se pudo subir la foto' };
     }
 }
 
