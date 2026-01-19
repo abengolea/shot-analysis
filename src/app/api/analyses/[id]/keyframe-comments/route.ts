@@ -97,7 +97,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       index,
       comment,
       coachId: perm.uid,
-      coachName,
+      ...(coachName ? { coachName } : {}),
       createdAt: new Date().toISOString(),
     };
     const ref = await adminDb.collection('analyses').doc(analysisId).collection('keyframeComments').add(payload);
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         await adminDb.collection('messages').add({
           fromId: perm.uid,
           fromName: coachName || coach?.name || 'Entrenador',
-          fromAvatarUrl: coach?.avatarUrl || '',
+          ...(coach?.avatarUrl ? { fromAvatarUrl: coach.avatarUrl } : {}),
           toId: playerId,
           toName: player?.name || player?.fullName || playerId,
           text: messageText,

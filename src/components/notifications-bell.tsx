@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Check } from "lucide-react";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, orderBy, query, updateDoc, where, doc } from "firebase/firestore";
+import { collection, onSnapshot, query, updateDoc, where, doc } from "firebase/firestore";
 import { useAuth } from "@/hooks/use-auth";
 import type { Message } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -53,13 +53,11 @@ export function NotificationsBell() {
     try {
       const q1 = query(
         collection(db as any, 'messages'),
-        where('toId', '==', user.uid),
-        orderBy('createdAt', 'desc')
+        where('toId', '==', user.uid)
       );
       const q2 = query(
         collection(db as any, 'messages'),
-        where('toCoachDocId', '==', user.uid),
-        orderBy('createdAt', 'desc')
+        where('toCoachDocId', '==', user.uid)
       );
       const unsubs: Array<() => void> = [];
       const apply = (snap: any) => {

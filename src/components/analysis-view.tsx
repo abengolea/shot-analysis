@@ -50,6 +50,7 @@ import {
   Camera,
   MessageSquare,
   Move,
+  Minus,
   Pencil,
   Circle as CircleIcon,
   Eraser,
@@ -1244,6 +1245,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   type KeyframeComment = { id?: string; comment: string; coachName?: string; createdAt: string };
   const [keyframeComments, setKeyframeComments] = useState<KeyframeComment[]>([]);
   const [newComment, setNewComment] = useState("");
+  const [isCommentFocused, setIsCommentFocused] = useState(false);
   const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   type KeyframeAnnotation = { id?: string; overlayUrl: string; createdAt: string };
@@ -1252,40 +1254,69 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   // Canvas overlay refs y estado de herramienta
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
-  const toolRef = useRef<'move' | 'pencil' | 'circle' | 'eraser'>("move");
+  const toolRef = useRef<'move' | 'pencil' | 'circle' | 'line' | 'eraser'>("move");
   const startPointRef = useRef<{ x: number; y: number } | null>(null);
+  const canvasSnapshotRef = useRef<ImageData | null>(null);
+  const [drawColor, setDrawColor] = useState("#ef4444");
 
   const clearCanvas = useCallback(() => {
     const canvas = canvasRef.current; if (!canvas) return; const ctx = canvas.getContext('2d'); if (!ctx) return; ctx.clearRect(0, 0, canvas.width, canvas.height);
+    canvasSnapshotRef.current = null;
   }, []);
 
   const beginDraw = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    setIsCommentFocused(false);
+    if (isCommentFocused) return;
     if (toolRef.current === 'move') return;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const x = e.clientX - rect.left; const y = e.clientY - rect.top;
     drawingRef.current = true; startPointRef.current = { x, y };
+    const ctx = canvasRef.current?.getContext('2d'); if (!ctx || !canvasRef.current) return;
     if (toolRef.current === 'pencil' || toolRef.current === 'eraser') {
-      const ctx = canvasRef.current?.getContext('2d'); if (!ctx || !canvasRef.current) return;
       ctx.lineWidth = toolRef.current === 'eraser' ? 16 : 3;
-      ctx.strokeStyle = toolRef.current === 'eraser' ? 'rgba(0,0,0,1)' : '#ef4444';
+      ctx.strokeStyle = toolRef.current === 'eraser' ? 'rgba(0,0,0,1)' : drawColor;
       ctx.globalCompositeOperation = toolRef.current === 'eraser' ? 'destination-out' : 'source-over';
       ctx.beginPath(); ctx.moveTo(x, y);
+      return;
+    }
+    if (toolRef.current === 'line' || toolRef.current === 'circle') {
+      try {
+        canvasSnapshotRef.current = ctx.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height);
+      } catch {}
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = drawColor;
+      ctx.globalCompositeOperation = 'source-over';
     }
   };
   const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isCommentFocused) return;
     if (!drawingRef.current) return;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const x = e.clientX - rect.left; const y = e.clientY - rect.top;
     const ctx = canvasRef.current?.getContext('2d'); if (!ctx) return;
     if (toolRef.current === 'pencil' || toolRef.current === 'eraser') {
       ctx.lineTo(x, y); ctx.stroke();
-    } else if (toolRef.current === 'circle') {
+    } else if (toolRef.current === 'circle' || toolRef.current === 'line') {
       const sp = startPointRef.current; if (!sp || !canvasRef.current) return;
-      // Redibujar círculo provisional: limpiar y no borrar el trazo previo
-      // Para simplicidad, limpiar solo el último círculo provisional pintando sobre una capa temporal no implementada; aquí trazamos guía mínima
+      if (canvasSnapshotRef.current) {
+        ctx.putImageData(canvasSnapshotRef.current, 0, 0);
+      }
+      ctx.beginPath();
+      if (toolRef.current === 'line') {
+        ctx.moveTo(sp.x, sp.y);
+        ctx.lineTo(x, y);
+      } else {
+        const radius = Math.hypot(x - sp.x, y - sp.y);
+        ctx.arc(sp.x, sp.y, radius, 0, Math.PI * 2);
+      }
+      ctx.stroke();
     }
   };
-  const endDraw = () => { drawingRef.current = false; startPointRef.current = null; };
+  const endDraw = () => {
+    drawingRef.current = false;
+    startPointRef.current = null;
+    canvasSnapshotRef.current = null;
+  };
 
   const loadCommentsAndAnnotations = useCallback(async () => {
     if (!selectedKeyframe) return;
@@ -1423,6 +1454,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     console.log(`🧠 Smart keyframes disponibles para ${angleKey}:`, (smartKeyframes as any)[angleKey]);
     // Resetear herramienta para no confundir al comentar
     toolRef.current = 'move';
+    setIsCommentFocused(false);
     
     setSelectedKeyframe(keyframeUrl);
     setSelectedAngle(angleKey);
@@ -1639,6 +1671,11 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!isModalOpen) return;
+      const target = event.target as HTMLElement | null;
+      if (isCommentFocused) return;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
       
       if (event.key === 'ArrowLeft' && canNavigatePrev) {
         event.preventDefault();
@@ -1653,7 +1690,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
     }
-  }, [isModalOpen, canNavigatePrev, canNavigateNext, navigateToKeyframe]);
+  }, [isModalOpen, canNavigatePrev, canNavigateNext, navigateToKeyframe, isCommentFocused]);
 
   const saveComment = async () => {
     if (!canComment || !selectedKeyframe) return;
@@ -1672,6 +1709,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   };
 
   const saveAnnotation = async () => {
+    setIsCommentFocused(false);
     if (!canEdit) {
       toast({
         title: 'Sin permisos',
@@ -3568,8 +3606,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 width={isExpanded ? 800 : 600}
                 height={isExpanded ? 800 : 600}
                 className="absolute inset-0 rounded-lg"
-                style={{ cursor: toolRef.current === 'pencil' ? 'crosshair' : toolRef.current === 'eraser' ? 'cell' : 'default' }}
-                onMouseDown={beginDraw}
+                style={{ cursor: toolRef.current === 'pencil' || toolRef.current === 'line' || toolRef.current === 'circle' ? 'crosshair' : toolRef.current === 'eraser' ? 'cell' : 'default' }}
+                onMouseDown={(e) => { setIsCommentFocused(false); beginDraw(e); }}
                 onMouseMove={draw}
                 onMouseUp={endDraw}
                 onMouseLeave={endDraw}
@@ -3596,8 +3634,24 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 {canEdit && (
                   <>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'pencil'; }}><Pencil /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'line'; }}><Minus /></Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'circle'; }}><CircleIcon /></Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'eraser'; }}><Eraser /></Button>
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-xs text-muted-foreground">Color</span>
+                      <div className="flex items-center gap-1">
+                        {['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#111827'].map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            className={`h-5 w-5 rounded-full border ${drawColor === c ? 'ring-2 ring-primary' : ''}`}
+                            style={{ backgroundColor: c }}
+                            onClick={() => setDrawColor(c)}
+                            title={`Color ${c}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
                     <Button variant="secondary" size="sm" onClick={saveAnnotation}>Guardar dibujo</Button>
                     <Button variant="outline" size="sm" onClick={clearCanvas}>Limpiar</Button>
                   </>
@@ -3654,15 +3708,16 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     <>
                       <Textarea
                         ref={commentInputRef}
+                        className="pointer-events-auto"
                         placeholder="Añade tu comentario aquí..."
                         value={newComment}
                         onChange={(e) => setNewComment(e.target.value)}
-                        onFocus={() => { toolRef.current = 'move'; }}
-                        onKeyDown={(e) => { e.stopPropagation(); }}
+                        onFocus={() => { toolRef.current = 'move'; setIsCommentFocused(true); }}
+                        onBlur={() => setIsCommentFocused(false)}
                         autoFocus
                       />
                       <Button className="w-full" onClick={() => { toolRef.current = 'move'; void saveComment(); }}>
-                        Guardar Comentario
+                        Guardar y enviar comentario
                       </Button>
                     </>
                   )}

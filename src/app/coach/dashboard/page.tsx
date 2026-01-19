@@ -35,6 +35,7 @@ export default function CoachDashboardPage() {
   const [extraPlayers, setExtraPlayers] = useState<Record<string, Player>>({});
   const [activeTab, setActiveTab] = useState<string>("messages");
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false);
+  const [messagesTab, setMessagesTab] = useState<"requests" | "messages">("requests");
   const [playersSearch, setPlayersSearch] = useState<string>("");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<'all'|'pending'|'analyzed'>("all");
@@ -55,6 +56,11 @@ export default function CoachDashboardPage() {
   const formatDate = (value: any) => {
     const d = toDate(value);
     return d ? d.toLocaleString() : "Fecha desconocida";
+  };
+  const extractAnalysisIdFromText = (text?: string | null) => {
+    if (!text) return "";
+    const match = text.match(/analysis_[A-Za-z0-9_-]+/);
+    return match?.[0] || "";
   };
 
   useEffect(() => {
@@ -157,8 +163,9 @@ export default function CoachDashboardPage() {
   useEffect(() => {
     if (!user) return;
     try {
-      const q1 = query(collection(db as any, 'messages'), where('toId', '==', user.uid), orderBy('createdAt', 'desc'));
-      const q2 = query(collection(db as any, 'messages'), where('toCoachDocId', '==', user.uid), orderBy('createdAt', 'desc'));
+      const q1 = query(collection(db as any, 'messages'), where('toId', '==', user.uid));
+      const q2 = query(collection(db as any, 'messages'), where('toCoachDocId', '==', user.uid));
+      const q3 = query(collection(db as any, 'messages'), where('fromId', '==', user.uid));
       const unsubs: Array<() => void> = [];
       const apply = (snap: any) => {
         setMessages(prev => {
@@ -169,6 +176,7 @@ export default function CoachDashboardPage() {
       };
       unsubs.push(onSnapshot(q1, apply));
       unsubs.push(onSnapshot(q2, apply));
+      unsubs.push(onSnapshot(q3, apply));
       return () => { unsubs.forEach(u => u()); };
     } catch (e) {
       console.error('Error cargando mensajes:', e);
@@ -179,6 +187,16 @@ export default function CoachDashboardPage() {
   const analyzedCount = useMemo(() => analyses.filter((a: any) => String(a.status) === 'analyzed' && a.coachCompleted === true).length, [analyses]);
   const pendingCount = useMemo(() => analyses.filter((a: any) => String(a.status) !== 'analyzed' || a.coachCompleted !== true).length, [analyses]);
   const visibleMessages = useMemo(() => unreadOnly ? messages.filter(m => !m.read) : messages, [messages, unreadOnly]);
+  const totalConversationMessages = useMemo(() => {
+    return visibleMessages.filter((m) => m.fromId !== 'system' && m.toId !== 'system');
+  }, [visibleMessages]);
+  const requestMessages = useMemo(() => {
+    return visibleMessages.filter((m) => {
+      const isSystemMessage = m.fromId === 'system';
+      const isAnalysisMessage = Boolean(m.analysisId);
+      return !isSystemMessage && !isAnalysisMessage && m.fromId !== user?.uid;
+    });
+  }, [visibleMessages, user]);
   const playerNameLookup = useMemo(() => {
     const base: Record<string, string> = {};
     for (const p of players) {
@@ -476,69 +494,193 @@ export default function CoachDashboardPage() {
               Solo no leídos
             </label>
           </div>
-          <div className="grid gap-4">
-            {visibleMessages.length === 0 && (
-              <div className="py-8 text-center text-muted-foreground">Sin mensajes</div>
-            )}
-            {visibleMessages.map((m) => (
-              <Card key={m.id} className="hover:shadow-sm">
-                <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                  <CardTitle className="text-base">
-                    {m.fromName || m.fromId}
-                    {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
-                  </CardTitle>
-                  <div className="flex items-center gap-3">
-                    {!m.read && (
-                      <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
-                    )}
-                    <button className="text-xs text-green-600 disabled:opacity-50" disabled={acceptingId === m.id} onClick={() => acceptPlayer(m)}>
-                      {acceptingId === m.id ? 'Aceptando…' : 'Aceptar propuesta'}
-                    </button>
-                    <Dialog open={rejectFor?.id === m.id} onOpenChange={(open) => { if (open) { setRejectFor(m); setRejectText(`Lamentablemente no puedo ayudarte en este momento. ¡Gracias por contactarme!\n\n— ${user?.displayName || 'Entrenador'}`); } else { setRejectFor(null); setRejectText(""); } }}>
-                      <DialogTrigger asChild>
-                        <button className="text-xs text-red-600">Rechazar</button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Rechazar solicitud de {m.fromName || m.fromId}</DialogTitle>
-                          <DialogDescription>Envía un mensaje opcional para explicar el rechazo.</DialogDescription>
-                        </DialogHeader>
-                        <Textarea value={rejectText} onChange={(e) => setRejectText(e.target.value)} rows={4} />
-                        <DialogFooter>
-                          <Button onClick={sendReject} disabled={rejecting || !rejectText.trim()} variant="destructive">
-                            {rejecting ? 'Enviando…' : 'Enviar rechazo'}
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                    <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
-                      <DialogTrigger asChild>
-                        <button className="text-xs text-primary">Responder</button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Responder a {m.fromName || m.fromId}</DialogTitle>
-                          <DialogDescription>Escribe tu respuesta y se enviará al jugador.</DialogDescription>
-                        </DialogHeader>
-                        <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={4} />
-                        <DialogFooter>
-                          <Button onClick={sendReply} disabled={sendingReply || !replyText.trim()}>
-                            {sendingReply ? 'Enviando…' : 'Enviar'}
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-sm text-muted-foreground mb-1">
-                    {formatDate(m.createdAt)}
-                  </div>
-                  <div className="text-sm">{m.text}</div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <Tabs value={messagesTab} onValueChange={(v) => setMessagesTab(v as "requests" | "messages")}>
+            <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap">
+              <TabsTrigger value="requests" className="whitespace-nowrap flex-shrink-0">
+                Solicitudes
+              </TabsTrigger>
+              <TabsTrigger value="messages" className="whitespace-nowrap flex-shrink-0">
+                Mensajes
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="requests" className="mt-4">
+              <div className="grid gap-4">
+                {requestMessages.length === 0 && (
+                  <div className="py-8 text-center text-muted-foreground">Sin solicitudes</div>
+                )}
+                {requestMessages.map((m) => {
+                  const isSystemMessage = m.fromId === 'system';
+                  const resolvedAnalysisId = m.analysisId || extractAnalysisIdFromText(m.text);
+                  const isAnalysisMessage = Boolean(resolvedAnalysisId);
+                  const showProposalActions = !isSystemMessage && !isAnalysisMessage;
+                  const analysisHref = resolvedAnalysisId ? `/analysis/${resolvedAnalysisId}#messages` : '';
+                  return (
+                  <Card key={m.id} className="hover:shadow-sm">
+                    <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                      <CardTitle className="text-base">
+                        {m.fromName || m.fromId}
+                        {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
+                      </CardTitle>
+                      <div className="flex items-center gap-3">
+                        {!m.read && (
+                          <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
+                        )}
+                        {isAnalysisMessage && (
+                          <Link className="text-xs text-primary" href={analysisHref}>
+                            Ir al lanzamiento
+                          </Link>
+                        )}
+                        {showProposalActions && (
+                          <>
+                            <button className="text-xs text-green-600 disabled:opacity-50" disabled={acceptingId === m.id} onClick={() => acceptPlayer(m)}>
+                              {acceptingId === m.id ? 'Aceptando…' : 'Aceptar propuesta'}
+                            </button>
+                            <Dialog open={rejectFor?.id === m.id} onOpenChange={(open) => { if (open) { setRejectFor(m); setRejectText(`Lamentablemente no puedo ayudarte en este momento. ¡Gracias por contactarme!\n\n— ${user?.displayName || 'Entrenador'}`); } else { setRejectFor(null); setRejectText(""); } }}>
+                              <DialogTrigger asChild>
+                                <button className="text-xs text-red-600">Rechazar</button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Rechazar solicitud de {m.fromName || m.fromId}</DialogTitle>
+                                  <DialogDescription>Envía un mensaje opcional para explicar el rechazo.</DialogDescription>
+                                </DialogHeader>
+                                <Textarea value={rejectText} onChange={(e) => setRejectText(e.target.value)} rows={4} />
+                                <DialogFooter>
+                                  <Button onClick={sendReject} disabled={rejecting || !rejectText.trim()} variant="destructive">
+                                    {rejecting ? 'Enviando…' : 'Enviar rechazo'}
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          </>
+                        )}
+                        {isAnalysisMessage ? (
+                          <Link className="text-xs text-primary" href={analysisHref}>
+                            Responder
+                          </Link>
+                        ) : (
+                          <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
+                            <DialogTrigger asChild>
+                              <button className="text-xs text-primary">Responder</button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Responder a {m.fromName || m.fromId}</DialogTitle>
+                                <DialogDescription>Escribe tu respuesta y se enviará al jugador.</DialogDescription>
+                              </DialogHeader>
+                              <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={4} />
+                              <DialogFooter>
+                                <Button onClick={sendReply} disabled={sendingReply || !replyText.trim()}>
+                                  {sendingReply ? 'Enviando…' : 'Enviar'}
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-sm text-muted-foreground mb-1">
+                        {formatDate(m.createdAt)}
+                      </div>
+                      <div className="text-sm">{m.text}</div>
+                    </CardContent>
+                  </Card>
+                  );
+                })}
+              </div>
+            </TabsContent>
+            <TabsContent value="messages" className="mt-4">
+              <div className="grid gap-4">
+                {totalConversationMessages.length === 0 && (
+                  <div className="py-8 text-center text-muted-foreground">Sin mensajes</div>
+                )}
+                {totalConversationMessages.map((m) => {
+                  const isSystemMessage = m.fromId === 'system';
+                  const resolvedAnalysisId = m.analysisId || extractAnalysisIdFromText(m.text);
+                  const isAnalysisMessage = Boolean(resolvedAnalysisId);
+                  const showProposalActions = !isSystemMessage && !isAnalysisMessage;
+                  const analysisHref = resolvedAnalysisId ? `/analysis/${resolvedAnalysisId}#messages` : '';
+                  const isOwnMessage = m.fromId === user?.uid;
+                  return (
+                  <Card key={m.id} className="hover:shadow-sm">
+                    <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                      <CardTitle className="text-base">
+                        {m.fromName || m.fromId}
+                        {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
+                      </CardTitle>
+                      <div className="flex items-center gap-3">
+                        {!m.read && (
+                          <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
+                        )}
+                        {isAnalysisMessage && (
+                          <Link className="text-xs text-primary" href={analysisHref}>
+                            Ir al lanzamiento
+                          </Link>
+                        )}
+                        {showProposalActions && !isOwnMessage && (
+                          <>
+                            <button className="text-xs text-green-600 disabled:opacity-50" disabled={acceptingId === m.id} onClick={() => acceptPlayer(m)}>
+                              {acceptingId === m.id ? 'Aceptando…' : 'Aceptar propuesta'}
+                            </button>
+                            <Dialog open={rejectFor?.id === m.id} onOpenChange={(open) => { if (open) { setRejectFor(m); setRejectText(`Lamentablemente no puedo ayudarte en este momento. ¡Gracias por contactarme!\n\n— ${user?.displayName || 'Entrenador'}`); } else { setRejectFor(null); setRejectText(""); } }}>
+                              <DialogTrigger asChild>
+                                <button className="text-xs text-red-600">Rechazar</button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Rechazar solicitud de {m.fromName || m.fromId}</DialogTitle>
+                                  <DialogDescription>Envía un mensaje opcional para explicar el rechazo.</DialogDescription>
+                                </DialogHeader>
+                                <Textarea value={rejectText} onChange={(e) => setRejectText(e.target.value)} rows={4} />
+                                <DialogFooter>
+                                  <Button onClick={sendReject} disabled={rejecting || !rejectText.trim()} variant="destructive">
+                                    {rejecting ? 'Enviando…' : 'Enviar rechazo'}
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          </>
+                        )}
+                        {isAnalysisMessage ? (
+                          <Link className="text-xs text-primary" href={analysisHref}>
+                            Responder
+                          </Link>
+                        ) : (
+                          !isOwnMessage && (
+                            <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
+                              <DialogTrigger asChild>
+                                <button className="text-xs text-primary">Responder</button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Responder a {m.fromName || m.fromId}</DialogTitle>
+                                  <DialogDescription>Escribe tu respuesta y se enviará al jugador.</DialogDescription>
+                                </DialogHeader>
+                                <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={4} />
+                                <DialogFooter>
+                                  <Button onClick={sendReply} disabled={sendingReply || !replyText.trim()}>
+                                    {sendingReply ? 'Enviando…' : 'Enviar'}
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          )
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-sm text-muted-foreground mb-1">
+                        {formatDate(m.createdAt)}
+                      </div>
+                      <div className="text-sm">{m.text}</div>
+                    </CardContent>
+                  </Card>
+                  );
+                })}
+              </div>
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         <TabsContent id="players" value="players" className="space-y-6">

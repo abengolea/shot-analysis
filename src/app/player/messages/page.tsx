@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, orderBy, query, where, addDoc, serverTimestamp, updateDoc, doc, getDoc } from "firebase/firestore";
+import { collection, onSnapshot, query, where, addDoc, serverTimestamp, updateDoc, doc, getDoc } from "firebase/firestore";
 import { useAuth } from "@/hooks/use-auth";
 import { db } from "@/lib/firebase";
 import type { Message } from "@/lib/types";
@@ -49,8 +49,7 @@ export default function PlayerMessagesPage() {
     try {
       const q = query(
         collection(db as any, "messages"),
-        where("toId", "==", user.uid),
-        orderBy("createdAt", "desc")
+        where("toId", "==", user.uid)
       );
       const unsub = onSnapshot(q, (snap) => {
         const incoming = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })) as Message[];
