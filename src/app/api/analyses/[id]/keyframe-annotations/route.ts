@@ -66,10 +66,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { id: analysisId } = await params;
     if (!adminDb || !adminAuth || !adminStorage) return NextResponse.json({ error: 'Admin SDK no inicializado' }, { status: 500 });
 
+    const body = await request.json().catch(() => ({}));
+    if (body?.action === 'list') {
+      const keyframeUrl = String(body?.keyframeUrl || '');
+      const ref = adminDb.collection('analyses').doc(analysisId).collection('keyframeAnnotations');
+      let q = ref.orderBy('createdAt', 'desc') as FirebaseFirestore.Query<FirebaseFirestore.DocumentData>;
+      if (keyframeUrl) q = q.where('keyframeUrl', '==', keyframeUrl);
+      const snap = await q.get();
+      const items: KeyframeAnnotation[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      return NextResponse.json({ annotations: items });
+    }
+
     const perm = await verifyCoachPermission(request, analysisId);
     if (!perm.ok || !perm.uid) return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
 
-    const body = await request.json();
     const keyframeUrl = String(body?.keyframeUrl || '');
     const angle = body?.angle as KeyframeAnnotation['angle'] | undefined;
     const index = typeof body?.index === 'number' ? Number(body.index) : undefined;

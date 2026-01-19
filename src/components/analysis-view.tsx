@@ -499,6 +499,40 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     const d = toMessageDate(value);
     return d ? d.toLocaleString() : "Fecha desconocida";
   };
+  const renderMessageText = (text: string) => {
+    if (!text) return null;
+    const urlPattern = /https?:\/\/\S+/g;
+    const segments: Array<{ type: "text" | "link"; value: string }> = [];
+    let lastIndex = 0;
+    for (const match of text.matchAll(urlPattern)) {
+      const matchText = match[0];
+      const matchIndex = match.index ?? 0;
+      if (matchIndex > lastIndex) {
+        segments.push({ type: "text", value: text.slice(lastIndex, matchIndex) });
+      }
+      segments.push({ type: "link", value: matchText });
+      lastIndex = matchIndex + matchText.length;
+    }
+    if (lastIndex < text.length) {
+      segments.push({ type: "text", value: text.slice(lastIndex) });
+    }
+    return segments.map((segment, idx) => {
+      if (segment.type === "link") {
+        return (
+          <a
+            key={`link-${idx}`}
+            href={segment.value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline break-all"
+          >
+            {segment.value}
+          </a>
+        );
+      }
+      return <span key={`text-${idx}`}>{segment.value}</span>;
+    });
+  };
 
   useEffect(() => {
     if (!analysis?.id || !user) {
@@ -1274,6 +1308,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const [annotations, setAnnotations] = useState<KeyframeAnnotation[]>([]);
   const [savingAnnotation, setSavingAnnotation] = useState(false);
   const [annotationStatus, setAnnotationStatus] = useState<string | null>(null);
+  const imageContainerRef = useRef<HTMLDivElement | null>(null);
+  const [imageLayout, setImageLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const imageNaturalSizeRef = useRef<{ width: number; height: number } | null>(null);
 
   // Canvas overlay refs y estado de herramienta
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1294,12 +1331,23 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     if (toolRef.current === 'move') return;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const x = e.clientX - rect.left; const y = e.clientY - rect.top;
+    if (imageLayout) {
+      if (x < imageLayout.x || y < imageLayout.y || x > imageLayout.x + imageLayout.width || y > imageLayout.y + imageLayout.height) {
+        return;
+      }
+    }
     drawingRef.current = true; startPointRef.current = { x, y };
     const ctx = canvasRef.current?.getContext('2d'); if (!ctx || !canvasRef.current) return;
     if (toolRef.current === 'pencil' || toolRef.current === 'eraser') {
       ctx.lineWidth = toolRef.current === 'eraser' ? 16 : 3;
       ctx.strokeStyle = toolRef.current === 'eraser' ? 'rgba(0,0,0,1)' : drawColor;
       ctx.globalCompositeOperation = toolRef.current === 'eraser' ? 'destination-out' : 'source-over';
+      if (imageLayout) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(imageLayout.x, imageLayout.y, imageLayout.width, imageLayout.height);
+        ctx.clip();
+      }
       ctx.beginPath(); ctx.moveTo(x, y);
       return;
     }
@@ -1319,11 +1367,22 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     const x = e.clientX - rect.left; const y = e.clientY - rect.top;
     const ctx = canvasRef.current?.getContext('2d'); if (!ctx) return;
     if (toolRef.current === 'pencil' || toolRef.current === 'eraser') {
+      if (imageLayout) {
+        if (x < imageLayout.x || y < imageLayout.y || x > imageLayout.x + imageLayout.width || y > imageLayout.y + imageLayout.height) {
+          return;
+        }
+      }
       ctx.lineTo(x, y); ctx.stroke();
     } else if (toolRef.current === 'circle' || toolRef.current === 'line') {
       const sp = startPointRef.current; if (!sp || !canvasRef.current) return;
       if (canvasSnapshotRef.current) {
         ctx.putImageData(canvasSnapshotRef.current, 0, 0);
+      }
+      if (imageLayout) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(imageLayout.x, imageLayout.y, imageLayout.width, imageLayout.height);
+        ctx.clip();
       }
       ctx.beginPath();
       if (toolRef.current === 'line') {
@@ -1334,9 +1393,17 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         ctx.arc(sp.x, sp.y, radius, 0, Math.PI * 2);
       }
       ctx.stroke();
+      if (imageLayout) {
+        ctx.restore();
+      }
     }
   };
   const endDraw = () => {
+    const ctx = canvasRef.current?.getContext('2d');
+    if (ctx && toolRef.current === 'pencil') {
+      ctx.closePath();
+      if (imageLayout) ctx.restore();
+    }
     drawingRef.current = false;
     startPointRef.current = null;
     canvasSnapshotRef.current = null;
@@ -1344,6 +1411,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   const loadCommentsAndAnnotations = useCallback(async () => {
     if (!selectedKeyframe) return;
+    const keyframeForQuery = normalizeKeyframeUrl(selectedKeyframe);
     console.log('🔄 loadCommentsAndAnnotations - usando POST (nuevo código)');
     try {
       // Usar POST para evitar error 431 cuando keyframeUrl es muy largo (data URL base64)
@@ -1352,7 +1420,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ keyframeUrl: selectedKeyframe, action: 'list' }),
+        body: JSON.stringify({ keyframeUrl: keyframeForQuery, action: 'list' }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -1367,7 +1435,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ keyframeUrl: selectedKeyframe, action: 'list' }),
+        body: JSON.stringify({ keyframeUrl: keyframeForQuery, action: 'list' }),
       });
       if (res2.ok) {
         const data2 = await res2.json();
@@ -1388,6 +1456,33 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       commentInputRef.current?.focus();
     }, 0);
   }, [selectedKeyframe, isModalOpen, loadCommentsAndAnnotations]);
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const container = imageContainerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+    const rect = container.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const nextWidth = Math.round(rect.width);
+    const nextHeight = Math.round(rect.height);
+    if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+      canvas.width = nextWidth;
+      canvas.height = nextHeight;
+      clearCanvas();
+    }
+    const natural = imageNaturalSizeRef.current;
+    if (natural?.width && natural?.height) {
+      const scale = Math.min(nextWidth / natural.width, nextHeight / natural.height);
+      const displayW = Math.round(natural.width * scale);
+      const displayH = Math.round(natural.height * scale);
+      const offsetX = Math.round((nextWidth - displayW) / 2);
+      const offsetY = Math.round((nextHeight - displayH) / 2);
+      setImageLayout({ x: offsetX, y: offsetY, width: displayW, height: displayH });
+    } else {
+      setImageLayout(null);
+    }
+  }, [isModalOpen, isExpanded, selectedKeyframe, clearCanvas]);
 
   // Cargar entrenadores cuando se abre el diálogo
   useEffect(() => {
@@ -1477,7 +1572,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         console.log(`🔍 Keyframes disponibles para ${angleKey}:`, (localKeyframes as any)[angleKey]);
     console.log(`🧠 Smart keyframes disponibles para ${angleKey}:`, (smartKeyframes as any)[angleKey]);
     // Resetear herramienta para no confundir al comentar
-    toolRef.current = 'move';
+    toolRef.current = 'pencil';
     setIsCommentFocused(false);
     
     setSelectedKeyframe(keyframeUrl);
@@ -1496,9 +1591,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       angleKeyframes = smartAngleKeyframes
         .map(kf => normalizeImageSrc(kf.imageBuffer))
         .filter((src) => Boolean(src));
-          } else if (Array.isArray(traditionalAngleKeyframes) && traditionalAngleKeyframes.length > 0) {
+    } else if (Array.isArray(traditionalAngleKeyframes) && traditionalAngleKeyframes.length > 0) {
       // Usar keyframes tradicionales (URLs)
-      angleKeyframes = traditionalAngleKeyframes;
+      angleKeyframes = traditionalAngleKeyframes.map((kf) => normalizeKeyframeUrl(kf));
           }
     
         if (angleKeyframes.length > 0) {
@@ -1723,7 +1818,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       toolRef.current = 'move';
       const auth = getAuth(); const cu = auth.currentUser; if (!cu) return;
       const token = await getIdToken(cu, true);
-      const body: any = { keyframeUrl: selectedKeyframe, comment: text };
+      const body: any = { keyframeUrl: normalizeKeyframeUrl(selectedKeyframe), comment: text };
       if (selectedAngle) body.angle = selectedAngle; if (typeof selectedIndex === 'number') body.index = selectedIndex;
       const res = await fetch(`/api/analyses/${safeAnalysis.id}/keyframe-comments`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(body)
@@ -1865,7 +1960,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         throw new Error('No se pudo obtener el token de autenticación');
       }
 
-      const body: any = { keyframeUrl: selectedKeyframe, overlayDataUrl };
+      const body: any = { keyframeUrl: normalizeKeyframeUrl(selectedKeyframe), overlayDataUrl };
       
       if (selectedAngle) body.angle = selectedAngle;
       if (typeof selectedIndex === 'number') body.index = selectedIndex;
@@ -3512,7 +3607,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       <div className="text-xs text-muted-foreground mb-1">
                         {(m.fromName || 'Sistema')} · {formatMessageDate(m.createdAt)}
                       </div>
-                      <div className="whitespace-pre-wrap">{m.text}</div>
+                      <div className="whitespace-pre-wrap">{renderMessageText(m.text)}</div>
                     </li>
                   ))}
                 </ul>
@@ -3635,43 +3730,66 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
           </DialogHeader>
           <div className={isExpanded ? "grid grid-cols-1 gap-6" : "grid grid-cols-1 md:grid-cols-2 gap-6"}>
             <div className="relative">
-              <Image
-                src={(selectedKeyframe ? normalizeKeyframeUrl(selectedKeyframe) : "") || "https://placehold.co/600x600.png"}
-                alt="Fotograma seleccionado"
-                width={isExpanded ? 800 : 600}
-                height={isExpanded ? 800 : 600}
-                className="rounded-lg border"
-              />
-              {/* overlays guardados */}
-              {annotations.map((a, i) => (
-                <img key={a.id || i} src={a.overlayUrl} alt="overlay" className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
-              ))}
-              {/* canvas de dibujo */}
-              <canvas
-                ref={canvasRef}
-                width={isExpanded ? 800 : 600}
-                height={isExpanded ? 800 : 600}
-                className="absolute inset-0 rounded-lg"
-                style={{ cursor: toolRef.current === 'pencil' || toolRef.current === 'line' || toolRef.current === 'circle' ? 'crosshair' : toolRef.current === 'eraser' ? 'cell' : 'default' }}
-                onMouseDown={(e) => { setIsCommentFocused(false); beginDraw(e); }}
-                onMouseMove={draw}
-                onMouseUp={endDraw}
-                onMouseLeave={endDraw}
-              />
-              <div className="absolute top-2 left-2 flex flex-col gap-2 rounded-lg border bg-background/80 p-2 shadow-lg backdrop-blur-sm">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8" 
+              <div
+                ref={imageContainerRef}
+                className={`relative w-full ${isExpanded ? 'aspect-[3/4]' : 'aspect-[3/4]'} overflow-hidden rounded-lg border bg-muted/20`}
+              >
+                <Image
+                  src={(selectedKeyframe ? normalizeKeyframeUrl(selectedKeyframe) : "") || "https://placehold.co/600x600.png"}
+                  alt="Fotograma seleccionado"
+                  fill
+                  sizes="(max-width: 768px) 100vw, 600px"
+                  className="object-contain pointer-events-none select-none"
+                  draggable={false}
+                  onLoadingComplete={(img) => {
+                    imageNaturalSizeRef.current = { width: img.naturalWidth, height: img.naturalHeight };
+                    const container = imageContainerRef.current;
+                    if (container) {
+                      const rect = container.getBoundingClientRect();
+                      const scale = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight);
+                      const displayW = Math.round(img.naturalWidth * scale);
+                      const displayH = Math.round(img.naturalHeight * scale);
+                      const offsetX = Math.round((rect.width - displayW) / 2);
+                      const offsetY = Math.round((rect.height - displayH) / 2);
+                      setImageLayout({ x: offsetX, y: offsetY, width: displayW, height: displayH });
+                    }
+                  }}
+                />
+                {/* overlays guardados */}
+                {annotations.map((a, i) => (
+                  <img
+                    key={a.id || i}
+                    src={a.overlayUrl}
+                    alt="overlay"
+                    className="absolute pointer-events-none"
+                    style={imageLayout ? { left: imageLayout.x, top: imageLayout.y, width: imageLayout.width, height: imageLayout.height } : { inset: 0, width: '100%', height: '100%' }}
+                  />
+                ))}
+                {/* canvas de dibujo */}
+                <canvas
+                  ref={canvasRef}
+                  className="absolute inset-0"
+                  style={{ cursor: toolRef.current === 'pencil' || toolRef.current === 'line' || toolRef.current === 'circle' ? 'crosshair' : toolRef.current === 'eraser' ? 'cell' : 'default' }}
+                  onMouseDown={(e) => { setIsCommentFocused(false); beginDraw(e); }}
+                  onMouseMove={draw}
+                  onMouseUp={endDraw}
+                  onMouseLeave={endDraw}
+                />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
                   onClick={() => { toolRef.current = 'move'; }}
-                  title="Herramienta de movimiento"
+                  title="Mover"
                 >
                   <Move />
                 </Button>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8" 
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
                   onClick={() => setIsExpanded(!isExpanded)}
                   title={isExpanded ? "Minimizar" : "Expandir"}
                 >
@@ -3683,7 +3801,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'line'; }}><Minus /></Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'circle'; }}><CircleIcon /></Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'eraser'; }}><Eraser /></Button>
-                    <div className="flex items-center gap-2 pt-1">
+                    <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">Color</span>
                       <div className="flex items-center gap-1">
                         {['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#111827'].map((c) => (
@@ -3705,7 +3823,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   </>
                 )}
                 {annotationStatus && (
-                  <div className="mt-2 text-xs text-muted-foreground">
+                  <div className="text-xs text-muted-foreground">
                     {annotationStatus}
                   </div>
                 )}
