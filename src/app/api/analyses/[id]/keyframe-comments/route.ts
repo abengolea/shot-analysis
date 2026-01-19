@@ -67,10 +67,22 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const analysisId = params.id;
     if (!adminDb || !adminAuth) return NextResponse.json({ error: 'Admin SDK no inicializado' }, { status: 500 });
 
+    const body = await request.json().catch(() => ({}));
+    if (body?.action === 'list') {
+      const keyframeUrl = String(body?.keyframeUrl || '');
+      const ref = adminDb.collection('analyses').doc(analysisId).collection('keyframeComments');
+      let q = ref.orderBy('createdAt', 'desc') as FirebaseFirestore.Query<FirebaseFirestore.DocumentData>;
+      if (keyframeUrl) {
+        q = q.where('keyframeUrl', '==', keyframeUrl);
+      }
+      const snap = await q.get();
+      const items: KeyframeComment[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      return NextResponse.json({ comments: items });
+    }
+
     const perm = await verifyCoachPermission(request, analysisId);
     if (!perm.ok || !perm.uid) return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
 
-    const body = await request.json();
     const keyframeUrl = String(body?.keyframeUrl || '');
     const comment = String(body?.comment || '').trim();
     const angle = body?.angle as KeyframeComment['angle'] | undefined;
@@ -89,6 +101,40 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       createdAt: new Date().toISOString(),
     };
     const ref = await adminDb.collection('analyses').doc(analysisId).collection('keyframeComments').add(payload);
+    try {
+      const analysisSnap = await adminDb.collection('analyses').doc(analysisId).get();
+      const analysis = analysisSnap.exists ? (analysisSnap.data() as any) : null;
+      const playerId = analysis?.playerId;
+      if (playerId) {
+        const coachSnap = await adminDb.collection('coaches').doc(perm.uid).get();
+        const coach = coachSnap.exists ? (coachSnap.data() as any) : null;
+        const playerSnap = await adminDb.collection('players').doc(playerId).get();
+        const player = playerSnap.exists ? (playerSnap.data() as any) : null;
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin;
+        const query = angle && typeof index === 'number'
+          ? `?kfAngle=${encodeURIComponent(angle)}&kfIndex=${encodeURIComponent(String(index))}`
+          : '';
+        const link = `${baseUrl}/analysis/${analysisId}${query}#videos`;
+        const messageText = `Tu entrenador comentó un fotograma de tu análisis. Ver: ${link}`;
+        await adminDb.collection('messages').add({
+          fromId: perm.uid,
+          fromName: coachName || coach?.name || 'Entrenador',
+          fromAvatarUrl: coach?.avatarUrl || '',
+          toId: playerId,
+          toName: player?.name || player?.fullName || playerId,
+          text: messageText,
+          createdAt: new Date().toISOString(),
+          read: false,
+          analysisId,
+          keyframeUrl,
+          angle,
+          index,
+          link,
+        });
+      }
+    } catch (e) {
+      console.warn('⚠️ No se pudo crear mensaje de notificación:', e);
+    }
     return NextResponse.json({ success: true, id: ref.id });
   } catch (e) {
     console.error('❌ Error creando comentario de keyframe:', e);

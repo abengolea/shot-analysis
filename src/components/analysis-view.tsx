@@ -74,7 +74,7 @@ import { db } from "@/lib/firebase";
 import { collection, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, Briefcase, Clock, Trophy } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 
 interface AnalysisViewProps {
@@ -1351,6 +1351,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     setIsModalOpen(true);
   };
 
+
   const generateKeyframesFromClient = async () => {
     try {
       setUploadingFromClient(true);
@@ -1360,7 +1361,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       const generateKeyframesOnServer = async () => {
         const res = await fetch(`/api/analyses/${safeAnalysis.id}/rebuild-keyframes/dev`, { method: 'POST' });
         const data = await res.json();
-        if (!res.ok || !data?.keyframes) {
+        const hasAny = data?.keyframes && ['front','back','left','right'].some((k: string) => Array.isArray(data.keyframes[k]) && data.keyframes[k].length > 0);
+        if (!res.ok || !data?.keyframes || !hasAny) {
           throw new Error(data?.error || 'No se pudieron generar fotogramas en el servidor.');
         }
         setLocalKeyframes(data.keyframes);
@@ -1999,6 +2001,16 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     return `data:image/jpeg;base64,${src}`;
   };
 
+  const normalizeKeyframeUrl = (src?: string | null) => {
+    if (!src) return '';
+    if (!src.startsWith('http')) return src;
+    const bucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "shotanalisys.firebasestorage.app";
+    if (src.includes('storage.googleapis.com/undefined/')) {
+      return src.replace('storage.googleapis.com/undefined/', `storage.googleapis.com/${bucket}/`);
+    }
+    return src;
+  };
+
   const resolveVideoSrc = (src?: string | null) => {
     if (!src) return null;
     if (src.startsWith('temp://')) {
@@ -2069,21 +2081,22 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     return (
       <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-6 justify-items-center">
         {keyframes.map((keyframe, index) => {
+          const fixedKeyframe = normalizeKeyframeUrl(keyframe);
                     return (
             <div key={`${angleKey}-${index}`} className="space-y-2 text-center">
               {/* DEBUG: Mostrar URL */}
-              <div className="text-xs text-gray-500 truncate max-w-32" title={keyframe}>
-                URL: {keyframe}
+              <div className="text-xs text-gray-500 truncate max-w-32" title={fixedKeyframe}>
+                URL: {fixedKeyframe}
               </div>
               
               {/* Botón con imagen */}
               <button 
-                onClick={() => openKeyframeModal(keyframe, angleKey, index)} 
+                onClick={() => openKeyframeModal(fixedKeyframe, angleKey, index)} 
                 className="relative overflow-hidden rounded-lg border aspect-square focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-all hover:scale-105 w-24 h-24 md:w-28 md:h-28"
               >
                 {/* Imagen de Next.js */}
                 <Image
-                  src={keyframe}
+                  src={fixedKeyframe}
                   alt={`Fotograma ${angleLabel} ${index + 1}`}
                   width={112}
                   height={112}
@@ -2131,6 +2144,31 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   // Ref para rastrear si el cambio viene de un click manual (para evitar conflictos con useEffect)
   const isManualChangeRef = useRef(false);
+  const searchParams = useSearchParams();
+  const autoOpenHandledRef = useRef(false);
+
+  useEffect(() => {
+    if (autoOpenHandledRef.current) return;
+    const angleParam = searchParams.get('kfAngle') as ('front'|'back'|'left'|'right'|null);
+    const indexParam = searchParams.get('kfIndex');
+    const index = indexParam != null ? Number(indexParam) : NaN;
+    if (!angleParam || !Number.isFinite(index) || index < 0) return;
+
+    let targetUrl = '';
+    const smartArr = (smartKeyframes as any)[angleParam] as Array<{ imageBuffer: string }> | undefined;
+    if (Array.isArray(smartArr) && smartArr[index]) {
+      targetUrl = normalizeImageSrc(smartArr[index].imageBuffer);
+    }
+    const traditionalArr = (localKeyframes as any)[angleParam] as string[] | undefined;
+    if (!targetUrl && Array.isArray(traditionalArr) && traditionalArr[index]) {
+      targetUrl = normalizeKeyframeUrl(traditionalArr[index]);
+    }
+    if (!targetUrl) return;
+
+    autoOpenHandledRef.current = true;
+    setActiveTab('videos');
+    openKeyframeModal(targetUrl, angleParam, index);
+  }, [searchParams, smartKeyframes, localKeyframes, normalizeImageSrc, normalizeKeyframeUrl]);
 
   // Handler personalizado para cambios manuales de tab
   const handleTabChange = useCallback((value: string) => {

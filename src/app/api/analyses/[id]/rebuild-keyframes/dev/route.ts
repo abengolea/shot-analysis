@@ -15,6 +15,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (!snap.exists) return NextResponse.json({ error: 'analysis no encontrado' }, { status: 404 });
     const data = snap.data() as any;
     const bucket = adminStorage.bucket();
+    const publicBucketName = process.env.FIREBASE_ADMIN_STORAGE_BUCKET || bucket.name;
 
     const uploadExtracted = async (
       source: { storagePath?: string | null; httpUrl?: string | null },
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           const storagePath = `keyframes/${data.playerId || 'unknown'}/${analysisId}/${kfName}`;
           await bucket.file(storagePath).save(kf.imageBuffer, { metadata: { contentType: 'image/jpeg' } });
           await bucket.file(storagePath).makePublic();
-          urls.push(`https://storage.googleapis.com/${process.env.FIREBASE_ADMIN_STORAGE_BUCKET}/${storagePath}`);
+          urls.push(`https://storage.googleapis.com/${publicBucketName}/${storagePath}`);
         }
       } catch (e) {
         console.warn(`⚠️ No se pudo extraer para ${angleKey}`, e);

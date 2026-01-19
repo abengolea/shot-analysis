@@ -91,11 +91,15 @@ export default function CoachDashboardPage() {
     try {
       const ids = players.map((p) => p.id).filter(Boolean);
       const mergeAndSort = () => {
+        const hasPaidCoachAccess = (analysis: any) => {
+          const access = analysis?.coachAccess?.[user.uid];
+          return access?.status === 'paid';
+        };
         const byId: Record<string, any> = {};
         for (const list of Object.values(chunkMap)) {
           for (const item of list) byId[item.id] = item;
         }
-        const merged = Object.values(byId);
+        const merged = Object.values(byId).filter(hasPaidCoachAccess);
         merged.sort((a: any, b: any) => getTime(b.createdAt) - getTime(a.createdAt));
         setAnalyses(merged as any[]);
       };

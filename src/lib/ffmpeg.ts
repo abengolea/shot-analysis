@@ -1,4 +1,4 @@
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
@@ -9,6 +9,18 @@ function getFfmpegPath(): string | null {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mod = require(modName);
     const p = (mod?.path || mod) as string | undefined;
+    if (p && existsSync(p)) return p;
+    const fromEnv = process.env.FFMPEG_BIN;
+    if (fromEnv && existsSync(fromEnv)) return fromEnv;
+    const suffix = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+    const fromCwd = path.join(process.cwd(), 'node_modules', 'ffmpeg-static', suffix);
+    if (existsSync(fromCwd)) return fromCwd;
+    try {
+      const resolved = require.resolve(modName);
+      const dir = path.dirname(resolved);
+      const fromResolve = path.join(dir, suffix);
+      if (existsSync(fromResolve)) return fromResolve;
+    } catch {}
     return p || null;
   } catch {
     return null;
