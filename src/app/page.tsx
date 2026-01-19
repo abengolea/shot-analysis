@@ -24,16 +24,16 @@ const features = [
       "Recibe recomendaciones y ejercicios personalizados de entrenadores expertos basados en tu análisis.",
   },
   {
+    icon: <BotMessageSquare />,
+    title: "Entrenadores Expertos",
+    description:
+      "También te vinculamos con entrenadores expertos con pago previo.",
+  },
+  {
     icon: <BarChart3 />,
     title: "Seguimiento de Progreso",
     description:
       "Visualiza tu evolución con gráficos claros y mantén un historial de todos tus análisis.",
-  },
-  {
-    icon: <BotMessageSquare />,
-    title: "Compartir con tu entrenador",
-    description:
-      "Enviá un link privado para recibir comentarios y planificar trabajos.",
   },
 ];
 
@@ -72,7 +72,7 @@ export default function LandingPage() {
               Subí tu video. Bajá tus errores.
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">
-              IA que detecta tu técnica y te da feedback accionable en segundos.
+              Análisis de lanzamiento con IA + feedback de entrenadores.
             </p>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
               <Button size="lg" asChild>
@@ -161,7 +161,7 @@ export default function LandingPage() {
                 <CardTitle className="font-headline">¿Es gratis?</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground">Sí, actualmente está en etapa de prueba.</p>
+                <p className="text-muted-foreground">Te damos 2 análisis gratis con IA por año.</p>
               </CardContent>
             </Card>
             <Card>
@@ -197,19 +197,6 @@ export default function LandingPage() {
             <Button size="lg" asChild>
               <Link href="/register">Crear cuenta <ArrowRight className="ml-2" /></Link>
             </Button>
-          </div>
-          <div className="mt-10 rounded-xl border bg-background/60 p-6 text-left">
-            <h3 className="font-headline text-2xl font-bold">¿Sos entrenador?</h3>
-            <ul className="mt-2 list-outside list-disc pl-5 text-muted-foreground">
-              <li>Panel de jugadores y videos en un solo lugar</li>
-              <li>Drills compartidos y checklist estandarizado</li>
-              <li>Comentarios con marcas de tiempo</li>
-            </ul>
-            <div className="mt-4 flex gap-3">
-              <Button asChild>
-              <Link href="/coach-register">Postúlate como entrenador en la app</Link>
-              </Button>
-            </div>
           </div>
         </footer>
       </div>
