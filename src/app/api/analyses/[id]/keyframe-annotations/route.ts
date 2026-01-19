@@ -42,10 +42,10 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
   }
 }
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!adminDb) return NextResponse.json({ error: 'Admin SDK no inicializado' }, { status: 500 });
-    const analysisId = params.id;
+    const { id: analysisId } = await params;
     const { searchParams } = new URL(request.url);
     const keyframeUrl = searchParams.get('keyframeUrl');
 
@@ -61,9 +61,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const analysisId = params.id;
+    const { id: analysisId } = await params;
     if (!adminDb || !adminAuth || !adminStorage) return NextResponse.json({ error: 'Admin SDK no inicializado' }, { status: 500 });
 
     const perm = await verifyCoachPermission(request, analysisId);

@@ -19,6 +19,7 @@ export default function PaymentsReturnPage({ searchParams }: { searchParams: Sea
   const [verifyingPayment, setVerifyingPayment] = useState(false);
   const [paymentVerified, setPaymentVerified] = useState<boolean | null>(null);
   const mpProcessingRef = useRef(false);
+  const dlocalProcessingRef = useRef(false);
   const revalidateRef = useRef(false);
   const redirectRef = useRef(false);
   const [revalidatingCoach, setRevalidatingCoach] = useState(false);
@@ -122,6 +123,42 @@ export default function PaymentsReturnPage({ searchParams }: { searchParams: Sea
       processMercadoPago();
     }
   }, [approved, isCoachReview, isMercadoPago, paymentId, preferenceId, analysisId, user]);
+
+  // Para dLocal: forzar procesamiento por backend al volver del checkout
+  useEffect(() => {
+    const processDlocal = async () => {
+      if (dlocalProcessingRef.current) return;
+      dlocalProcessingRef.current = true;
+      try {
+        if (!user) return;
+        const token = await user.getIdToken();
+        const response = await fetch('/api/payments/check-dlocal-payment', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            paymentId: dlocalPaymentId,
+            orderId: dlocalOrderId,
+            analysisId,
+          }),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data?.success) {
+            setPaymentVerified(true);
+          }
+        }
+      } catch (error) {
+        console.error('Error procesando pago dLocal:', error);
+      }
+    };
+
+    if (approved && isCoachReview && finalIsDlocal && (dlocalPaymentId || dlocalOrderId) && user) {
+      processDlocal();
+    }
+  }, [approved, isCoachReview, finalIsDlocal, dlocalPaymentId, dlocalOrderId, analysisId, user]);
 
   // Forzar revalidación del panel del entrenador luego del retorno
   useEffect(() => {

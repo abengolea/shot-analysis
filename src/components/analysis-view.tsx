@@ -10,6 +10,7 @@ import type {
   ChecklistCategory,
   DetailedChecklistItem,
   Coach,
+  Message,
 } from "@/lib/types";
 import {
   Card,
@@ -71,7 +72,7 @@ import ShareButtons from "@/components/share-buttons";
 import { useToast } from "@/hooks/use-toast";
 import { getItemWeight, getDefaultWeights } from "@/lib/scoring-client";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, serverTimestamp, query, where } from "firebase/firestore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, Briefcase, Clock, Trophy } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -472,6 +473,51 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     return hasItems || coachSummary.trim().length > 0;
   }, [coachFeedbackByItemId, coachSummary]);
   const showCoachChecklistTab = isCoach || hasCoachFeedback;
+  const [analysisMessages, setAnalysisMessages] = useState<Message[]>([]);
+  const [analysisMessageText, setAnalysisMessageText] = useState("");
+  const [sendingAnalysisMessage, setSendingAnalysisMessage] = useState(false);
+
+  const toMessageDate = (value: any) => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (typeof value === "string" || typeof value === "number") {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    if (typeof value?.toDate === "function") return value.toDate();
+    if (typeof value?._seconds === "number") {
+      return new Date(value._seconds * 1000 + Math.round((value._nanoseconds || 0) / 1e6));
+    }
+    return null;
+  };
+  const getMessageTime = (value: any) => toMessageDate(value)?.getTime() ?? 0;
+  const formatMessageDate = (value: any) => {
+    const d = toMessageDate(value);
+    return d ? d.toLocaleString() : "Fecha desconocida";
+  };
+
+  useEffect(() => {
+    if (!analysis?.id || !user) {
+      setAnalysisMessages([]);
+      return;
+    }
+    try {
+      const q = query(
+        collection(db as any, "messages"),
+        where("analysisId", "==", analysis.id)
+      );
+      const unsub = onSnapshot(q, (snap) => {
+        const incoming = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })) as Message[];
+        const filtered = isCoach
+          ? incoming
+          : incoming.filter((m) => m.fromId === user.uid || m.toId === user.uid);
+        setAnalysisMessages(filtered.sort((a, b) => getMessageTime(b.createdAt) - getMessageTime(a.createdAt)));
+      });
+      return () => unsub();
+    } catch (e) {
+      console.error("Error cargando mensajes del lanzamiento:", e);
+    }
+  }, [analysis?.id, isCoach, user]);
 
   useEffect(() => {
     // Cargar feedback del coach para todos los usuarios (coach, admin y jugador)
@@ -821,6 +867,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         toCoachDocId: selectedCoachForMessage.id,
         toName: selectedCoachForMessage.name,
         text: messageText,
+        analysisId: analysis.id || null,
         createdAt: serverTimestamp(),
         read: false,
       };
@@ -841,6 +888,49 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       });
     } finally {
       setSendingMessage(false);
+    }
+  };
+
+  const sendAnalysisMessage = async () => {
+    if (!user || !analysis?.id || !analysisMessageText.trim()) return;
+    try {
+      const targetCoachId = (analysis as any)?.coachId || player?.coachId;
+      const toId = isCoach ? player?.id : targetCoachId;
+      if (!toId) {
+        toast({
+          title: "Falta destinatario",
+          description: "No hay entrenador asignado para este lanzamiento.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setSendingAnalysisMessage(true);
+      const colRef = collection(db as any, "messages");
+      const payload: any = {
+        fromId: user.uid,
+        fromName: (userProfile as any)?.name || user.displayName || (isCoach ? "Entrenador" : "Jugador"),
+        fromAvatarUrl: (userProfile as any)?.avatarUrl || "",
+        toId,
+        toName: isCoach ? (player?.name || player?.id) : "Entrenador",
+        text: analysisMessageText.trim(),
+        analysisId: analysis.id,
+        createdAt: serverTimestamp(),
+        read: false,
+      };
+      if (!isCoach) {
+        payload.toCoachDocId = toId;
+      }
+      await addDoc(colRef, payload);
+      setAnalysisMessageText("");
+    } catch (e) {
+      console.error("Error enviando mensaje del lanzamiento:", e);
+      toast({
+        title: "Error",
+        description: "No se pudo enviar el mensaje.",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingAnalysisMessage(false);
     }
   };
 
@@ -1075,6 +1165,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const totalAmount = coachRate != null && platformFee != null ? coachRate + platformFee : null;
 
   const canEdit = userProfile?.role === 'coach' && userProfile.id === (player?.coachId || '');
+  const canComment = userProfile?.role === 'coach' && (!player?.coachId || userProfile.id === player?.coachId);
   const [completing, setCompleting] = useState(false);
   
   // Validar que todos los checklist estén completos y el comentario global tenga mínimo 50 palabras
@@ -1153,6 +1244,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   type KeyframeComment = { id?: string; comment: string; coachName?: string; createdAt: string };
   const [keyframeComments, setKeyframeComments] = useState<KeyframeComment[]>([]);
   const [newComment, setNewComment] = useState("");
+  const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   type KeyframeAnnotation = { id?: string; overlayUrl: string; createdAt: string };
   const [annotations, setAnnotations] = useState<KeyframeAnnotation[]>([]);
@@ -1232,6 +1324,15 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   useEffect(() => {
     if (isModalOpen) { void loadCommentsAndAnnotations(); }
   }, [isModalOpen, loadCommentsAndAnnotations]);
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    void loadCommentsAndAnnotations();
+    // Enfocar el textarea para comentar al cambiar de fotograma
+    window.setTimeout(() => {
+      commentInputRef.current?.focus();
+    }, 0);
+  }, [selectedKeyframe, isModalOpen, loadCommentsAndAnnotations]);
 
   // Cargar entrenadores cuando se abre el diálogo
   useEffect(() => {
@@ -1320,6 +1421,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const openKeyframeModal = (keyframeUrl: string, angleKey: 'front'|'back'|'left'|'right', index: number) => {
         console.log(`🔍 Keyframes disponibles para ${angleKey}:`, (localKeyframes as any)[angleKey]);
     console.log(`🧠 Smart keyframes disponibles para ${angleKey}:`, (smartKeyframes as any)[angleKey]);
+    // Resetear herramienta para no confundir al comentar
+    toolRef.current = 'move';
     
     setSelectedKeyframe(keyframeUrl);
     setSelectedAngle(angleKey);
@@ -1553,9 +1656,10 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   }, [isModalOpen, canNavigatePrev, canNavigateNext, navigateToKeyframe]);
 
   const saveComment = async () => {
-    if (!canEdit || !selectedKeyframe) return;
+    if (!canComment || !selectedKeyframe) return;
     const text = newComment.trim(); if (!text) return;
     try {
+      toolRef.current = 'move';
       const auth = getAuth(); const cu = auth.currentUser; if (!cu) return;
       const token = await getIdToken(cu, true);
       const body: any = { keyframeUrl: selectedKeyframe, comment: text };
@@ -2130,11 +2234,19 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   };
 
   const defaultTab = 'ai-analysis';
+  const getValidTabs = () => ([
+    'ai-analysis',
+    'videos',
+    'checklist',
+    'coach-checklist',
+    'messages',
+    ...(isCoach ? [] : ['improvement-plan']),
+  ]);
   // Inicializar el tab desde el hash si existe
   const getInitialTab = () => {
     if (typeof window === 'undefined') return defaultTab;
     const hash = window.location.hash.slice(1);
-    const validTabs = ['ai-analysis', 'videos', 'checklist', 'coach-checklist', 'improvement-plan'];
+    const validTabs = getValidTabs();
     if (hash && validTabs.includes(hash)) {
       return hash;
     }
@@ -2206,7 +2318,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       }
 
       const hash = window.location.hash.slice(1); // Remover el #
-      const validTabs = ['ai-analysis', 'videos', 'checklist', 'coach-checklist', 'improvement-plan'];
+      const validTabs = getValidTabs();
       
       console.log(`[AnalysisView] 🔍 Verificando hash: "${hash}", showCoachChecklistTab: ${showCoachChecklistTab}`);
       
@@ -2263,7 +2375,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       clearTimeout(timeoutId);
       window.removeEventListener('hashchange', handleHashChange);
     };
-  }, [showCoachChecklistTab, isInitialLoad, activeTab]);
+  }, [showCoachChecklistTab, isInitialLoad, activeTab, isCoach]);
 
   // Re-verificar el hash cuando showCoachChecklistTab cambie (por si se estaba esperando)
   useEffect(() => {
@@ -2300,9 +2412,14 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               <ListChecks className="mr-2" /> Checklist Entrenador
             </TabsTrigger>
           )}
-          <TabsTrigger value="improvement-plan" className="min-w-[150px] md:min-w-0 whitespace-nowrap flex-shrink-0">
-            <Dumbbell className="mr-2" /> Plan de Mejora
+          <TabsTrigger value="messages" className="min-w-[140px] md:min-w-0 whitespace-nowrap flex-shrink-0">
+            <MessageSquare className="mr-2" /> Mensajes
           </TabsTrigger>
+          {!isCoach && (
+            <TabsTrigger value="improvement-plan" className="min-w-[150px] md:min-w-0 whitespace-nowrap flex-shrink-0">
+              <Dumbbell className="mr-2" /> Plan de Mejora
+            </TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="ai-analysis" className="mt-6">
           <div className="flex flex-col gap-8">
@@ -3289,60 +3406,107 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             )}
           </TabsContent>
         )}
-        <TabsContent value="improvement-plan" className="mt-6">
+        <TabsContent value="messages" className="mt-6">
           <Card>
             <CardHeader>
               <CardTitle className="font-headline flex items-center gap-2">
-                <Dumbbell /> Plan de Mejora (Sesión con Entrenador)
+                <MessageSquare /> Mensajes del lanzamiento
               </CardTitle>
               <CardDescription>
-                Este plan debe ser guiado por un entrenador certificado. La IA no ejecuta esta actividad.
+                Conversaciones relacionadas con este análisis.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              {player?.coachId ? (
-                <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-green-200 bg-green-50 p-8 text-center">
-                  <FilePenLine className="h-12 w-12 text-green-600" />
-                  <h3 className="font-semibold text-green-800">Tu entrenador asignado te dará el plan de mejora</h3>
-                  <p className="text-sm text-green-700 max-w-prose">
-                    Ya tienes un entrenador asignado que revisará tu análisis y te proporcionará un plan de mejora personalizado con objetivos específicos y ejercicios correctivos.
-                  </p>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <Button 
-                      variant="outline" 
-                      className="border-green-300 text-green-700 hover:bg-green-100"
-                      onClick={() => setCoachSelectionDialogOpen(true)}
-                    >
-                      <MessageSquare className="mr-2 h-4 w-4" />
-                      Contactar Entrenador
-                    </Button>
-                    <Button asChild className="bg-green-600 hover:bg-green-700">
-                      <a href="/player/dashboard">
-                        <Users className="mr-2 h-4 w-4" />
-                        Ir a Mi Panel
+            <CardContent className="space-y-4">
+              {analysisMessages.length === 0 ? (
+                <div className="rounded-lg border-2 border-dashed border-muted p-6 text-center text-sm text-muted-foreground">
+                  No hay mensajes para este lanzamiento.
+                </div>
+              ) : (
+                <ul className="space-y-3">
+                  {analysisMessages.map((m) => (
+                    <li key={m.id} className="rounded border p-3 text-sm">
+                      <div className="text-xs text-muted-foreground mb-1">
+                        {(m.fromName || 'Sistema')} · {formatMessageDate(m.createdAt)}
+                      </div>
+                      <div className="whitespace-pre-wrap">{m.text}</div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+            <CardFooter className="flex flex-col gap-2">
+              <Textarea
+                placeholder="Escribe un mensaje sobre este lanzamiento..."
+                value={analysisMessageText}
+                onChange={(e) => setAnalysisMessageText(e.target.value)}
+                rows={3}
+              />
+              <Button
+                className="w-full"
+                onClick={sendAnalysisMessage}
+                disabled={sendingAnalysisMessage || !analysisMessageText.trim() || !user}
+              >
+                {sendingAnalysisMessage ? 'Enviando...' : 'Enviar mensaje'}
+              </Button>
+            </CardFooter>
+          </Card>
+        </TabsContent>
+        {!isCoach && (
+          <TabsContent value="improvement-plan" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                  <Dumbbell /> Plan de Mejora (Sesión con Entrenador)
+                </CardTitle>
+                <CardDescription>
+                  Este plan debe ser guiado por un entrenador certificado. La IA no ejecuta esta actividad.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {player?.coachId ? (
+                  <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-green-200 bg-green-50 p-8 text-center">
+                    <FilePenLine className="h-12 w-12 text-green-600" />
+                    <h3 className="font-semibold text-green-800">Tu entrenador asignado te dará el plan de mejora</h3>
+                    <p className="text-sm text-green-700 max-w-prose">
+                      Ya tienes un entrenador asignado que revisará tu análisis y te proporcionará un plan de mejora personalizado con objetivos específicos y ejercicios correctivos.
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <Button 
+                        variant="outline" 
+                        className="border-green-300 text-green-700 hover:bg-green-100"
+                        onClick={() => setCoachSelectionDialogOpen(true)}
+                      >
+                        <MessageSquare className="mr-2 h-4 w-4" />
+                        Contactar Entrenador
+                      </Button>
+                      <Button asChild className="bg-green-600 hover:bg-green-700">
+                        <a href="/player/dashboard">
+                          <Users className="mr-2 h-4 w-4" />
+                          Ir a Mi Panel
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-muted p-8 text-center">
+                    <FilePenLine className="h-12 w-12 text-muted-foreground" />
+                    <h3 className="font-semibold">Coordina una sesión de mejora técnica</h3>
+                    <p className="text-sm text-muted-foreground max-w-prose">
+                      Un entrenador revisará tu análisis, definirá objetivos específicos y te guiará en ejercicios correctivos. Puedes contactar a un entrenador desde el siguiente enlace.
+                    </p>
+                    <Button asChild>
+                      <a href="/player/coaches">
+                        <ShieldAlert className="mr-2 h-4 w-4" />
+                        Buscar Entrenador
                       </a>
                     </Button>
                   </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-muted p-8 text-center">
-                  <FilePenLine className="h-12 w-12 text-muted-foreground" />
-                  <h3 className="font-semibold">Coordina una sesión de mejora técnica</h3>
-                  <p className="text-sm text-muted-foreground max-w-prose">
-                    Un entrenador revisará tu análisis, definirá objetivos específicos y te guiará en ejercicios correctivos. Puedes contactar a un entrenador desde el siguiente enlace.
-                  </p>
-                  <Button asChild>
-                    <a href="/player/coaches">
-                      <ShieldAlert className="mr-2 h-4 w-4" />
-                      Buscar Entrenador
-                    </a>
-                  </Button>
-                </div>
-              )}
-              {/* Se removió la generación de ejercicios de ejemplo para evitar contenido dummy */}
-            </CardContent>
-          </Card>
-        </TabsContent>
+                )}
+                {/* Se removió la generación de ejercicios de ejemplo para evitar contenido dummy */}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
@@ -3486,10 +3650,20 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       ))}
                     </ul>
                   )}
-                  {canEdit && (
+                  {canComment && (
                     <>
-                      <Textarea placeholder="Añade tu comentario aquí..." value={newComment} onChange={(e) => setNewComment(e.target.value)} />
-                      <Button className="w-full" onClick={saveComment}>Guardar Comentario</Button>
+                      <Textarea
+                        ref={commentInputRef}
+                        placeholder="Añade tu comentario aquí..."
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        onFocus={() => { toolRef.current = 'move'; }}
+                        onKeyDown={(e) => { e.stopPropagation(); }}
+                        autoFocus
+                      />
+                      <Button className="w-full" onClick={() => { toolRef.current = 'move'; void saveComment(); }}>
+                        Guardar Comentario
+                      </Button>
                     </>
                   )}
                 </CardContent>

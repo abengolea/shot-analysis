@@ -224,6 +224,7 @@ export type Message = {
   createdAt: string; // ISO
   read: boolean;
   readAt?: string; // ISO
+  analysisId?: string | null;
   // Archivado por el coach (ocultar en su panel)
   archivedForCoach?: boolean;
   archivedAt?: string; // ISO

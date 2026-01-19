@@ -79,20 +79,33 @@ const buildAISummary = (analyses: ShotAnalysis[]) => {
         }
         return Array.from(counts.values()).sort((a, b) => b.count - a.count);
     };
+    const summaryTexts = cleanList(analyses.map((a) => a.analysisSummary || ""));
     const strengths = collectCounts(analyses.flatMap((a) => a.strengths || []));
     const weaknesses = collectCounts(analyses.flatMap((a) => a.weaknesses || []));
     const recommendations = collectCounts(analyses.flatMap((a) => a.recommendations || []));
-    const topStrengths = strengths.slice(0, 3).map((item) => item.label);
-    const topWeaknesses = weaknesses.slice(0, 3).map((item) => item.label);
-    const topRecommendations = recommendations.slice(0, 3).map((item) => item.label);
+    const topStrengths = strengths.slice(0, 5).map((item) => `${item.label} (${item.count})`);
+    const topWeaknesses = weaknesses.slice(0, 5).map((item) => `${item.label} (${item.count})`);
+    const topRecommendations = recommendations.slice(0, 5).map((item) => `${item.label} (${item.count})`);
     const shotTypes = Array.from(new Set(analyses.map((a) => a.shotType).filter(Boolean)));
     const total = analyses.length;
+    const createdDates = analyses
+        .map((a) => new Date(a.createdAt).getTime())
+        .filter((value) => Number.isFinite(value));
+    const dateRange = createdDates.length
+        ? (() => {
+            const sorted = [...createdDates].sort((a, b) => a - b);
+            const start = new Date(sorted[0]).toLocaleDateString('es-AR');
+            const end = new Date(sorted[sorted.length - 1]).toLocaleDateString('es-AR');
+            return start === end ? `Fecha: ${start}.` : `Periodo: ${start} a ${end}.`;
+        })()
+        : "";
     const scoreValues = analyses
         .map((a) => (typeof a.score === "number" ? a.score : null))
         .filter((v): v is number => typeof v === "number");
     const averageScore = scoreValues.length > 0
         ? Number((scoreValues.reduce((sum, v) => sum + v, 0) / scoreValues.length).toFixed(1))
         : null;
+    const lastScore = scoreValues.length > 0 ? scoreValues[scoreValues.length - 1] : null;
     const trend = scoreValues.length >= 2
         ? (() => {
             const last = scoreValues[scoreValues.length - 1];
@@ -104,11 +117,13 @@ const buildAISummary = (analyses: ShotAnalysis[]) => {
         })()
         : "";
     const shotTypesText = shotTypes.length ? `Tipos de tiro analizados: ${shotTypes.join(', ')}.` : '';
-    const strengthsText = topStrengths.length ? `Fortalezas recurrentes: ${topStrengths.join(', ')}.` : '';
-    const weaknessesText = topWeaknesses.length ? `Aspectos a mejorar: ${topWeaknesses.join(', ')}.` : '';
-    const recommendationsText = topRecommendations.length ? `Recomendaciones frecuentes: ${topRecommendations.join(', ')}.` : '';
-    const averageText = averageScore != null ? `Promedio general: ${averageScore}.` : '';
-    return `Resumen IA basado en ${total} analisis. ${shotTypesText} ${averageText} ${strengthsText} ${weaknessesText} ${recommendationsText} ${trend}`
+    const strengthsText = topStrengths.length ? `Fortalezas recurrentes: ${topStrengths.join(', ')}.` : 'Fortalezas recurrentes: sin datos suficientes.';
+    const weaknessesText = topWeaknesses.length ? `Aspectos a mejorar: ${topWeaknesses.join(', ')}.` : 'Aspectos a mejorar: sin datos suficientes.';
+    const recommendationsText = topRecommendations.length ? `Recomendaciones frecuentes: ${topRecommendations.join(', ')}.` : 'Recomendaciones frecuentes: sin datos suficientes.';
+    const averageText = averageScore != null ? `Promedio general: ${averageScore}.` : 'Promedio general: sin score disponible.';
+    const lastScoreText = lastScore != null ? `Ultimo score: ${lastScore}.` : '';
+    const summarySnippet = summaryTexts.length ? `Resumenes previos: ${summaryTexts.slice(0, 2).join(' / ')}.` : '';
+    return `Resumen IA basado en ${total} analisis. ${dateRange} ${shotTypesText} ${averageText} ${lastScoreText} ${trend} ${strengthsText} ${weaknessesText} ${recommendationsText} ${summarySnippet}`
         .replace(/\s+/g, ' ')
         .trim();
 };
@@ -171,14 +186,30 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
     setProgressSummaryDraft(aiProgressSummary);
   }, [player, aiProgressSummary, editingProgressSummary]);
 
-  const strengthsList = useMemo(
-    () => visibleAnalyses.flatMap((a) => a.strengths || []).map((s) => s.trim()).filter((s) => s.length > 0),
-    [visibleAnalyses]
-  );
-  const weaknessesList = useMemo(
-    () => visibleAnalyses.flatMap((a) => a.weaknesses || []).map((s) => s.trim()).filter((s) => s.length > 0),
-    [visibleAnalyses]
-  );
+  const strengthsList = useMemo(() => {
+    const strengths = visibleAnalyses.flatMap((a) => a.strengths || []).map((s) => s.trim()).filter((s) => s.length > 0);
+    if (strengths.length > 0) return strengths;
+    const checklistItems = visibleAnalyses.flatMap((analysis) =>
+      (analysis.detailedChecklist || []).flatMap((category) => category.items || [])
+    );
+    return checklistItems
+      .filter((item) => item.status === 'Correcto')
+      .map((item) => item.name || '')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }, [visibleAnalyses]);
+  const weaknessesList = useMemo(() => {
+    const weaknesses = visibleAnalyses.flatMap((a) => a.weaknesses || []).map((s) => s.trim()).filter((s) => s.length > 0);
+    if (weaknesses.length > 0) return weaknesses;
+    const checklistItems = visibleAnalyses.flatMap((analysis) =>
+      (analysis.detailedChecklist || []).flatMap((category) => category.items || [])
+    );
+    return checklistItems
+      .filter((item) => item.status === 'Incorrecto' || item.status === 'Mejorable')
+      .map((item) => item.name || '')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }, [visibleAnalyses]);
 
   const filteredAnalyses = filter === 'all' 
     ? visibleAnalyses 

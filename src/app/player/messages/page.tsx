@@ -8,6 +8,7 @@ import { db } from "@/lib/firebase";
 import type { Message } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ export default function PlayerMessagesPage() {
   const [replyText, setReplyText] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
   const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
+  const [activeTab, setActiveTab] = useState<"messages" | "launches">("messages");
 
   const toDate = (value: any) => {
     if (!value) return null;
@@ -96,6 +98,12 @@ export default function PlayerMessagesPage() {
     () => (unreadOnly ? messages.filter((m) => !m.read) : messages),
     [messages, unreadOnly]
   );
+  const tabMessages = useMemo(() => {
+    if (activeTab === "launches") {
+      return visibleMessages.filter((m) => !!m.analysisId);
+    }
+    return visibleMessages;
+  }, [activeTab, visibleMessages]);
 
   const markAsRead = async (m: Message) => {
     try {
@@ -154,49 +162,122 @@ export default function PlayerMessagesPage() {
         </label>
       </div>
 
-      <div className="grid gap-4">
-        {visibleMessages.length === 0 && (
-          <div className="py-10 text-center text-muted-foreground">No hay mensajes todavía.</div>
-        )}
-        {visibleMessages.map((m) => (
-          <Card key={m.id} className="hover:shadow-sm">
-            <CardHeader className="pb-2 flex flex-row items-center justify-between">
-              <CardTitle className="text-base">
-                {`Chat con ${resolvedNames[m.fromId] || m.fromName || m.fromId}`}
-                {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
-              </CardTitle>
-              <div className="flex items-center gap-3">
-                {!m.read && (
-                  <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
-                )}
-                <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
-                  <DialogTrigger asChild>
-                    <button className="text-xs text-primary">Responder</button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Responder a {m.fromName || m.fromId}</DialogTitle>
-                      <DialogDescription>Escribí tu mensaje y se enviará al entrenador.</DialogDescription>
-                    </DialogHeader>
-                    <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={4} />
-                    <DialogFooter>
-                      <Button onClick={sendReply} disabled={sendingReply || !replyText.trim()}>
-                        {sendingReply ? "Enviando…" : "Enviar"}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-muted-foreground mb-1">
-                {formatDate(m.createdAt)}
-              </div>
-              <div className="text-sm whitespace-pre-wrap">{m.text}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "messages" | "launches")}>
+        <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap">
+          <TabsTrigger value="messages" className="whitespace-nowrap flex-shrink-0">
+            Mensajes
+          </TabsTrigger>
+          <TabsTrigger value="launches" className="whitespace-nowrap flex-shrink-0">
+            Lanzamientos
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="messages" className="mt-4">
+          <div className="grid gap-4">
+            {tabMessages.length === 0 && (
+              <div className="py-10 text-center text-muted-foreground">No hay mensajes todavía.</div>
+            )}
+            {tabMessages.map((m) => (
+              <Card key={m.id} className="hover:shadow-sm">
+                <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                  <CardTitle className="text-base">
+                    {`Chat con ${resolvedNames[m.fromId] || m.fromName || m.fromId}`}
+                    {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
+                  </CardTitle>
+                  <div className="flex items-center gap-3">
+                    {m.analysisId && (
+                      <Link
+                        className="text-xs text-primary"
+                        href={`/analysis/${m.analysisId}#messages`}
+                      >
+                        Ir al lanzamiento
+                      </Link>
+                    )}
+                    {!m.read && (
+                      <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
+                    )}
+                    <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
+                      <DialogTrigger asChild>
+                        <button className="text-xs text-primary">Responder</button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Responder a {m.fromName || m.fromId}</DialogTitle>
+                          <DialogDescription>Escribí tu mensaje y se enviará al entrenador.</DialogDescription>
+                        </DialogHeader>
+                        <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={4} />
+                        <DialogFooter>
+                          <Button onClick={sendReply} disabled={sendingReply || !replyText.trim()}>
+                            {sendingReply ? "Enviando…" : "Enviar"}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-sm text-muted-foreground mb-1">
+                    {formatDate(m.createdAt)}
+                  </div>
+                  <div className="text-sm whitespace-pre-wrap">{m.text}</div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+        <TabsContent value="launches" className="mt-4">
+          <div className="grid gap-4">
+            {tabMessages.length === 0 && (
+              <div className="py-10 text-center text-muted-foreground">No hay mensajes de lanzamientos todavía.</div>
+            )}
+            {tabMessages.map((m) => (
+              <Card key={m.id} className="hover:shadow-sm">
+                <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                  <CardTitle className="text-base">
+                    {`Chat con ${resolvedNames[m.fromId] || m.fromName || m.fromId}`}
+                    {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
+                  </CardTitle>
+                  <div className="flex items-center gap-3">
+                    {m.analysisId && (
+                      <Link
+                        className="text-xs text-primary"
+                        href={`/analysis/${m.analysisId}#messages`}
+                      >
+                        Ir al lanzamiento
+                      </Link>
+                    )}
+                    {!m.read && (
+                      <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
+                    )}
+                    <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
+                      <DialogTrigger asChild>
+                        <button className="text-xs text-primary">Responder</button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Responder a {m.fromName || m.fromId}</DialogTitle>
+                          <DialogDescription>Escribí tu mensaje y se enviará al entrenador.</DialogDescription>
+                        </DialogHeader>
+                        <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={4} />
+                        <DialogFooter>
+                          <Button onClick={sendReply} disabled={sendingReply || !replyText.trim()}>
+                            {sendingReply ? "Enviando…" : "Enviar"}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-sm text-muted-foreground mb-1">
+                    {formatDate(m.createdAt)}
+                  </div>
+                  <div className="text-sm whitespace-pre-wrap">{m.text}</div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

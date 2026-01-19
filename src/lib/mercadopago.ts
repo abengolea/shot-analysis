@@ -370,6 +370,9 @@ export async function processCoachReviewPayment(params: {
     const coachData = coachSnap?.data() || null;
     const playerData = playerSnap?.data() || null;
 
+    const appBaseUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '');
+    const analysisUrl = appBaseUrl && analysisId ? `${appBaseUrl}/analysis/${analysisId}` : '';
+
     if (coachId) {
       await adminDb.collection('messages').add({
         fromId: 'system',
@@ -377,7 +380,7 @@ export async function processCoachReviewPayment(params: {
         toId: coachId,
         toCoachDocId: coachId,
         toName: coachData?.name || coachId,
-        text: `El jugador ${playerData?.name || playerId || ''} ya abonó la revisión manual del análisis ${analysisId || ''}. Podés ingresar y dejar tu devolución.`,
+        text: `El jugador ${playerData?.name || playerId || ''} ya abonó la revisión manual del análisis ${analysisId || ''}. Podés ingresar y dejar tu devolución.${analysisUrl ? `\n\nLink al análisis: ${analysisUrl}` : ''}`,
         analysisId: analysisId || null,
         createdAt: nowIso,
         read: false,
@@ -430,6 +433,7 @@ export async function processCoachReviewPayment(params: {
         html: `<p>Hola ${coachData.name || ''},</p>
         <p>El jugador ${playerData?.name || playerId || ''} abonó la revisión manual de su análisis ${analysisId || ''}.</p>
         <p>Ingresá a tu panel para revisar los videos y dejar la devolución.</p>
+        ${analysisUrl ? `<p>Link al análisis: <a href="${analysisUrl}">${analysisUrl}</a></p>` : ''}
         <p>Equipo Shot Analysis</p>`,
       });
     }
