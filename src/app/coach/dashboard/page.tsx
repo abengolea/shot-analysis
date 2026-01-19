@@ -24,7 +24,6 @@ import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function CoachDashboardPage() {
   const { user } = useAuth();
@@ -550,35 +549,15 @@ export default function CoachDashboardPage() {
             </p>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <Input placeholder="Buscar jugador..." value={playersSearch} onChange={(e) => setPlayersSearch(e.target.value)} />
-            </div>
-            <div className="divide-y rounded-md border">
-              {filteredPlayers.length === 0 && (
-                <div className="py-6 text-center text-sm text-muted-foreground">No hay jugadores</div>
-              )}
-              {filteredPlayers.map((p) => (
-                <Link key={p.id} href={`/players/${p.id}`} className="flex items-center gap-3 p-3 hover:bg-muted/40">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={p.avatarUrl} alt={p.name} />
-                    <AvatarFallback>{p.name?.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{p.name}</div>
-                    <div className="text-xs text-muted-foreground truncate">{p.playerLevel || 'Nivel'} · {p.ageGroup || 'Grupo'}</div>
-                  </div>
-                  <span className="text-xs text-primary">Ver</span>
-                </Link>
-              ))}
-            </div>
+          <div className="flex items-center gap-3">
+            <Input placeholder="Buscar jugador..." value={playersSearch} onChange={(e) => setPlayersSearch(e.target.value)} />
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {mergedPlayers.map((player) => (
+            {filteredPlayers.map((player) => (
               <PlayerCard key={player.id} player={player as any} />
             ))}
-            {mergedPlayers.length === 0 && (
+            {filteredPlayers.length === 0 && (
               <div className="col-span-full py-8 text-center text-muted-foreground">
                 <Users className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No tienes jugadores</h3>
