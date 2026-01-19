@@ -1148,6 +1148,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   };
   const [rebuilding, setRebuilding] = useState(false);
   const [uploadingFromClient, setUploadingFromClient] = useState(false);
+  const [keyframesGenStatus, setKeyframesGenStatus] = useState<string | null>(null);
 
   type KeyframeComment = { id?: string; comment: string; coachName?: string; createdAt: string };
   const [keyframeComments, setKeyframeComments] = useState<KeyframeComment[]>([]);
@@ -1353,6 +1354,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const generateKeyframesFromClient = async () => {
     try {
       setUploadingFromClient(true);
+      setKeyframesGenStatus('Iniciando generación de fotogramas…');
       const isDev = process.env.NODE_ENV !== 'production';
 
       const generateKeyframesOnServer = async () => {
@@ -1362,16 +1364,38 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
           throw new Error(data?.error || 'No se pudieron generar fotogramas en el servidor.');
         }
         setLocalKeyframes(data.keyframes);
+        setKeyframesGenStatus('Fotogramas generados en servidor.');
+        return true;
       };
 
       if (isDev) {
-        await generateKeyframesOnServer();
-        return;
+        try {
+          const ok = await generateKeyframesOnServer();
+          if (ok) return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'No se pudieron generar en el servidor.';
+          setKeyframesGenStatus(`Servidor falló: ${message}. Probando desde el video…`);
+          toast({
+            title: 'Fallback a cliente',
+            description: `${message} Intentando extraer desde el video…`,
+            variant: 'destructive',
+          });
+        }
       }
 
+      const findCandidateVideo = () => {
+        const tagged = Array.from(document.querySelectorAll<HTMLVideoElement>('video[data-analysis-video]'));
+        const visibleTagged = tagged.filter((el) => el.offsetParent !== null);
+        const fromTagged = (visibleTagged.length ? visibleTagged : tagged).find((el) => el.currentSrc || el.src);
+        if (fromTagged) return fromTagged;
+        const fallback = document.querySelector('video') as HTMLVideoElement | null;
+        return fallback || null;
+      };
+
       // Intentar extraer 12 frames desde el video visible del DOM
-      const v = document.querySelector('video');
-      if (!v) {
+      const videoEl = findCandidateVideo();
+      if (!videoEl) {
+        setKeyframesGenStatus('No se encontró un video visible para extraer fotogramas.');
         toast({
           title: 'Sin video',
           description: 'No se encontró un video visible para extraer fotogramas.',
@@ -1379,9 +1403,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         });
         return;
       }
-      const videoEl = v as HTMLVideoElement;
       const hasSrc = Boolean(videoEl.currentSrc || videoEl.src);
       if (!hasSrc) {
+        setKeyframesGenStatus('El video todavía no tiene fuente válida.');
         toast({
           title: 'Video no cargado',
           description: 'El video no tiene una fuente válida todavía.',
@@ -1392,6 +1416,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       if (!ctx) {
+        setKeyframesGenStatus('No se pudo crear el canvas para extraer fotogramas.');
         toast({
           title: 'Error',
           description: 'No se pudo crear el canvas para extraer fotogramas.',
@@ -1411,6 +1436,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         videoEl.addEventListener('error', onError, { once: true });
       });
       if (!Number.isFinite(videoEl.duration) || videoEl.duration <= 0) {
+        setKeyframesGenStatus('La duracion del video no es valida para extraer fotogramas.');
         toast({
           title: 'Video inválido',
           description: 'La duración del video no es válida para extraer fotogramas.',
@@ -1446,12 +1472,16 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       }
       const res = await fetch(`/api/analyses/${safeAnalysis.id}/keyframes/upload`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ angle:'front', frames: urls }) });
       const data = await res.json();
-      if (res.ok && data?.keyframes) setLocalKeyframes(data.keyframes);
+      if (res.ok && data?.keyframes) {
+        setLocalKeyframes(data.keyframes);
+        setKeyframesGenStatus('Fotogramas generados y guardados.');
+      }
       if (!res.ok) {
         throw new Error(data?.error || 'No se pudieron guardar los fotogramas.');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudieron generar los fotogramas.';
+      setKeyframesGenStatus(message);
       if (process.env.NODE_ENV !== 'production' && message.toLowerCase().includes('tainted')) {
         try {
           await fetch(`/api/analyses/${safeAnalysis.id}/rebuild-keyframes/dev`, { method: 'POST' });
@@ -2607,6 +2637,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       <div>
                         <h4 className="font-medium mb-2">Trasera</h4>
                         <video
+                          data-analysis-video="back"
                           controls
                           crossOrigin="anonymous"
                           className="w-full rounded-lg shadow-lg max-h-[360px]"
@@ -2620,6 +2651,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       <div>
                         <h4 className="font-medium mb-2">Frontal</h4>
                         <video
+                          data-analysis-video="front"
                           controls
                           crossOrigin="anonymous"
                           className="w-full rounded-lg shadow-lg max-h-[360px]"
@@ -2633,6 +2665,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       <div>
                         <h4 className="font-medium mb-2">Lateral Izquierdo</h4>
                         <video
+                          data-analysis-video="left"
                           controls
                           crossOrigin="anonymous"
                           className="w-full rounded-lg shadow-lg max-h-[360px]"
@@ -2646,6 +2679,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       <div>
                         <h4 className="font-medium mb-2">Lateral Derecho</h4>
                         <video
+                          data-analysis-video="right"
                           controls
                           crossOrigin="anonymous"
                           className="w-full rounded-lg shadow-lg max-h-[360px]"
@@ -2662,7 +2696,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               {/* Botón dev para generar si no hay nada - SOLO PARA ADMINS */}
               {availableAngles.length === 0 && (userProfile as any)?.role === 'admin' && (
                 <div className="flex items-center justify-center mb-6">
-                  <div className="flex gap-2">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="flex gap-2">
                     <Button
                       variant="secondary"
                       disabled={rebuilding}
@@ -2688,6 +2723,10 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     >
                       {uploadingFromClient ? 'Generando (cliente)…' : 'Generar (desde este video)'}
                     </Button>
+                    </div>
+                    {keyframesGenStatus && (
+                      <p className="text-xs text-muted-foreground">{keyframesGenStatus}</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -2812,6 +2851,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                             >
                               {uploadingFromClient ? 'Generando…' : 'Generar desde este video'}
                             </Button>
+                            {keyframesGenStatus && (
+                              <p className="text-xs text-muted-foreground mt-2">{keyframesGenStatus}</p>
+                            )}
                           </div>
                         )}
                       </div>
