@@ -41,8 +41,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           // Determinar preferencia de rol según ruta y preferencia guardada
           const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
-          const preferredRole = typeof window !== 'undefined' ? (localStorage.getItem('preferredRole') || '') : '';
-          const preferCoach = pathname.startsWith('/coach') || preferredRole === 'coach';
+          const storedRole = typeof window !== 'undefined'
+            ? (localStorage.getItem('preferredRole') || '')
+            : '';
+          const pathRole = pathname.startsWith('/coach')
+            ? 'coach'
+            : (
+              pathname.startsWith('/player') ||
+              pathname.startsWith('/dashboard') ||
+              pathname.startsWith('/upload') ||
+              pathname.startsWith('/profile') ||
+              pathname.startsWith('/coaches')
+            )
+              ? 'player'
+              : '';
 
           // Cargar ambos perfiles en paralelo para decidir correctamente cuando existen los dos
           const [playerSnap, coachSnap] = await Promise.all([
@@ -50,23 +62,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             getDoc(doc(db, 'coaches', user.uid)),
           ]);
 
+          const hasCoach = coachSnap.exists();
+          const hasPlayer = playerSnap.exists();
+          const requestedRole = (storedRole || pathRole) as 'coach' | 'player' | '';
+          let resolvedRole: 'coach' | 'player' | '' = '';
           let selected: (Player | Coach) | null = null;
-          if (preferCoach) {
-            if (coachSnap.exists()) {
-              const data = coachSnap.data() as any;
-              selected = { id: user.uid, ...(data as any) } as Coach;
-            } else if (playerSnap.exists()) {
-              const data = playerSnap.data() as any;
-              selected = { id: user.uid, ...(data as any) } as Player;
-            }
-          } else {
-            if (playerSnap.exists()) {
-              const data = playerSnap.data() as any;
-              selected = { id: user.uid, ...(data as any) } as Player;
-            } else if (coachSnap.exists()) {
-              const data = coachSnap.data() as any;
-              selected = { id: user.uid, ...(data as any) } as Coach;
-            }
+
+          if (requestedRole === 'coach') {
+            resolvedRole = hasCoach ? 'coach' : (hasPlayer ? 'player' : '');
+          } else if (requestedRole === 'player') {
+            resolvedRole = hasPlayer ? 'player' : (hasCoach ? 'coach' : '');
+          } else if (hasCoach && hasPlayer) {
+            // Si tiene doble rol y no hay preferencia explícita, quedarse en coach por defecto
+            resolvedRole = 'coach';
+          } else if (hasCoach) {
+            resolvedRole = 'coach';
+          } else if (hasPlayer) {
+            resolvedRole = 'player';
+          }
+
+          if (resolvedRole === 'coach' && hasCoach) {
+            const data = coachSnap.data() as any;
+            selected = { id: user.uid, ...(data as any) } as Coach;
+          } else if (resolvedRole === 'player' && hasPlayer) {
+            const data = playerSnap.data() as any;
+            selected = { id: user.uid, ...(data as any) } as Player;
           }
 
           const selectedRole = (selected as any)?.role as string | undefined;

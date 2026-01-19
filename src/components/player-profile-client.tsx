@@ -64,11 +64,11 @@ const getChartData = (analyses: ShotAnalysis[]) => {
 const buildAISummary = (analyses: ShotAnalysis[]) => {
     if (!analyses.length) return "";
     const normalize = (value: string) => value.trim().toLowerCase();
+    const cleanList = (items: string[]) =>
+        items.map((item) => item.trim()).filter((item) => item.length > 0);
     const collectCounts = (items: string[]) => {
         const counts = new Map<string, { label: string; count: number }>();
-        for (const raw of items) {
-            const label = raw.trim();
-            if (!label) continue;
+        for (const label of cleanList(items)) {
             const key = normalize(label);
             const current = counts.get(key);
             if (current) {
@@ -81,14 +81,36 @@ const buildAISummary = (analyses: ShotAnalysis[]) => {
     };
     const strengths = collectCounts(analyses.flatMap((a) => a.strengths || []));
     const weaknesses = collectCounts(analyses.flatMap((a) => a.weaknesses || []));
+    const recommendations = collectCounts(analyses.flatMap((a) => a.recommendations || []));
     const topStrengths = strengths.slice(0, 3).map((item) => item.label);
     const topWeaknesses = weaknesses.slice(0, 3).map((item) => item.label);
+    const topRecommendations = recommendations.slice(0, 3).map((item) => item.label);
     const shotTypes = Array.from(new Set(analyses.map((a) => a.shotType).filter(Boolean)));
     const total = analyses.length;
+    const scoreValues = analyses
+        .map((a) => (typeof a.score === "number" ? a.score : null))
+        .filter((v): v is number => typeof v === "number");
+    const averageScore = scoreValues.length > 0
+        ? Number((scoreValues.reduce((sum, v) => sum + v, 0) / scoreValues.length).toFixed(1))
+        : null;
+    const trend = scoreValues.length >= 2
+        ? (() => {
+            const last = scoreValues[scoreValues.length - 1];
+            const prev = scoreValues[scoreValues.length - 2];
+            const delta = last - prev;
+            if (delta > 0.2) return "Tendencia reciente: mejora sostenida.";
+            if (delta < -0.2) return "Tendencia reciente: leve descenso.";
+            return "Tendencia reciente: estable.";
+        })()
+        : "";
     const shotTypesText = shotTypes.length ? `Tipos de tiro analizados: ${shotTypes.join(', ')}.` : '';
     const strengthsText = topStrengths.length ? `Fortalezas recurrentes: ${topStrengths.join(', ')}.` : '';
     const weaknessesText = topWeaknesses.length ? `Aspectos a mejorar: ${topWeaknesses.join(', ')}.` : '';
-    return `Resumen IA basado en ${total} analisis. ${shotTypesText} ${strengthsText} ${weaknessesText}`.replace(/\s+/g, ' ').trim();
+    const recommendationsText = topRecommendations.length ? `Recomendaciones frecuentes: ${topRecommendations.join(', ')}.` : '';
+    const averageText = averageScore != null ? `Promedio general: ${averageScore}.` : '';
+    return `Resumen IA basado en ${total} analisis. ${shotTypesText} ${averageText} ${strengthsText} ${weaknessesText} ${recommendationsText} ${trend}`
+        .replace(/\s+/g, ' ')
+        .trim();
 };
 
 function FormattedDate({ dateString }: { dateString: string }) {
@@ -148,6 +170,15 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
     }
     setProgressSummaryDraft(aiProgressSummary);
   }, [player, aiProgressSummary, editingProgressSummary]);
+
+  const strengthsList = useMemo(
+    () => visibleAnalyses.flatMap((a) => a.strengths || []).map((s) => s.trim()).filter((s) => s.length > 0),
+    [visibleAnalyses]
+  );
+  const weaknessesList = useMemo(
+    () => visibleAnalyses.flatMap((a) => a.weaknesses || []).map((s) => s.trim()).filter((s) => s.length > 0),
+    [visibleAnalyses]
+  );
 
   const filteredAnalyses = filter === 'all' 
     ? visibleAnalyses 
@@ -510,26 +541,34 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
                 </div>
                 <div>
                   <h4 className="font-semibold mb-2 text-green-600">Fortalezas Identificadas</h4>
-                  <ul className="space-y-1">
-                    {analyses.flatMap(a => a.strengths).slice(0, 5).map((strength, index) => (
-                      <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
-                        <div className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0" />
-                        {strength}
-                      </li>
-                    ))}
-                  </ul>
+                  {strengthsList.length > 0 ? (
+                    <ul className="space-y-1">
+                      {strengthsList.slice(0, 5).map((strength, index) => (
+                        <li key={`${strength}-${index}`} className="text-sm text-muted-foreground flex items-start gap-2">
+                          <div className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0" />
+                          {strength}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Sin fortalezas registradas.</p>
+                  )}
                 </div>
                 
                 <div>
                   <h4 className="font-semibold mb-2 text-orange-600">Áreas de Mejora</h4>
-                  <ul className="space-y-1">
-                    {analyses.flatMap(a => a.weaknesses).slice(0, 5).map((weakness, index) => (
-                      <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
-                        <div className="w-1.5 h-1.5 bg-orange-600 rounded-full mt-2 flex-shrink-0" />
-                        {weakness}
-                      </li>
-                    ))}
-                  </ul>
+                  {weaknessesList.length > 0 ? (
+                    <ul className="space-y-1">
+                      {weaknessesList.slice(0, 5).map((weakness, index) => (
+                        <li key={`${weakness}-${index}`} className="text-sm text-muted-foreground flex items-start gap-2">
+                          <div className="w-1.5 h-1.5 bg-orange-600 rounded-full mt-2 flex-shrink-0" />
+                          {weakness}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Sin areas de mejora registradas.</p>
+                  )}
                 </div>
               </CardContent>
             </Card>

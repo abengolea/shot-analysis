@@ -2287,7 +2287,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap md:grid md:grid-cols-5">
           <TabsTrigger value="ai-analysis" className="min-w-[140px] md:min-w-0 whitespace-nowrap flex-shrink-0">
-            <Bot className="mr-2" /> Análisis IA
+            <Bot className="mr-2" /> Análisis
           </TabsTrigger>
           <TabsTrigger value="videos" className="min-w-[180px] md:min-w-0 whitespace-nowrap flex-shrink-0">
             <Camera className="mr-2" /> Videos y fotogramas

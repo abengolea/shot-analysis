@@ -64,11 +64,27 @@ export function SidebarMenuContents() {
   }, [userProfile]);
 
   useEffect(() => {
-    try {
-      const stored = typeof window !== 'undefined' ? (localStorage.getItem('preferredRole') || '') : '';
-      setPreferredRole(stored);
-    } catch {}
-  }, []);
+    const readPreferredRole = () => {
+      try {
+        const stored = typeof window !== 'undefined' ? (localStorage.getItem('preferredRole') || '') : '';
+        setPreferredRole(stored);
+      } catch {}
+    };
+    readPreferredRole();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'preferredRole') {
+        readPreferredRole();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', onStorage);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('storage', onStorage);
+      }
+    };
+  }, [pathname, userProfile]);
 
   const isActive = (path: string, exact: boolean = false) => {
     if (exact) return pathname === path;

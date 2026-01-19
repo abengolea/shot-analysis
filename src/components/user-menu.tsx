@@ -23,7 +23,8 @@ export function UserMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const pathname = usePathname();
-  const inCoachView = pathname === '/coach' || pathname?.startsWith('/coach/');
+  const [preferredRole, setPreferredRole] = useState<string>('');
+  const inCoachView = (pathname === '/coach' || pathname?.startsWith('/coach/')) || preferredRole === 'coach';
 
   useEffect(() => {
     if (!user) return;
@@ -48,6 +49,29 @@ export function UserMenu() {
       console.error('Error suscribiendo a mensajes no leídos:', e);
     }
   }, [user]);
+
+  useEffect(() => {
+    const readPreferredRole = () => {
+      try {
+        const stored = typeof window !== 'undefined' ? (localStorage.getItem('preferredRole') || '') : '';
+        setPreferredRole(stored);
+      } catch {}
+    };
+    readPreferredRole();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'preferredRole') {
+        readPreferredRole();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', onStorage);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('storage', onStorage);
+      }
+    };
+  }, [pathname, userProfile]);
 
   
 
