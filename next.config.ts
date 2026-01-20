@@ -48,6 +48,14 @@ const nextConfig: NextConfig = {
       ];
     }
 
+    config.ignoreWarnings = [
+      ...(config.ignoreWarnings || []),
+      {
+        module: /@opentelemetry\/instrumentation/,
+        message: /Critical dependency: the request of a dependency is an expression/,
+      },
+    ];
+
     // Resolver problemas con Konva
     config.resolve.alias = {
       ...config.resolve.alias,

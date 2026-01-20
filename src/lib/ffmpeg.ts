@@ -5,9 +5,8 @@ import { spawn } from 'child_process';
 
 function getFfmpegPath(): string | null {
   try {
-    const modName = 'ffmpeg-static';
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require(modName);
+    const mod = require('ffmpeg-static');
     const p = (mod?.path || mod) as string | undefined;
     if (p && existsSync(p)) return p;
     const fromEnv = process.env.FFMPEG_BIN;
@@ -16,7 +15,7 @@ function getFfmpegPath(): string | null {
     const fromCwd = path.join(process.cwd(), 'node_modules', 'ffmpeg-static', suffix);
     if (existsSync(fromCwd)) return fromCwd;
     try {
-      const resolved = require.resolve(modName);
+      const resolved = require.resolve('ffmpeg-static');
       const dir = path.dirname(resolved);
       const fromResolve = path.join(dir, suffix);
       if (existsSync(fromResolve)) return fromResolve;
