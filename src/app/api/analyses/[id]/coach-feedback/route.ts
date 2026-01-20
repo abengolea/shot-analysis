@@ -51,7 +51,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const qs = await collRef.orderBy('updatedAt', 'desc').limit(1).get();
     if (qs.empty) return NextResponse.json({ ok: true, feedback: null });
     const d = qs.docs[0];
-    return NextResponse.json({ ok: true, feedback: { id: d.id, ...(d.data() as any) } });
+    const data = d.data() as any;
+    let coachName = typeof data?.coachName === 'string' ? data.coachName.trim() : '';
+    if (!coachName) {
+      const coachId = String(data?.createdBy || d.id || '').trim();
+      if (coachId) {
+        try {
+          const coachSnap = await adminDb.collection('coaches').doc(coachId).get();
+          const coachData = coachSnap.exists ? (coachSnap.data() as any) : null;
+          coachName = typeof coachData?.name === 'string' ? coachData.name.trim() : '';
+        } catch {
+          coachName = '';
+        }
+      }
+    }
+    return NextResponse.json({ ok: true, feedback: { id: d.id, ...data, coachName } });
   } catch (e) {
     console.error('coach-feedback GET error', e);
     return NextResponse.json({ ok: false, error: 'Error interno' }, { status: 500 });
@@ -72,7 +86,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const prev = await feedbackRef.get();
     const prevItems = prev.exists ? ((prev.data() as any)?.items || {}) : {};
     const mergedItems = { ...prevItems, ...items };
-    const payload = {
+    let coachName = '';
+    try {
+      const coachSnap = await adminDb.collection('coaches').doc(auth.uid).get();
+      const coachData = coachSnap.exists ? (coachSnap.data() as any) : null;
+      coachName = typeof coachData?.name === 'string' ? coachData.name.trim() : '';
+    } catch {
+      coachName = '';
+    }
+    const payload: Record<string, any> = {
       items: mergedItems,
       coachSummary,
       visibility: 'player_only',
@@ -80,6 +102,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       createdAt: prev.exists ? (prev.data() as any)?.createdAt || nowIso : nowIso,
       createdBy: prev.exists ? (prev.data() as any)?.createdBy || auth.uid : auth.uid,
     };
+    if (coachName) {
+      payload.coachName = coachName;
+    }
     await feedbackRef.set(payload, { merge: true });
 
     // Detectar discrepancias IA vs entrenador

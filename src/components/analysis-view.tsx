@@ -73,7 +73,7 @@ import ShareButtons from "@/components/share-buttons";
 import { useToast } from "@/hooks/use-toast";
 import { getItemWeight, getDefaultWeights } from "@/lib/scoring-client";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, addDoc, serverTimestamp, query, where } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, serverTimestamp, query, where, doc, getDoc } from "firebase/firestore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, Briefcase, Clock, Trophy } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -153,8 +153,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   // Función para cargar smart keyframes desde el API
   const loadSmartKeyframes = useCallback(async () => {
-    if (!analysis.id) {
-      console.log('⚠️ [AnalysisView] No hay analysis.id, no se cargarán keyframes');
+    if (!analysis.id || !user) {
+      console.log('⚠️ [AnalysisView] No hay analysis.id o usuario, no se cargarán keyframes');
       return;
     }
     
@@ -165,7 +165,12 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       const url = `/api/analyses/${analysis.id}/smart-keyframes`;
       console.log(`🔍 [AnalysisView] Llamando a: ${url}`);
       
-      const response = await fetch(url);
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await getIdToken(currentUser, true) : null;
+      const response = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       console.log(`🔍 [AnalysisView] Respuesta recibida:`, response.status, response.statusText);
       
       if (!response.ok) {
@@ -193,7 +198,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       console.error('❌ [AnalysisView] Error cargando smart keyframes:', error);
       setSmartKeyframesLoading(false);
     }
-  }, [analysis.id]);
+  }, [analysis.id, user]);
 
   // Cargar smart keyframes al montar el componente
   useEffect(() => {
@@ -459,11 +464,23 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   // ===== Feedback del entrenador (privado para jugador y coach) =====
   const [coachFeedbackByItemId, setCoachFeedbackByItemId] = useState<Record<string, { rating?: number; comment?: string }>>({});
   const [coachSummary, setCoachSummary] = useState<string>("");
+  const [coachFeedbackCoachName, setCoachFeedbackCoachName] = useState<string | null>(null);
+  const [coachFeedbackCoachId, setCoachFeedbackCoachId] = useState<string | null>(null);
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [savingCoachFeedback, setSavingCoachFeedback] = useState(false);
   const [isEditingCoachFeedback, setIsEditingCoachFeedback] = useState(false);
   const [hasExistingCoachFeedback, setHasExistingCoachFeedback] = useState(false);
-  const isCoach = (userProfile as any)?.role === 'coach' || (userProfile as any)?.role === 'admin';
+  const isAdmin = (userProfile as any)?.role === 'admin';
+  const isCoachRole = (userProfile as any)?.role === 'coach';
+  const currentUserId = String((userProfile as any)?.id || user?.uid || '');
+  const isCoach = isCoachRole || isAdmin;
+  const hasPaidCoachAccess = Boolean((analysis as any)?.coachAccess?.[currentUserId]?.status === 'paid');
+  const canEdit = Boolean(
+    isAdmin || (isCoachRole && currentUserId && (currentUserId === (player?.coachId || '') || hasPaidCoachAccess))
+  );
+  const canComment = Boolean(
+    isAdmin || (isCoachRole && (!player?.coachId || currentUserId === player?.coachId || hasPaidCoachAccess))
+  );
   const hasCoachFeedback = useMemo(() => {
     const hasItems = Object.values(coachFeedbackByItemId).some((entry) => {
       if (!entry) return false;
@@ -597,17 +614,39 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             summaryPreview: summaryValue.substring(0, 100)
           });
           setCoachSummary(summaryValue);
+          const coachId = String(fb?.createdBy || fb?.id || "").trim();
+          setCoachFeedbackCoachId(coachId || null);
+          const coachNameFromFeedback = typeof fb?.coachName === "string" ? fb.coachName.trim() : "";
+          if (coachNameFromFeedback) {
+            setCoachFeedbackCoachName(coachNameFromFeedback);
+          } else {
+            if (coachId) {
+              try {
+                const coachSnap = await getDoc(doc(db as any, "coaches", coachId));
+                const coachData = coachSnap.exists() ? (coachSnap.data() as any) : null;
+                const coachName = typeof coachData?.name === "string" ? coachData.name.trim() : "";
+                setCoachFeedbackCoachName(coachName || null);
+              } catch (e) {
+                console.warn("[CoachFeedback] ⚠️ No se pudo cargar el nombre del coach:", e);
+                setCoachFeedbackCoachName(null);
+              }
+            } else {
+              setCoachFeedbackCoachName(null);
+            }
+          }
           // Detectar si ya hay feedback guardado (si hay items o summary)
           const hasItems = Object.keys(normalizedItems).length > 0;
           const hasSummary = summaryValue.trim().length > 0;
           setHasExistingCoachFeedback(hasItems || hasSummary);
-          // Si hay feedback existente, no iniciar en modo edición
-          setIsEditingCoachFeedback(!(hasItems || hasSummary));
+          // Si hay feedback existente, solo permitir edición si tiene permisos
+          setIsEditingCoachFeedback(canEdit && !(hasItems || hasSummary));
         } else {
           // No hay feedback, iniciar en modo edición
           console.log(`[CoachFeedback] ⚠️ No se encontró feedback para el análisis ${analysis.id}`);
           setHasExistingCoachFeedback(false);
-          setIsEditingCoachFeedback(true);
+          setIsEditingCoachFeedback(canEdit);
+          setCoachFeedbackCoachName(null);
+          setCoachFeedbackCoachId(null);
         }
       } catch (e) {
         console.error('[CoachFeedback] ❌ Error cargando feedback:', e);
@@ -616,7 +655,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     if (user) {
       void load();
     }
-  }, [analysis.id, user?.uid]);
+  }, [analysis.id, user?.uid, canEdit]);
 
   const onCoachFeedbackChange = (itemId: string, next: { rating?: number; comment?: string }) => {
     // Normalizar el ID al guardar (lowercase y trim para consistencia)
@@ -627,6 +666,10 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   // Guardar feedback del entrenador
   const saveCoachFeedback = async () => {
     try {
+      if (!canEdit) {
+        toast({ title: 'Sin permisos', description: 'No tenés permisos para guardar esta revisión.', variant: 'destructive' });
+        return;
+      }
       setSavingCoachFeedback(true);
       const auth = getAuth();
       const u = auth.currentUser;
@@ -657,7 +700,13 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   // Generar resumen con IA basado en las calificaciones del coach
   const generateCoachSummary = async () => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const controller = new AbortController();
     try {
+      if (!canEdit) {
+        toast({ title: 'Sin permisos', description: 'No tenés permisos para generar el comentario global.', variant: 'destructive' });
+        return;
+      }
       setGeneratingSummary(true);
       const auth = getAuth();
       const u = auth.currentUser;
@@ -665,47 +714,51 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         toast({ title: 'No autenticado', description: 'Iniciá sesión para generar resumen', variant: 'destructive' });
         return;
       }
-      
+
       const token = await getIdToken(u);
       const shotType = (analysis as any).shotType || (analysis as any).scoreMetadata?.shotTypeKey || 'tres';
-      
+
+      timeoutId = setTimeout(() => controller.abort(), 20000);
       const res = await fetch(`/api/analyses/${analysis.id}/generate-coach-summary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           coachFeedback: coachFeedbackByItemId,
-          shotType 
+          shotType
         }),
+        signal: controller.signal,
       });
-      
+
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data?.error || 'Error generando resumen');
+        throw new Error((data as any)?.error || 'Error generando resumen');
       }
-      
-      const data = await res.json();
+
       if (data.ok && data.summary) {
         setCoachSummary(data.summary);
         const hasCoachRatings = Object.values(coachFeedbackByItemId).some(
           (cf) => cf && typeof cf.rating === 'number'
         );
-        toast({ 
-          title: 'Resumen generado', 
-          description: hasCoachRatings 
+        toast({
+          title: 'Resumen generado',
+          description: hasCoachRatings
             ? 'La IA ha generado un resumen basado en tus calificaciones. Podés editarlo si querés.'
-            : 'La IA ha generado un resumen basado en el análisis automático. Podés editarlo si querés.' 
+            : 'La IA ha generado un resumen basado en el análisis automático. Podés editarlo si querés.'
         });
       } else {
         throw new Error('No se recibió el resumen');
       }
     } catch (e) {
+      const message = e instanceof Error ? e.message : 'No se pudo generar el resumen.';
+      const isAbort = e instanceof DOMException && e.name === 'AbortError';
       console.error('Error generando resumen:', e);
-      toast({ 
-        title: 'Error', 
-        description: e instanceof Error ? e.message : 'No se pudo generar el resumen.', 
-        variant: 'destructive' 
+      toast({
+        title: 'Error',
+        description: isAbort ? 'La generación tardó demasiado y se canceló. Intentá de nuevo.' : message,
+        variant: 'destructive'
       });
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setGeneratingSummary(false);
     }
   };
@@ -860,15 +913,19 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const filteredCoaches = useMemo(() => {
     // Filtrar coaches ocultos primero
     const visibleCoaches = coaches.filter(coach => coach.hidden !== true);
+    const excludedCoachId = coachFeedbackCoachId?.trim();
+    const selectableCoaches = excludedCoachId
+      ? visibleCoaches.filter((coach) => String(coach.id || '').trim() !== excludedCoachId)
+      : visibleCoaches;
     
-    if (!coachSearchTerm) return visibleCoaches;
+    if (!coachSearchTerm) return selectableCoaches;
     const term = coachSearchTerm.toLowerCase();
-    return visibleCoaches.filter(coach => 
+    return selectableCoaches.filter(coach => 
       coach.name.toLowerCase().includes(term) ||
       coach.bio?.toLowerCase().includes(term) ||
       coach.specialties?.some(s => s.toLowerCase().includes(term))
     );
-  }, [coaches, coachSearchTerm]);
+  }, [coaches, coachSearchTerm, coachFeedbackCoachId]);
 
   // Función para renderizar estrellas de rating
   const renderCoachStars = (rating: number) => {
@@ -1221,8 +1278,6 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const platformFee = coachRate != null ? Math.max(1, Math.round(coachRate * 0.3)) : null;
   const totalAmount = coachRate != null && platformFee != null ? coachRate + platformFee : null;
 
-  const canEdit = userProfile?.role === 'coach' && userProfile.id === (player?.coachId || '');
-  const canComment = userProfile?.role === 'coach' && (!player?.coachId || userProfile.id === player?.coachId);
   const [completing, setCompleting] = useState(false);
   
   // Validar que todos los checklist estén completos y el comentario global tenga mínimo 50 palabras
@@ -3285,6 +3340,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                         variant="outline"
                         onClick={() => setIsEditingCoachFeedback(true)}
                         className="flex items-center gap-2 border-green-300 text-green-700 hover:bg-green-100"
+                        disabled={!canEdit}
+                        title={!canEdit ? 'Solo el coach asignado o admin puede editar' : ''}
                       >
                         <Pencil className="w-4 h-4" />
                         Editar
@@ -3335,7 +3392,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                         variant="outline"
                         size="sm"
                         onClick={generateCoachSummary}
-                        disabled={!isEditingCoachFeedback || generatingSummary || Object.values(coachFeedbackByItemId).filter(cf => cf && typeof cf.rating === 'number').length === 0}
+                        disabled={!canEdit || !isEditingCoachFeedback || generatingSummary || Object.values(coachFeedbackByItemId).filter(cf => cf && typeof cf.rating === 'number').length === 0}
                         className="flex items-center gap-2"
                       >
                         {generatingSummary ? (
@@ -3447,8 +3504,15 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   <CardTitle className="font-headline flex items-center gap-2">
                     <ListChecks /> Checklist del Entrenador
                   </CardTitle>
-                  <CardDescription>
-                    {isCoach ? 'Resultado con tus calificaciones y comentarios por ítem.' : 'Calificaciones y comentarios del entrenador.'}
+                  <CardDescription className="space-y-1">
+                    <span className="block">
+                      {isCoach ? 'Resultado con tus calificaciones y comentarios por ítem.' : 'Calificaciones y comentarios del entrenador.'}
+                    </span>
+                    {coachFeedbackCoachName && (
+                      <span className="block text-sm font-medium text-muted-foreground">
+                        Devolución de: {coachFeedbackCoachName}
+                      </span>
+                    )}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">

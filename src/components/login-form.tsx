@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useFormStatus } from "react-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -55,6 +56,7 @@ interface RoleSpecificFormProps {
 function RoleSpecificForm({ role }: RoleSpecificFormProps) {
     const { signIn, resetPassword } = useAuth();
     const { toast } = useToast();
+    const searchParams = useSearchParams();
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [resetting, setResetting] = useState(false);
@@ -78,7 +80,13 @@ function RoleSpecificForm({ role }: RoleSpecificFormProps) {
                     title: "¡Bienvenido!",
                     description: result.message,
                 });
-                
+
+                const redirectTo = searchParams?.get('redirect');
+                if (redirectTo) {
+                    window.location.href = redirectTo;
+                    return;
+                }
+
                 // Redirigir por rol sin chequear doc (el layout decide)
                 if (role === 'coach') {
                     window.location.href = '/coach/dashboard';

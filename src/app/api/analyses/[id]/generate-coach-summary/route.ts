@@ -23,7 +23,9 @@ async function requireCoachOrAdmin(req: NextRequest, analysisId: string): Promis
       if (!playerId) return { ok: false };
       const player = await adminDb.collection('players').doc(playerId).get();
       const assignedCoachId = player.exists ? (player.data() as any)?.coachId : null;
-      if (assignedCoachId !== uid) return { ok: false };
+      const coachAccess = (analysis?.coachAccess || {}) as Record<string, any>;
+      const hasPaidCoachAccess = coachAccess?.[uid]?.status === 'paid';
+      if (assignedCoachId !== uid && !hasPaidCoachAccess) return { ok: false };
     }
 
     return { ok: true, uid };

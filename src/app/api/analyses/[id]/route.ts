@@ -22,22 +22,27 @@ export async function GET(
     }
 
     const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
-    if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
-      return NextResponse.json({ error: 'Authorization Bearer token requerido' }, { status: 401 });
-    }
-    const token = authHeader.split(' ')[1];
-    const decoded = await adminAuth.verifyIdToken(token);
-    const uid = decoded.uid;
+    let uid: string | null = null;
+    let role: string | null = null;
+    let coachSnap: FirebaseFirestore.DocumentSnapshot | null = null;
+    let playerSnap: FirebaseFirestore.DocumentSnapshot | null = null;
+    if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const decoded = await adminAuth.verifyIdToken(token);
+      uid = decoded.uid;
 
-    const [coachSnap, playerSnap] = await Promise.all([
-      adminDb.collection('coaches').doc(uid).get(),
-      adminDb.collection('players').doc(uid).get(),
-    ]);
-    const coachData = coachSnap.exists ? (coachSnap.data() as any) : null;
-    const playerData = playerSnap.exists ? (playerSnap.data() as any) : null;
-    const role = coachData?.role || playerData?.role;
-    if (!coachSnap.exists && !playerSnap.exists) {
-      return NextResponse.json({ error: 'Usuario no autorizado' }, { status: 403 });
+      const [coachDoc, playerDoc] = await Promise.all([
+        adminDb.collection('coaches').doc(uid).get(),
+        adminDb.collection('players').doc(uid).get(),
+      ]);
+      coachSnap = coachDoc;
+      playerSnap = playerDoc;
+      const coachData = coachDoc.exists ? (coachDoc.data() as any) : null;
+      const playerData = playerDoc.exists ? (playerDoc.data() as any) : null;
+      role = coachData?.role || playerData?.role || null;
+      if (!coachDoc.exists && !playerDoc.exists) {
+        return NextResponse.json({ error: 'Usuario no autorizado' }, { status: 403 });
+      }
     }
 
     console.log('🔍 Buscando análisis específico:', analysisId);
@@ -62,14 +67,15 @@ export async function GET(
     };
 
     const analysisPlayerId = (analysisData as any)?.playerId;
-    const coachAccess = (analysisData as any)?.coachAccess || {};
-    const coachAccessForUser = coachAccess?.[uid];
-
-    const isAdmin = role === 'admin';
-    const isOwnerPlayer = playerSnap.exists && analysisPlayerId && String(analysisPlayerId) === String(uid);
-    const hasPaidCoachAccess = coachSnap.exists && coachAccessForUser?.status === 'paid';
-    if (!isAdmin && !isOwnerPlayer && !hasPaidCoachAccess) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+    if (uid) {
+      const coachAccess = (analysisData as any)?.coachAccess || {};
+      const coachAccessForUser = coachAccess?.[uid];
+      const isAdmin = role === 'admin';
+      const isOwnerPlayer = playerSnap?.exists && analysisPlayerId && String(analysisPlayerId) === String(uid);
+      const hasPaidCoachAccess = coachSnap?.exists && coachAccessForUser?.status === 'paid';
+      if (!isAdmin && !isOwnerPlayer && !hasPaidCoachAccess) {
+        return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+      }
     }
 
     console.log(`✅ Análisis encontrado: ${analysisId}`);

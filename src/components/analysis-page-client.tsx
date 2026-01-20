@@ -82,19 +82,15 @@ export function AnalysisPageClient({ id }: { id: string }) {
       }
 
       try {
-        if (!user) {
-          throw new Error('Usuario no autenticado');
-        }
-
         console.log(`[AnalysisPageClient] 🔍 Cargando análisis: ${id}`);
         setLoading(true);
         setError(null);
         
         // Obtener el análisis específico
         console.log(`[AnalysisPageClient] 📡 Llamando a /api/analyses/${id}`);
-        const token = await user.getIdToken();
+        const token = user ? await user.getIdToken() : null;
         const response = await fetch(`/api/analyses/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         console.log(`[AnalysisPageClient] 📥 Respuesta recibida:`, response.status, response.statusText);
         

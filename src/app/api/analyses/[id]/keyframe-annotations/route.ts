@@ -23,6 +23,15 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     const uid = decoded.uid;
     const name = (decoded as any)?.name || undefined;
 
+    const [coachSnap, viewerPlayerSnap] = await Promise.all([
+      adminDb.collection('coaches').doc(uid).get(),
+      adminDb.collection('players').doc(uid).get(),
+    ]);
+    const coachData = coachSnap.exists ? (coachSnap.data() as any) : null;
+    const playerData = viewerPlayerSnap.exists ? (viewerPlayerSnap.data() as any) : null;
+    const role = coachData?.role || playerData?.role;
+    if (role === 'admin') return { ok: true, uid, name };
+
     const analysisRef = adminDb.collection('analyses').doc(analysisId);
     const analysisSnap = await analysisRef.get();
     if (!analysisSnap.exists) return { ok: false, reason: 'Analysis not found' };
@@ -30,8 +39,8 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     const playerId = analysis?.playerId;
     if (!playerId) return { ok: false, reason: 'Player missing' };
 
-    const playerSnap = await adminDb.collection('players').doc(playerId).get();
-    const player = playerSnap.exists ? (playerSnap.data() as any) : null;
+    const assignedPlayerSnap = await adminDb.collection('players').doc(playerId).get();
+    const player = assignedPlayerSnap.exists ? (assignedPlayerSnap.data() as any) : null;
     const assignedCoachId = player?.coachId || null;
 
     if (assignedCoachId && assignedCoachId === uid) return { ok: true, uid, name };
