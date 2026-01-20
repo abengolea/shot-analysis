@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { getAppBaseUrl } from '@/lib/app-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +41,9 @@ export async function POST(req: NextRequest) {
     const coachSnap = await adminDb.collection('coaches').doc(coachId).get();
     const coachName = coachSnap.exists ? String((coachSnap.data() as any)?.name || '') : '';
     let freeLeft = 0;
+    let playerId = '';
+    let playerName = '';
+    let analysisShotType = '';
 
     await adminDb.runTransaction(async (tx: any) => {
       const analysisSnap = await tx.get(analysisRef);
@@ -48,6 +52,9 @@ export async function POST(req: NextRequest) {
       }
       const analysisData = analysisSnap.data() as any;
       const ownerId = String(analysisData?.playerId || analysisData?.userId || '');
+      playerId = ownerId;
+      playerName = String(analysisData?.playerName || '');
+      analysisShotType = String(analysisData?.shotType || '');
       if (auth.role !== 'admin' && ownerId !== auth.uid) {
         throw new Error('FORBIDDEN');
       }
@@ -98,6 +105,47 @@ export async function POST(req: NextRequest) {
         updatedAt: nowIso,
       });
     });
+
+    try {
+      const [coachDoc, playerDoc] = await Promise.all([
+        adminDb.collection('coaches').doc(coachId).get(),
+        playerId ? adminDb.collection('players').doc(playerId).get() : Promise.resolve(null as any),
+      ]);
+      const coachData = coachDoc?.exists ? (coachDoc.data() as any) : null;
+      const playerData = playerDoc?.exists ? (playerDoc.data() as any) : null;
+      const resolvedPlayerName = playerName || playerData?.name || playerId || 'Jugador';
+      const resolvedCoachName = coachName || coachData?.name || coachId || 'Entrenador';
+      const appBaseUrl = getAppBaseUrl();
+      const analysisUrl = appBaseUrl ? `${appBaseUrl}/analysis/${analysisId}` : '';
+      const analysisLabel = analysisShotType ? ` (${analysisShotType})` : '';
+
+      await adminDb.collection('messages').add({
+        fromId: 'system',
+        fromName: 'Chaaaas.com',
+        toId: coachId,
+        toCoachDocId: coachId,
+        toName: resolvedCoachName,
+        text: `El jugador ${resolvedPlayerName} usó una revisión gratis para este análisis${analysisLabel}. Podés ingresar y dejar tu devolución.${analysisUrl ? `\n\nLink al análisis: ${analysisUrl}` : ''}`,
+        analysisId,
+        createdAt: new Date().toISOString(),
+        read: false,
+      });
+
+      if (playerId) {
+        await adminDb.collection('messages').add({
+          fromId: 'system',
+          fromName: 'Chaaaas.com',
+          toId: playerId,
+          toName: resolvedPlayerName,
+          text: 'Tu revisión gratis fue activada correctamente. El entrenador ya puede ver tu análisis y pronto dejará su devolución.',
+          analysisId,
+          createdAt: new Date().toISOString(),
+          read: false,
+        });
+      }
+    } catch (e) {
+      console.error('Error notificando revisión gratis:', e);
+    }
 
     return NextResponse.json({ ok: true, freeCoachReviewsLeft: freeLeft });
   } catch (e: any) {

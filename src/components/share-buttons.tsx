@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/hooks/use-toast";
+import { getClientAppBaseUrl } from "@/lib/app-url";
 
 interface ShareButtonsProps {
   url?: string;
@@ -75,7 +76,7 @@ function CopyIcon(props: React.SVGProps<SVGSVGElement>) {
 
 export function ShareButtons({ url, text }: ShareButtonsProps) {
   const [currentUrl, setCurrentUrl] = useState<string>(url || "");
-  const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+  const appBaseUrl = getClientAppBaseUrl();
 
   useEffect(() => {
     if (typeof window === "undefined") return;

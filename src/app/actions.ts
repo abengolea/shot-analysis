@@ -6,6 +6,7 @@ import { z } from "zod";
 import { adminAuth, adminDb, adminStorage } from '@/lib/firebase-admin';
 import { scheduleKeyframesExtraction } from '@/lib/keyframes-backfill';
 import { sendCustomEmail } from '@/lib/email-service';
+import { getAppBaseUrl } from '@/lib/app-url';
 // Acción: añadir entrenador desde el formulario de registro de coaches
 const AddCoachSchema = z.object({
     name: z.string().min(2, "Nombre demasiado corto"),
@@ -885,15 +886,15 @@ export async function startAnalysis(prevState: any, formData: FormData) {
 
         // Notificar por email
         try {
-            const prodBase = 'https://shot-analysis--shotanalisys.us-central1.hosted.app';
-            const link = `${prodBase}/admin/revision-ia/${analysisRef.id}`;
+            const appBaseUrl = getAppBaseUrl();
+            const link = appBaseUrl ? `${appBaseUrl}/admin/revision-ia/${analysisRef.id}` : '';
             await sendCustomEmail({
                 to: 'abengolea@hotmail.com',
                 subject: 'Nuevo video subido para análisis',
                 html: `<p>Se subió un nuevo video para análisis.</p>
                       <p><b>Jugador:</b> ${currentUser?.name || currentUser?.id || 'desconocido'}</p>
                       <p><b>Tipo de tiro:</b> ${shotType}</p>
-                      <p><a href="${link}">Revisar en Revisión IA</a></p>`,
+                      ${link ? `<p><a href="${link}">Revisar en Revisión IA</a></p>` : ''}`,
             });
         } catch {}
 

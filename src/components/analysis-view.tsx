@@ -2901,7 +2901,14 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       Comentarios del Entrenador
                     </CardTitle>
                     <CardDescription className="text-green-700">
-                      {isCoach ? 'Tu revisión de este análisis:' : 'Tu entrenador ha revisado este análisis y dejó los siguientes comentarios.'}
+                      <span className="block">
+                        {isCoach ? 'Tu revisión de este análisis:' : 'Tu entrenador ha revisado este análisis y dejó los siguientes comentarios.'}
+                      </span>
+                      {coachFeedbackCoachName && (
+                        <span className="mt-1 block text-sm font-medium text-green-800">
+                          Revisado por: {coachFeedbackCoachName}
+                        </span>
+                      )}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -3527,17 +3534,10 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               <Card>
                 <CardHeader>
                   <CardTitle className="font-headline flex items-center gap-2">
-                    <ListChecks /> Checklist del Entrenador
+                    <ListChecks /> Checklist del Entrenador{coachFeedbackCoachName ? ` ${coachFeedbackCoachName}` : ""}
                   </CardTitle>
-                  <CardDescription className="space-y-1">
-                    <span className="block">
-                      {isCoach ? 'Resultado con tus calificaciones y comentarios por ítem.' : 'Calificaciones y comentarios del entrenador.'}
-                    </span>
-                    {coachFeedbackCoachName && (
-                      <span className="block text-sm font-medium text-muted-foreground">
-                        Devolución de: {coachFeedbackCoachName}
-                      </span>
-                    )}
+                  <CardDescription>
+                    {isCoach ? 'Resultado con tus calificaciones y comentarios por ítem.' : 'Calificaciones y comentarios del entrenador.'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">

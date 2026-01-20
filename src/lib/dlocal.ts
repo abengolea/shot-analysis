@@ -1,4 +1,5 @@
 import { adminDb } from '@/lib/firebase-admin';
+import { getAppBaseUrl } from '@/lib/app-url';
 
 const DLOCAL_BASE = process.env.DLOCAL_BASE_URL || 'https://api.dlocalgo.com';
 const DLOCAL_API_KEY = process.env.DLOCAL_API_KEY || '';
@@ -32,7 +33,7 @@ function getAuthToken(): string {
 function computeReturnBase(): string | undefined {
   const explicit = process.env.DLOCAL_RETURN_URL;
   if (explicit) return explicit;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  const appUrl = getAppBaseUrl();
   if (appUrl) return appUrl;
   const webhookUrl = process.env.DLOCAL_WEBHOOK_URL;
   if (webhookUrl) {

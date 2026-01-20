@@ -1,5 +1,6 @@
 import { adminDb } from '@/lib/firebase-admin';
 import { sendCustomEmail } from '@/lib/email-service';
+import { getAppBaseUrl } from '@/lib/app-url';
 
 const MP_BASE = process.env.MP_BASE_URL || 'https://api.mercadopago.com';
 const MP_PLATFORM_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN_AR || '';
@@ -33,7 +34,7 @@ export async function createPreference(input: CreatePreferenceInput) {
     if (input.returnBase) return input.returnBase;
     const explicit = process.env.MP_RETURN_URL;
     if (explicit) return explicit;
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+    const appUrl = getAppBaseUrl();
     if (appUrl) return appUrl;
     const webhookUrl = process.env.MP_WEBHOOK_URL;
     if (webhookUrl) {
@@ -370,7 +371,7 @@ export async function processCoachReviewPayment(params: {
     const coachData = coachSnap?.data() || null;
     const playerData = playerSnap?.data() || null;
 
-    const appBaseUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '');
+    const appBaseUrl = getAppBaseUrl();
     const analysisUrl = appBaseUrl && analysisId ? `${appBaseUrl}/analysis/${analysisId}` : '';
 
     if (coachId) {

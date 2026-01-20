@@ -3,6 +3,7 @@ import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import { createPreference } from '@/lib/mercadopago';
 import { createPayment } from '@/lib/dlocal';
 import { getCoachPaymentAccount, resolvePlatformFeePercent } from '@/lib/coach-payments';
+import { getAppBaseUrl } from '@/lib/app-url';
 
 export async function POST(req: NextRequest) {
   try {
@@ -235,7 +236,7 @@ export async function POST(req: NextRequest) {
               sponsorId: paymentAccount.mpUserId,
             }
           : {}),
-        returnBase: req.nextUrl.origin,
+        returnBase: getAppBaseUrl({ requestOrigin: req.nextUrl.origin }),
         metadata: {
           analysisId,
           coachId,

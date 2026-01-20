@@ -38,6 +38,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import type { Message } from "@/lib/types";
+import { getClientAppBaseUrl } from "@/lib/app-url";
 
 export default function CoachesPage() {
   const { user, userProfile } = useAuth();
@@ -500,6 +501,13 @@ export default function CoachesPage() {
                           try {
                             setSending(true);
                             const colRef = collection(db as any, 'messages');
+                            const appBaseUrl = getClientAppBaseUrl();
+                            const analysisUrl = analysisIdFromQuery && appBaseUrl
+                              ? `${appBaseUrl}/analysis/${analysisIdFromQuery}`
+                              : '';
+                            const appendedText = analysisUrl && !helpMessage.includes(analysisUrl)
+                              ? `${helpMessage}\n\nLink al análisis: ${analysisUrl}`
+                              : helpMessage;
                             const payload = {
                               fromId: user.uid,
                               fromName: (userProfile as any)?.name || user.displayName || 'Jugador',
@@ -507,7 +515,8 @@ export default function CoachesPage() {
                               toId: coach.id,
                               toCoachDocId: coach.id,
                               toName: coach.name,
-                              text: helpMessage,
+                              text: appendedText,
+                              analysisId: analysisIdFromQuery || null,
                               createdAt: serverTimestamp(),
                               read: false,
                             };
