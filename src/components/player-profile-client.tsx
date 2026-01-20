@@ -61,8 +61,17 @@ const getChartData = (analyses: ShotAnalysis[]) => {
     }));
 };
 
+const isNonBasketballAnalysis = (analysis: ShotAnalysis) => {
+    const warning = (analysis as any)?.advertencia || (analysis as any)?.analysisResult?.advertencia || '';
+    const summary = analysis?.analysisSummary || '';
+    const text = `${warning} ${summary}`.toLowerCase();
+    return /no corresponde a basquet|no detectamos/.test(text);
+};
+
 const buildAISummary = (analyses: ShotAnalysis[]) => {
     if (!analyses.length) return "";
+    const filteredAnalyses = analyses.filter((analysis) => !isNonBasketballAnalysis(analysis));
+    if (!filteredAnalyses.length) return "";
     const normalize = (value: string) => value.trim().toLowerCase();
     const cleanList = (items: string[]) =>
         items.map((item) => item.trim()).filter((item) => item.length > 0);
@@ -79,16 +88,16 @@ const buildAISummary = (analyses: ShotAnalysis[]) => {
         }
         return Array.from(counts.values()).sort((a, b) => b.count - a.count);
     };
-    const summaryTexts = cleanList(analyses.map((a) => a.analysisSummary || ""));
-    const strengths = collectCounts(analyses.flatMap((a) => a.strengths || []));
-    const weaknesses = collectCounts(analyses.flatMap((a) => a.weaknesses || []));
-    const recommendations = collectCounts(analyses.flatMap((a) => a.recommendations || []));
+    const summaryTexts = cleanList(filteredAnalyses.map((a) => a.analysisSummary || ""));
+    const strengths = collectCounts(filteredAnalyses.flatMap((a) => a.strengths || []));
+    const weaknesses = collectCounts(filteredAnalyses.flatMap((a) => a.weaknesses || []));
+    const recommendations = collectCounts(filteredAnalyses.flatMap((a) => a.recommendations || []));
     const topStrengths = strengths.slice(0, 5).map((item) => `${item.label} (${item.count})`);
     const topWeaknesses = weaknesses.slice(0, 5).map((item) => `${item.label} (${item.count})`);
     const topRecommendations = recommendations.slice(0, 5).map((item) => `${item.label} (${item.count})`);
-    const shotTypes = Array.from(new Set(analyses.map((a) => a.shotType).filter(Boolean)));
-    const total = analyses.length;
-    const createdDates = analyses
+    const shotTypes = Array.from(new Set(filteredAnalyses.map((a) => a.shotType).filter(Boolean)));
+    const total = filteredAnalyses.length;
+    const createdDates = filteredAnalyses
         .map((a) => new Date(a.createdAt).getTime())
         .filter((value) => Number.isFinite(value));
     const dateRange = createdDates.length
@@ -99,7 +108,7 @@ const buildAISummary = (analyses: ShotAnalysis[]) => {
             return start === end ? `Fecha: ${start}.` : `Periodo: ${start} a ${end}.`;
         })()
         : "";
-    const scoreValues = analyses
+    const scoreValues = filteredAnalyses
         .map((a) => (typeof a.score === "number" ? a.score : null))
         .filter((v): v is number => typeof v === "number");
     const averageScore = scoreValues.length > 0
@@ -160,9 +169,14 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
   const { userProfile } = useAuth();
   const visibleAnalyses = useMemo(() => {
     if (userProfile?.role !== 'coach' || !userProfile?.id) return analyses;
+    if (String(player.coachId || '') === String(userProfile.id)) return analyses;
     return analyses.filter((analysis: any) => analysis?.coachAccess?.[userProfile.id]?.status === 'paid');
-  }, [analyses, userProfile]);
-  const aiProgressSummary = useMemo(() => buildAISummary(visibleAnalyses), [visibleAnalyses]);
+  }, [analyses, userProfile, player]);
+  const basketballAnalyses = useMemo(
+    () => visibleAnalyses.filter((analysis) => !isNonBasketballAnalysis(analysis)),
+    [visibleAnalyses]
+  );
+  const aiProgressSummary = useMemo(() => buildAISummary(basketballAnalyses), [basketballAnalyses]);
   const chartData = getChartData(visibleAnalyses);
   const [filter, setFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("overview");
@@ -188,29 +202,32 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
   }, [player, aiProgressSummary, editingProgressSummary]);
 
   const strengthsList = useMemo(() => {
-    const strengths = visibleAnalyses.flatMap((a) => a.strengths || []).map((s) => s.trim()).filter((s) => s.length > 0);
+    const strengths = basketballAnalyses.flatMap((a) => a.strengths || []).map((s) => s.trim()).filter((s) => s.length > 0);
     if (strengths.length > 0) return strengths;
-    const checklistItems = visibleAnalyses.flatMap((analysis) =>
+    const checklistItems = basketballAnalyses.flatMap((analysis) =>
       (analysis.detailedChecklist || []).flatMap((category) => category.items || [])
     );
     return checklistItems
-      .filter((item) => item.status === 'Correcto')
+      .filter((item) => item.status === 'Correcto' && !item.na)
       .map((item) => item.name || '')
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
-  }, [visibleAnalyses]);
+  }, [basketballAnalyses]);
   const weaknessesList = useMemo(() => {
-    const weaknesses = visibleAnalyses.flatMap((a) => a.weaknesses || []).map((s) => s.trim()).filter((s) => s.length > 0);
+    const weaknesses = basketballAnalyses.flatMap((a) => a.weaknesses || []).map((s) => s.trim()).filter((s) => s.length > 0);
     if (weaknesses.length > 0) return weaknesses;
-    const checklistItems = visibleAnalyses.flatMap((analysis) =>
+    const checklistItems = basketballAnalyses.flatMap((analysis) =>
       (analysis.detailedChecklist || []).flatMap((category) => category.items || [])
     );
     return checklistItems
-      .filter((item) => item.status === 'Incorrecto' || item.status === 'Mejorable')
+      .filter((item) =>
+        !item.na &&
+        (item.status === 'Incorrecto' || item.status === 'Mejorable')
+      )
       .map((item) => item.name || '')
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
-  }, [visibleAnalyses]);
+  }, [basketballAnalyses]);
 
   const filteredAnalyses = filter === 'all' 
     ? visibleAnalyses 

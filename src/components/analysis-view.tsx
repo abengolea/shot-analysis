@@ -90,6 +90,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const { toast } = useToast();
   const router = useRouter();
   const [isClearingScore, setIsClearingScore] = useState(false);
+  const currentUserId = user?.uid || userProfile?.id;
       // Funciones auxiliares para visualización
   const getScoreColor = (score: number) => {
     if (score >= 90) return 'text-green-600';
@@ -470,6 +471,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   const analysisResult: any = (analysis as any).analysisResult || {};
   const [remoteAnalysisResult, setRemoteAnalysisResult] = useState<any | null>(null);
+  const [shotFrames, setShotFrames] = useState<Array<any>>([]);
+  const [shotFramesLoading, setShotFramesLoading] = useState(false);
+  const [shotFramesError, setShotFramesError] = useState<string | null>(null);
   const [checklistState, setChecklistState] = useState<ChecklistCategory[]>(() => {
         if (analysis.detailedChecklist && Array.isArray(analysis.detailedChecklist)) {
       const normalized = normalizeChecklist(analysis.detailedChecklist);
@@ -524,6 +528,36 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     loadAnalysis();
   }, [analysis, analysisResult, remoteAnalysisResult]);
 
+  useEffect(() => {
+    const shotFramesUrl =
+      (analysis as any).shotFramesUrl ||
+      analysisResult?.shotFramesUrl ||
+      (analysis as any)?.analysisResult?.shotFramesUrl;
+    if (!shotFramesUrl || shotFramesLoading || shotFrames.length > 0) return;
+
+    const loadShotFrames = async () => {
+      try {
+        setShotFramesLoading(true);
+        const resp = await fetch(String(shotFramesUrl));
+        if (!resp.ok) {
+          setShotFramesError('No se pudieron cargar los frames por tiro.');
+          setShotFramesLoading(false);
+          return;
+        }
+        const data = await resp.json();
+        const shots = Array.isArray(data?.shots) ? data.shots : [];
+        setShotFrames(shots);
+        setShotFramesError(null);
+        setShotFramesLoading(false);
+      } catch (e) {
+        setShotFramesError('No se pudieron cargar los frames por tiro.');
+        setShotFramesLoading(false);
+      }
+    };
+
+    loadShotFrames();
+  }, [analysis, analysisResult, shotFramesLoading, shotFrames.length]);
+
   // ===== Feedback del entrenador (privado para jugador y coach) =====
   const [coachFeedbackByItemId, setCoachFeedbackByItemId] = useState<Record<string, { rating?: number; comment?: string }>>({});
   const [coachSummary, setCoachSummary] = useState<string>("");
@@ -536,14 +570,18 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const [hasExistingCoachFeedback, setHasExistingCoachFeedback] = useState(false);
   const isAdmin = (userProfile as any)?.role === 'admin';
   const isCoachRole = (userProfile as any)?.role === 'coach';
-  const currentUserId = String((userProfile as any)?.id || user?.uid || '');
+  const authUserId = user?.uid ? String(user.uid) : '';
+  const profileId = (userProfile as any)?.id ? String((userProfile as any).id) : '';
+  const userIds = [authUserId, profileId].filter(Boolean);
   const isCoach = isCoachRole || isAdmin;
-  const hasPaidCoachAccess = Boolean((analysis as any)?.coachAccess?.[currentUserId]?.status === 'paid');
+  const viewerId = authUserId || profileId;
+  const hasPaidCoachAccess = userIds.some((id) => (analysis as any)?.coachAccess?.[id]?.status === 'paid');
+  const isAssignedCoach = userIds.some((id) => id === (player?.coachId || ''));
   const canEdit = Boolean(
-    isAdmin || (isCoachRole && currentUserId && (currentUserId === (player?.coachId || '') || hasPaidCoachAccess))
+    isAdmin || (isCoachRole && userIds.length > 0 && (isAssignedCoach || hasPaidCoachAccess))
   );
   const canComment = Boolean(
-    isAdmin || (isCoachRole && (!player?.coachId || currentUserId === player?.coachId || hasPaidCoachAccess))
+    isAdmin || (isCoachRole && (!player?.coachId || isAssignedCoach || hasPaidCoachAccess))
   );
   const fallbackCoachSummary = (() => {
     const raw =
@@ -854,18 +892,26 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   // Derivados del checklist basados en rating 1..5 (ordenados por importancia)
   const flatChecklistItems = checklistState.flatMap((c) => c.items);
 
+  const isEvaluableChecklistItem = (item: DetailedChecklistItem) =>
+    !item.na && item.status !== "no_evaluable";
+
   const checklistStrengths = flatChecklistItems
-    .filter((item) => (item.rating || 3) >= 4)
+    .filter((item) => isEvaluableChecklistItem(item) && (item.rating || 3) >= 4)
     .sort((a, b) => (b.rating || 3) - (a.rating || 3)) // 5 primero, luego 4
     .map((item) => item.name);
 
   const checklistWeaknesses = flatChecklistItems
-    .filter((item) => (item.rating || 3) <= 2)
+    .filter((item) => isEvaluableChecklistItem(item) && (item.rating || 3) <= 2)
     .sort((a, b) => (a.rating || 3) - (b.rating || 3)) // 1 primero, luego 2
     .map((item) => item.name);
 
   const checklistRecommendations = flatChecklistItems
-    .filter((item) => (item.rating || 3) <= 3 && String(item.comment || '').trim() !== "")
+    .filter(
+      (item) =>
+        isEvaluableChecklistItem(item) &&
+        (item.rating || 3) <= 3 &&
+        String(item.comment || '').trim() !== ""
+    )
     .sort((a, b) => {
       const ra = a.rating || 3;
       const rb = b.rating || 3;
@@ -926,13 +972,18 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     return Math.round(score);
   };
 
+  const formatMs = (value?: number) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return 'N/A';
+    return `${(value / 1000).toFixed(2)}s`;
+  };
+
   const ownerId = (analysis as any)?.playerId || (player as any)?.id;
-  const isOwnerPlayer = Boolean(currentUserId && ownerId && String(currentUserId) === String(ownerId));
+  const isOwnerPlayer = Boolean(viewerId && ownerId && String(viewerId) === String(ownerId));
   const nonBasketballWarning =
     (analysis as any).advertencia || (analysisResult as any).advertencia || '';
   const isNonBasketballVideo =
     /no corresponde a basquet|no detectamos/i.test(nonBasketballWarning || derivedSummary);
-  const canClearScore = Boolean(isOwnerPlayer && currentUserId);
+  const canClearScore = Boolean(isOwnerPlayer && viewerId);
   const hasStrengths = checklistStrengths.length > 0;
   const hasWeaknesses = checklistWeaknesses.length > 0;
   const hasRecommendations = checklistRecommendations.length > 0;
@@ -2201,6 +2252,56 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
   };
 
+  const deleteLatestAnnotation = async () => {
+    if (!canEdit) {
+      toast({
+        title: 'Sin permisos',
+        description: 'No tenés permisos para eliminar anotaciones.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const latest = annotations[0];
+    if (!latest?.id) {
+      toast({
+        title: 'Sin anotaciones',
+        description: 'No hay anotaciones guardadas para eliminar.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      const auth = getAuth();
+      const cu = auth.currentUser;
+      if (!cu) return;
+      const token = await getIdToken(cu, true);
+      const res = await fetch(`/api/analyses/${safeAnalysis.id}/keyframe-annotations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: 'delete',
+          annotationId: latest.id,
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'No se pudo eliminar la anotación.');
+      }
+      setAnnotationStatus('Anotación eliminada.');
+      await loadCommentsAndAnnotations();
+    } catch (e: any) {
+      console.error('deleteLatestAnnotation error', e);
+      toast({
+        title: 'Error',
+        description: e?.message || 'No se pudo eliminar la anotación.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const reorderKeyframe = async (angle: 'front'|'back'|'left'|'right', index: number, dir: -1|1) => {
     const arr = localKeyframes[angle] || []; const ni = index + dir; if (ni < 0 || ni >= arr.length) return;
     const order = Array.from({ length: arr.length }, (_, i) => i);
@@ -3222,6 +3323,79 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 );
               })()}
 
+              {(shotFramesLoading || shotFrames.length > 0 || shotFramesError) && (
+                <div className="mt-6">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <Camera className="w-5 h-5" />
+                    Frames por tiro
+                    {shotFramesLoading && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Cargando...</span>
+                      </div>
+                    )}
+                  </h3>
+                  {shotFramesLoading ? (
+                    <div className="text-center py-6 text-muted-foreground">
+                      <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                      <p className="text-sm">Cargando frames por tiro…</p>
+                    </div>
+                  ) : shotFrames.length > 0 ? (
+                    <div className="space-y-4">
+                      {shotFrames.map((shot: any, shotIdx: number) => {
+                        const frames = Array.isArray(shot?.frames) ? shot.frames : [];
+                        return (
+                          <div key={`shot-frames-${shot?.idx ?? shotIdx}`} className="rounded-lg border p-4">
+                            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground mb-3">
+                              <span className="font-medium text-foreground">Tiro {shot?.idx ?? shotIdx + 1}</span>
+                              <span>Inicio: {formatMs(shot?.start_ms)}</span>
+                              <span>Liberación: {formatMs(shot?.release_ms)}</span>
+                              <span>Frames: {frames.length}</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+                              {frames.map((frame: any, frameIdx: number) => {
+                                const src = normalizeImageSrc(frame?.dataUrl || frame?.imageBuffer || frame?.src);
+                                if (!src) {
+                                  return (
+                                    <div key={`shot-frame-${shotIdx}-${frameIdx}`} className="flex items-center justify-center rounded-lg border h-24 text-xs text-muted-foreground">
+                                      Sin imagen
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <button
+                                    key={`shot-frame-${shotIdx}-${frameIdx}`}
+                                    className="group relative rounded-lg overflow-hidden border hover:border-primary transition-colors"
+                                    onClick={() => {
+                                      setSelectedKeyframe(src);
+                                      setSelectedIndex(frameIdx);
+                                      setIsModalOpen(true);
+                                    }}
+                                  >
+                                    <Image
+                                      src={src}
+                                      alt={`Tiro ${shot?.idx ?? shotIdx + 1} frame ${frameIdx + 1}`}
+                                      width={220}
+                                      height={220}
+                                      className="object-cover w-full h-24 group-hover:opacity-90 transition-opacity"
+                                      unoptimized
+                                    />
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-6 text-muted-foreground">
+                      <p className="text-sm">{shotFramesError || 'No hay frames por tiro disponibles.'}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Botón dev para generar si no hay nada - SOLO PARA ADMINS */}
               {availableAngles.length === 0 && (userProfile as any)?.role === 'admin' && (
                 <div className="flex items-center justify-center mb-6">
@@ -4018,6 +4192,14 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       {savingAnnotation ? 'Guardando…' : 'Guardar dibujo'}
                     </Button>
                     <Button variant="outline" size="sm" onClick={clearCanvas}>Limpiar</Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={annotations.length === 0}
+                      onClick={() => { void deleteLatestAnnotation(); }}
+                    >
+                      Eliminar último
+                    </Button>
                   </>
                 )}
                 {annotationStatus && (

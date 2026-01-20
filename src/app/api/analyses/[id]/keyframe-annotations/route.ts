@@ -13,7 +13,7 @@ type KeyframeAnnotation = {
   createdAt: string;
 };
 
-async function verifyCoachPermission(req: NextRequest, analysisId: string): Promise<{ ok: boolean; uid?: string; name?: string; reason?: string }> {
+async function verifyCoachPermission(req: NextRequest, analysisId: string): Promise<{ ok: boolean; uid?: string; name?: string; role?: string; reason?: string }> {
   try {
     if (!adminDb || !adminAuth) return { ok: false, reason: 'Admin SDK not ready' };
     const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
@@ -30,7 +30,7 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     const coachData = coachSnap.exists ? (coachSnap.data() as any) : null;
     const playerData = viewerPlayerSnap.exists ? (viewerPlayerSnap.data() as any) : null;
     const role = coachData?.role || playerData?.role;
-    if (role === 'admin') return { ok: true, uid, name };
+    if (role === 'admin') return { ok: true, uid, name, role };
 
     const analysisRef = adminDb.collection('analyses').doc(analysisId);
     const analysisSnap = await analysisRef.get();
@@ -43,12 +43,18 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     const player = assignedPlayerSnap.exists ? (assignedPlayerSnap.data() as any) : null;
     const assignedCoachId = player?.coachId || null;
 
-    if (assignedCoachId && assignedCoachId === uid) return { ok: true, uid, name };
+    if (assignedCoachId && assignedCoachId === uid) return { ok: true, uid, name, role };
     return { ok: false, reason: 'Forbidden' };
   } catch (e) {
     console.error('verifyCoachPermission error', e);
     return { ok: false, reason: 'Auth error' };
   }
+}
+
+function extractStoragePath(overlayUrl: string, bucketName: string): string | null {
+  const prefix = `https://storage.googleapis.com/${bucketName}/`;
+  if (!overlayUrl || !overlayUrl.startsWith(prefix)) return null;
+  return overlayUrl.slice(prefix.length);
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -88,6 +94,28 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const perm = await verifyCoachPermission(request, analysisId);
     if (!perm.ok || !perm.uid) return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+
+    if (body?.action === 'delete') {
+      const annotationId = String(body?.annotationId || '');
+      if (!annotationId) return NextResponse.json({ error: 'annotationId requerido' }, { status: 400 });
+      const ref = adminDb.collection('analyses').doc(analysisId).collection('keyframeAnnotations').doc(annotationId);
+      const snap = await ref.get();
+      if (!snap.exists) return NextResponse.json({ error: 'Anotación no encontrada' }, { status: 404 });
+      const data = snap.data() as KeyframeAnnotation | undefined;
+      if (data?.analysisId && data.analysisId !== analysisId) {
+        return NextResponse.json({ error: 'Anotación inválida' }, { status: 400 });
+      }
+      if (perm.role !== 'admin' && data?.coachId && data.coachId !== perm.uid) {
+        return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+      }
+      const bucket = adminStorage.bucket();
+      const storagePath = extractStoragePath(data?.overlayUrl || '', bucket.name);
+      if (storagePath) {
+        await bucket.file(storagePath).delete({ ignoreNotFound: true });
+      }
+      await ref.delete();
+      return NextResponse.json({ success: true });
+    }
 
     const keyframeUrl = String(body?.keyframeUrl || '');
     const angle = body?.angle as KeyframeAnnotation['angle'] | undefined;
