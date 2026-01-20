@@ -933,6 +933,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const isNonBasketballVideo =
     /no corresponde a basquet|no detectamos/i.test(nonBasketballWarning || derivedSummary);
   const canClearScore = Boolean(isOwnerPlayer && currentUserId);
+  const hasStrengths = checklistStrengths.length > 0;
+  const hasWeaknesses = checklistWeaknesses.length > 0;
+  const hasRecommendations = checklistRecommendations.length > 0;
 
   const safeAnalysis = {
     ...analysis,
@@ -3008,7 +3011,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     <div className="flex items-start gap-2">
                       <ShieldAlert className="mt-0.5 h-4 w-4" />
                       <div>
-                        <p className="text-sm font-medium">Esto no es basquet.</p>
+                        <p className="text-sm font-medium">La IA no detectó un jugador realizando lanzamientos.</p>
                         <p className="text-xs text-amber-800">{nonBasketballWarning}</p>
                         {canClearScore && (
                           <div className="mt-3">
@@ -3048,16 +3051,11 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     </div>
                   </div>
                 )}
-                <p className="text-muted-foreground">{safeAnalysis.analysisSummary}</p>
-                {(avgRating != null || isNonBasketballVideo) && (
-                  <div className="mt-3 flex items-center gap-3">
-                    <Badge>
-                      {isNonBasketballVideo ? 0 : Math.round((avgRating! / 5) * 100)} / 100
-                    </Badge>
-                    <span className="text-sm text-muted-foreground">
-                      Evaluación final: {isNonBasketballVideo ? 'No evaluable' : scoreLabel(avgRating!)}
-                    </span>
-                  </div>
+                {!isNonBasketballVideo && (
+                  <>
+                    <p className="text-muted-foreground">{safeAnalysis.analysisSummary}</p>
+                    {/* Puntuación ya se muestra en "Puntuación Global" */}
+                  </>
                 )}
                 {!isNonBasketballVideo && (
                   <div className="mt-6 rounded-md border bg-muted/30 p-4">
@@ -3071,8 +3069,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             </Card>
 
             {/* Fortalezas, Debilidades y Recomendaciones (IA) */}
-            {!isNonBasketballVideo && (
+            {!isNonBasketballVideo && (hasStrengths || hasWeaknesses) && (
             <div className="grid gap-4 md:grid-cols-2">
+              {hasStrengths && (
               <Card>
                 <CardHeader>
                   <CardTitle className="font-headline flex items-center gap-2 text-green-600">
@@ -3080,19 +3079,15 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {checklistStrengths.length > 0 ? (
-                    <ul className="grid list-inside list-disc grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
-                      {checklistStrengths.map((s, i) => (
-                        <li key={i}>{s}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      La IA no encontró fortalezas destacadas en este intento.
-                    </p>
-                  )}
+                  <ul className="grid list-inside list-disc grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
+                    {checklistStrengths.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
                 </CardContent>
               </Card>
+              )}
+              {hasWeaknesses && (
               <Card>
                 <CardHeader>
                   <CardTitle className="font-headline flex items-center gap-2 text-destructive">
@@ -3100,23 +3095,18 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {checklistWeaknesses.length > 0 ? (
-                    <ul className="grid list-inside list-disc grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
-                      {checklistWeaknesses.map((w, i) => (
-                        <li key={i}>{w}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      La IA no encontró debilidades claras en este intento.
-                    </p>
-                  )}
+                  <ul className="grid list-inside list-disc grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
+                    {checklistWeaknesses.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
                 </CardContent>
               </Card>
+              )}
             </div>
             )}
 
-            {!isNonBasketballVideo && (
+            {!isNonBasketballVideo && hasRecommendations && (
             <Card>
               <CardHeader>
                 <CardTitle className="font-headline flex items-center gap-2 text-accent">
@@ -3124,18 +3114,11 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {checklistRecommendations.length > 0 ? (
-                  <ul className="list-inside list-disc space-y-2 text-muted-foreground">
-                    {checklistRecommendations.map((r, i) => (
-                      <li key={i}>{r}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    El entrenador no ha dejado recomendaciones específicas en el
-                    checklist.
-                  </p>
-                )}
+                <ul className="list-inside list-disc space-y-2 text-muted-foreground">
+                  {checklistRecommendations.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
               </CardContent>
             </Card>
             )}
