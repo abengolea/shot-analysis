@@ -178,7 +178,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
           coachCompleted: analysisData.coachCompleted === true,
           shots: analysisData.analysisResult?.shots || analysisData.shots,
           // ⚖️ Agregar metadatos del score calculado
-          scoreMetadata: analysisData.analysisResult?.scoreMetadata || null,
+          scoreMetadata: analysisData.analysisResult?.scoreMetadata || analysisData.scoreMetadata || null,
           // 🔢 Calcular resumen de evaluación automáticamente
           resumen_evaluacion: (() => {
             const parameters = analysisData.analysisResult?.technicalAnalysis?.parameters || analysisData.analysisResult?.detailedChecklist || analysisData.detailedChecklist || [];

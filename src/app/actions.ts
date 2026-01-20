@@ -7,6 +7,7 @@ import { adminAuth, adminDb, adminStorage } from '@/lib/firebase-admin';
 import { scheduleKeyframesExtraction } from '@/lib/keyframes-backfill';
 import { sendCustomEmail } from '@/lib/email-service';
 import { getAppBaseUrl } from '@/lib/app-url';
+import { buildScoreMetadata, loadWeightsFromFirestore } from '@/lib/scoring';
 // Acción: añadir entrenador desde el formulario de registro de coaches
 const AddCoachSchema = z.object({
     name: z.string().min(2, "Nombre demasiado corto"),
@@ -924,9 +925,20 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             availableKeyframes: [],
         });
 
+        const detailedChecklist = Array.isArray(analysisResult?.detailedChecklist) ? analysisResult.detailedChecklist : [];
+        let scoreMetadata = undefined;
+        if (detailedChecklist.length > 0) {
+            const weights = await loadWeightsFromFirestore(shotType);
+            scoreMetadata = buildScoreMetadata(detailedChecklist, shotType, weights);
+        }
+
+        const analysisResultWithScore = scoreMetadata
+            ? { ...analysisResult, scoreMetadata }
+            : analysisResult;
+
         await db.collection('analyses').doc(analysisRef.id).update({
             status: 'analyzed',
-            analysisResult,
+            analysisResult: analysisResultWithScore,
             detailedChecklist: analysisResult.detailedChecklist || [],
             keyframes: { front: [], back: [], left: [], right: [] },
             keyframesStatus: 'pending',
@@ -951,7 +963,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             videoUrl: videoPath,
             shotType,
             status: 'analyzed',
-            analysisResult,
+            analysisResult: analysisResultWithScore,
             redirectTo: '/dashboard'
         };
 

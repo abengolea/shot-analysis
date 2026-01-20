@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { buildScoreMetadata, loadWeightsFromFirestore } from '@/lib/scoring';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,6 +76,26 @@ export async function GET(
       const hasPaidCoachAccess = coachSnap?.exists && coachAccessForUser?.status === 'paid';
       if (!isAdmin && !isOwnerPlayer && !hasPaidCoachAccess) {
         return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+      }
+    }
+
+    const analysisResult = (analysisData as any)?.analysisResult || {};
+    const existingScoreMetadata = analysisResult?.scoreMetadata;
+    if (!existingScoreMetadata) {
+      const detailedChecklist = Array.isArray(analysisResult?.detailedChecklist)
+        ? analysisResult.detailedChecklist
+        : Array.isArray((analysisData as any)?.detailedChecklist)
+          ? (analysisData as any).detailedChecklist
+          : [];
+      if (detailedChecklist.length > 0) {
+        const shotType = (analysisData as any)?.shotType || analysisResult?.shotType;
+        const weights = await loadWeightsFromFirestore(shotType);
+        const scoreMetadata = buildScoreMetadata(detailedChecklist, shotType, weights);
+        await analysisDoc.ref.update({
+          'analysisResult.scoreMetadata': scoreMetadata,
+          updatedAt: new Date().toISOString(),
+        });
+        (analysis as any).analysisResult = { ...analysisResult, scoreMetadata };
       }
     }
 
