@@ -401,6 +401,12 @@ export default function UploadPage() {
     }
 
     let fallbackToServer = false;
+    const requiredLabels = new Set<string>();
+    if (fileByLabel['back'] || backVideo) {
+      requiredLabels.add('back');
+    } else if (fileByLabel['front'] || selectedVideo) {
+      requiredLabels.add('front');
+    }
     setUploading(true);
     setUploadProgress({});
     for (const u of uploads) {
@@ -418,9 +424,19 @@ export default function UploadPage() {
         const url = await uploadWithRetry(u.label, eff, u.path, 2);
         urlByLabel[u.label] = url;
       } catch (err) {
-        console.warn(`[upload:${u.label}] fallo subida a Storage; haré fallback a subida vía servidor.`, (err as any)?.message || err);
-        fallbackToServer = true;
-        break;
+        const isRequired = requiredLabels.has(u.label);
+        console.warn(`[upload:${u.label}] fallo subida a Storage`, (err as any)?.message || err);
+        if (isRequired) {
+          console.warn(`[upload:${u.label}] es requerido; haré fallback a subida vía servidor.`);
+          fallbackToServer = true;
+          break;
+        }
+        toast({
+          title: `No se pudo subir ${u.label}`,
+          description: 'Continuaremos con los demás videos disponibles.',
+          variant: 'default',
+        });
+        continue;
       }
     }
     setUploading(false);
@@ -431,6 +447,14 @@ export default function UploadPage() {
       if (urlByLabel['front']) formData.set('uploadedFrontUrl', urlByLabel['front']);
       if (urlByLabel['left']) formData.set('uploadedLeftUrl', urlByLabel['left']);
       if (urlByLabel['right']) formData.set('uploadedRightUrl', urlByLabel['right']);
+      if (!urlByLabel['back'] && !urlByLabel['front']) {
+        toast({
+          title: 'Subida incompleta',
+          description: 'No se pudo subir el video principal (trasera o frontal).',
+          variant: 'destructive',
+        });
+        return;
+      }
     } else {
       // Fallback: adjuntar archivos binarios para subida server-side
       try { toast({ title: 'Subida alternativa', description: 'Usando subida desde el servidor para evitar CORS.', variant: 'default' }); } catch {}

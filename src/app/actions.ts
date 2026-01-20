@@ -8,6 +8,7 @@ import { scheduleKeyframesExtraction } from '@/lib/keyframes-backfill';
 import { sendCustomEmail } from '@/lib/email-service';
 import { getAppBaseUrl } from '@/lib/app-url';
 import { buildScoreMetadata, loadWeightsFromFirestore } from '@/lib/scoring';
+import { generateAnalysisSummary } from '@/lib/ai-summary';
 import type { ChecklistCategory, DetailedChecklistItem } from '@/lib/types';
 // Acción: añadir entrenador desde el formulario de registro de coaches
 const AddCoachSchema = z.object({
@@ -273,6 +274,8 @@ export async function giftAnalyses(_prevState: any, formData: FormData) {
             const newCredits = (base.credits || 0) + count;
             tx.set(walletRef, { ...base, credits: newCredits, updatedAt: nowIso }, { merge: true });
         });
+        revalidatePath('/admin');
+        revalidatePath(`/admin/players/${userId}`);
         return { success: true, message: `Se regalaron ${count} análisis.` };
     } catch (e) {
         console.error('Error regalando análisis:', e);
@@ -310,6 +313,8 @@ export async function giftCoachReviews(_prevState: any, formData: FormData) {
             const newFreeReviews = (base.freeCoachReviews || 0) + count;
             tx.set(walletRef, { ...base, freeCoachReviews: newFreeReviews, updatedAt: nowIso }, { merge: true });
         });
+        revalidatePath('/admin');
+        revalidatePath(`/admin/players/${userId}`);
         return { success: true, message: `Se regalaron ${count} revisiones de coach.` };
     } catch (e) {
         console.error('Error regalando revisiones de coach:', e);
@@ -931,7 +936,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         } catch {}
 
         // Ejecutar análisis IA sin frames del cliente
-        const { analyzeBasketballShot } = await import('@/ai/flows/analyze-basketball-shot');
+        const { analyzeBasketballShot, detectShots } = await import('@/ai/flows/analyze-basketball-shot');
         const mapAgeGroupToCategory = (ageGroup: string) => {
             switch (ageGroup) {
                 case 'U10': return 'Sub-10';
@@ -964,14 +969,155 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             scoreMetadata = buildScoreMetadata(normalizedChecklist, shotType, weights);
         }
 
-        const analysisResultWithScore = scoreMetadata
+        let analysisResultWithScore = scoreMetadata
             ? { ...analysisResult, scoreMetadata }
             : analysisResult;
+
+        let shotFramesUrl: string | null = null;
+        const detectionByLabel: Array<{ label: string; url: string; result: any }> = [];
+        const buildShotsSummary = async (original: string, totalShots: number, byLabel: Array<{ label: string; count: number }>) => {
+            const aiSummary = await generateAnalysisSummary({
+                baseSummary: original,
+                verificacion_inicial: analysisResultWithScore?.verificacion_inicial,
+                strengths: analysisResultWithScore?.strengths,
+                weaknesses: analysisResultWithScore?.weaknesses,
+                recommendations: analysisResultWithScore?.recommendations,
+                resumen_evaluacion: analysisResultWithScore?.resumen_evaluacion,
+                shots: { total: totalShots, byLabel },
+            });
+            if (aiSummary) return aiSummary;
+            const breakdown = byLabel
+                .filter((item) => typeof item.count === 'number')
+                .map((item) => `${item.label}: ${item.count}`)
+                .join(', ');
+            return `Se analizaron ${totalShots} tiros detectados en ${byLabel.length} videos (${breakdown}).`;
+        };
+        try {
+            if (adminStorage) {
+                const sources = [
+                    { label: 'back', url: videoBackUrl },
+                    { label: 'front', url: videoFrontUrl },
+                    { label: 'left', url: videoLeftUrl },
+                    { label: 'right', url: videoRightUrl },
+                ].filter((s): s is { label: string; url: string } => Boolean(s.url));
+
+                for (const source of sources) {
+                    const result = await detectShots({
+                        videoUrl: source.url,
+                        shotType,
+                        ageCategory,
+                        playerLevel,
+                        availableKeyframes: [],
+                    });
+                    detectionByLabel.push({ label: source.label, url: source.url, result });
+                }
+
+                const primary = detectionByLabel.find((d) => d.label === (videoBackUrl ? 'back' : 'front'))
+                    || detectionByLabel[0];
+                const shots = Array.isArray(primary?.result?.shots) ? primary.result.shots : [];
+                if (primary && shots.length > 0) {
+                    const resp = await fetch(primary.url);
+                    if (resp.ok) {
+                        const { extractFramesBetweenDataUrlsFromBuffer } = await import('@/lib/ffmpeg');
+                        const ab = await resp.arrayBuffer();
+                        const videoBuffer = Buffer.from(ab);
+                        const framesPerShot = 5;
+                        const shotFrames = [];
+                        for (const shot of shots) {
+                            const startSec = Math.max(0, Number(shot.start_ms || 0) / 1000);
+                            const releaseSec = Math.max(startSec + 0.05, Number(shot.release_ms || 0) / 1000);
+                            const frames = await extractFramesBetweenDataUrlsFromBuffer(
+                                videoBuffer,
+                                startSec,
+                                releaseSec,
+                                framesPerShot
+                            );
+                            shotFrames.push({
+                                idx: shot.idx,
+                                start_ms: shot.start_ms,
+                                release_ms: shot.release_ms,
+                                frames,
+                            });
+                        }
+                        const bucket = adminStorage.bucket();
+                        const filePath = `analysis-evidence/${analysisRef.id}/shot-frames.json`;
+                        const fileRef = bucket.file(filePath);
+                        await fileRef.save(JSON.stringify({
+                            analysisId: analysisRef.id,
+                            createdAt: new Date().toISOString(),
+                            source: primary.label,
+                            shots: shotFrames,
+                        }), { contentType: 'application/json' });
+                        await fileRef.makePublic();
+                        shotFramesUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('No se pudieron extraer frames por tiro', e);
+        }
+
+        if (detectionByLabel.length > 0 && analysisResultWithScore?.verificacion_inicial) {
+            let totalShots = 0;
+            const tirosIndividuales: Array<{ numero: number; timestamp: string; descripcion: string }> = [];
+            const shotsByLabel: Array<{ label: string; count: number }> = [];
+            let seq = 1;
+            for (const det of detectionByLabel) {
+                const shots = Array.isArray(det?.result?.shots) ? det.result.shots : [];
+                const shotsCount = typeof det?.result?.shots_count === 'number'
+                    ? det.result.shots_count
+                    : shots.length;
+                totalShots += shotsCount;
+                shotsByLabel.push({ label: det.label, count: shotsCount });
+                shots.forEach((shot: any, idx: number) => {
+                    const startMs = Number(shot?.start_ms || 0);
+                    const releaseMs = Number(shot?.release_ms || 0);
+                    const startLabel = `${(startMs / 1000).toFixed(2)}s`;
+                    const releaseLabel = `${(releaseMs / 1000).toFixed(2)}s`;
+                    const notes = Array.isArray(shot?.notes) ? shot.notes.filter(Boolean) : [];
+                    tirosIndividuales.push({
+                        numero: seq++,
+                        timestamp: `${det.label} ${startLabel}-${releaseLabel}`,
+                        descripcion: `${det.label}: ${notes.length > 0 ? notes.join('; ') : 'Tiro detectado'}`,
+                    });
+                });
+            }
+
+            const primary = detectionByLabel.find((d) => d.label === (videoBackUrl ? 'back' : 'front'))
+                || detectionByLabel[0];
+            let tirosPorSegundo: number | undefined = undefined;
+            if (detectionByLabel.length === 1 && primary?.result) {
+                const fps = Number(primary.result?.diagnostics?.fps_assumed || 0);
+                const framesTotal = Number(primary.result?.diagnostics?.frames_total || 0);
+                const durationSec = fps > 0 && framesTotal > 0 ? framesTotal / fps : null;
+                tirosPorSegundo = durationSec ? Number((totalShots / durationSec).toFixed(3)) : undefined;
+            }
+
+            const verificacion = {
+                ...analysisResultWithScore.verificacion_inicial,
+                tiros_detectados: totalShots,
+                ...(typeof tirosPorSegundo === 'number' ? { tiros_por_segundo: tirosPorSegundo } : {}),
+                deteccion_ia: {
+                    angulo_detectado: detectionByLabel.length > 1 ? 'multi' : (analysisResultWithScore.verificacion_inicial?.angulo_camara || 'desconocido'),
+                    estrategia_usada: detectionByLabel.length > 1 ? 'detectShots.multi' : 'detectShots',
+                    tiros_individuales: tirosIndividuales,
+                    total_tiros: totalShots,
+                },
+            };
+
+            const summary = await buildShotsSummary(analysisResultWithScore.analysisSummary, totalShots, shotsByLabel);
+            analysisResultWithScore = {
+                ...analysisResultWithScore,
+                verificacion_inicial: verificacion,
+                analysisSummary: summary,
+            };
+        }
 
         await db.collection('analyses').doc(analysisRef.id).update({
             status: 'analyzed',
             analysisResult: analysisResultWithScore,
             detailedChecklist: analysisResult.detailedChecklist || [],
+            shotFramesUrl,
             keyframes: { front: [], back: [], left: [], right: [] },
             keyframesStatus: 'pending',
             keyframesUpdatedAt: new Date().toISOString(),

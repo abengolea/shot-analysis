@@ -25,6 +25,10 @@ env:
     value: "1:602998191800:web:dd8a758d589b12b3c5264d"
   - variable: NEXT_PUBLIC_APP_URL
     value: "https://chaaaas.com"
+  - variable: NEXT_PUBLIC_APP_URL_STAGING
+    value: "https://shot-analysis-2-stagin--shotanalisys.us-east4.hosted.app"
+  - variable: APP_ENV
+    value: "staging"
   - variable: MP_WEBHOOK_URL
     value: "https://chaaaas.com/api/payments/webhook"
   - variable: MP_ACCESS_TOKEN_AR

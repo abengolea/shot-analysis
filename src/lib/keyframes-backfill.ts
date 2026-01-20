@@ -1,4 +1,5 @@
 import { adminDb, adminStorage } from '@/lib/firebase-admin';
+import { reanalyzeAnalysis } from '@/lib/reanalyze-analysis';
 import { extractKeyframesFromBuffer } from '@/lib/ffmpeg';
 
 type KeyframesInput = {
@@ -98,6 +99,16 @@ export const scheduleKeyframesExtraction = (params: KeyframesInput) => {
         keyframesStatus: 'ready',
         keyframesUpdatedAt: new Date().toISOString(),
       });
+
+      try {
+        const analysisSnap = await adminDb.collection('analyses').doc(analysisId).get();
+        const analysis = analysisSnap.exists ? (analysisSnap.data() as any) : null;
+        if (!analysis?.analysisReanalyzedAt) {
+          await reanalyzeAnalysis({ analysisId, reason: 'keyframes_ready' });
+        }
+      } catch (e) {
+        console.warn('⚠️ No se pudo reanalizar tras keyframes ready', e);
+      }
     } catch (e) {
       console.error('❌ Error generando keyframes async:', e);
       await adminDb.collection('analyses').doc(analysisId).update({

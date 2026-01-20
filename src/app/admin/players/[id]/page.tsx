@@ -71,8 +71,9 @@ async function getPlayerData(userId: string) {
   };
 }
 
-export default async function AdminPlayerDetailPage({ params }: { params: { id: string } }) {
-  const data = await getPlayerData(params.id);
+export default async function AdminPlayerDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const data = await getPlayerData(id);
   if (!data) {
     return (
       <div className="space-y-4">

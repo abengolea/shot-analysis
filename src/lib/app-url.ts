@@ -3,12 +3,30 @@ export function normalizeBaseUrl(value?: string | null): string {
   return value.replace(/\/+$/, '');
 }
 
-export function getAppBaseUrl(options?: { requestOrigin?: string | null }): string {
+function isLocalhostUrl(value: string): boolean {
+  return /^https?:\/\/localhost(?::\d+)?$/i.test(value);
+}
+
+function resolveEnvBaseUrl(): string {
+  const appEnv = String(process.env.APP_ENV || '').toLowerCase();
+  if (appEnv === 'staging') {
+    const stagingUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL_STAGING || '');
+    if (stagingUrl) return stagingUrl;
+  }
   const envUrl =
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.APP_BASE_URL ||
     process.env.APP_URL;
   const normalizedEnv = normalizeBaseUrl(envUrl);
+  if (!normalizedEnv) return '';
+  if (process.env.NODE_ENV !== 'development' && isLocalhostUrl(normalizedEnv)) {
+    return '';
+  }
+  return normalizedEnv;
+}
+
+export function getAppBaseUrl(options?: { requestOrigin?: string | null }): string {
+  const normalizedEnv = resolveEnvBaseUrl();
   if (normalizedEnv) return normalizedEnv;
 
   const requestOrigin = normalizeBaseUrl(options?.requestOrigin || '');
@@ -26,11 +44,7 @@ export function getAppBaseUrl(options?: { requestOrigin?: string | null }): stri
 }
 
 export function getClientAppBaseUrl(): string {
-  const envUrl =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.APP_BASE_URL ||
-    process.env.APP_URL;
-  const normalizedEnv = normalizeBaseUrl(envUrl);
+  const normalizedEnv = resolveEnvBaseUrl();
   if (normalizedEnv) return normalizedEnv;
 
   if (typeof window !== 'undefined') {
