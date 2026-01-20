@@ -45,6 +45,18 @@ export async function GET(request: Request) {
     const decoded = decodeURIComponent(src);
 
     if (decoded.includes("token=")) {
+      try {
+        const url = new URL(decoded);
+        if (url.hostname === "firebasestorage.googleapis.com") {
+          const match = url.pathname.match(/^\/v0\/b\/([^/]+)\/o\/(.+)$/);
+          if (match) {
+            const bucket = match[1];
+            const objectPath = match[2];
+            const rebuilt = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(objectPath)}${url.search}`;
+            return Response.redirect(rebuilt, 307);
+          }
+        }
+      } catch {}
       return Response.redirect(decoded, 307);
     }
 

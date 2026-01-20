@@ -29,6 +29,9 @@ export const normalizeVideoUrl = (src?: string | null): string | null => {
     return `/api/local-video?name=${encodeURIComponent(name)}`;
   }
   const fixed = fixUndefinedBucket(src);
+  if (fixed.includes("token=")) {
+    return fixed;
+  }
   if (fixed.startsWith("gs://")) {
     return `/api/video-proxy?src=${encodeURIComponent(fixed)}`;
   }
