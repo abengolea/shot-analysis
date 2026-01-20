@@ -83,9 +83,10 @@ import { DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 interface AnalysisViewProps {
   analysis: ShotAnalysis;
   player: Player;
+  viewerRole?: string | null;
 }
 
-export function AnalysisView({ analysis, player }: AnalysisViewProps) {
+export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps) {
   const { userProfile, user } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
@@ -568,8 +569,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const [savingCoachFeedback, setSavingCoachFeedback] = useState(false);
   const [isEditingCoachFeedback, setIsEditingCoachFeedback] = useState(false);
   const [hasExistingCoachFeedback, setHasExistingCoachFeedback] = useState(false);
-  const isAdmin = (userProfile as any)?.role === 'admin';
-  const isCoachRole = (userProfile as any)?.role === 'coach';
+  const roleForPermissions = viewerRole || (userProfile as any)?.role;
+  const isAdmin = roleForPermissions === 'admin';
+  const isCoachRole = roleForPermissions === 'coach';
   const authUserId = user?.uid ? String(user.uid) : '';
   const profileId = (userProfile as any)?.id ? String((userProfile as any).id) : '';
   const userIds = [authUserId, profileId].filter(Boolean);
@@ -2028,8 +2030,27 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       const res = await fetch(`/api/analyses/${safeAnalysis.id}/keyframe-comments`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(body)
       });
-      if (res.ok) { setNewComment(""); await loadCommentsAndAnnotations(); }
-    } catch {}
+      if (res.ok) {
+        setNewComment("");
+        await loadCommentsAndAnnotations();
+        return;
+      }
+      let errorMessage = 'No se pudo guardar el comentario.';
+      try {
+        const errorData = await res.json();
+        errorMessage = errorData?.error || errorMessage;
+      } catch {
+        const errorText = await res.text().catch(() => '');
+        if (errorText) errorMessage = errorText;
+      }
+      toast({ title: 'Error al guardar', description: errorMessage, variant: 'destructive' });
+    } catch (e: any) {
+      toast({
+        title: 'Error al guardar',
+        description: e?.message || 'No se pudo guardar el comentario.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const saveAnnotation = async () => {
@@ -3623,7 +3644,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   onChecklistChange={handleChecklistChange}
                   analysisId={safeAnalysis.id}
                   currentScore={safeAnalysis.score}
-                  editable={userProfile?.role === 'coach' && userProfile.id === (player?.coachId || '')}
+                  editable={roleForPermissions === 'coach' && userProfile?.id === (player?.coachId || '')}
                   showCoachBox={false}
                   coachInline={isCoach}
                   coachIsEditable={isCoach && isEditingCoachFeedback}

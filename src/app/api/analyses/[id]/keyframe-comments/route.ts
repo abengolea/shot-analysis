@@ -36,6 +36,10 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     const analysisSnap = await analysisRef.get();
     if (!analysisSnap.exists) return { ok: false, reason: 'Analysis not found' };
     const analysis = analysisSnap.data() as any;
+    const coachAccess = analysis?.coachAccess || {};
+    const access = coachAccess?.[uid];
+    if (access?.status === 'paid') return { ok: true, uid };
+    if (analysis?.coachId && String(analysis.coachId) === String(uid)) return { ok: true, uid };
     const playerId = analysis?.playerId;
     if (!playerId) return { ok: false, reason: 'Player missing' };
 
