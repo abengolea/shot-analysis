@@ -503,7 +503,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     });
     return hasItems || resolvedCoachSummary.trim().length > 0;
   }, [coachFeedbackByItemId, resolvedCoachSummary]);
-  const showCoachChecklistTab = isCoach || hasCoachFeedback;
+  const showCoachChecklistTab = isCoach || hasCoachFeedback || analysis.coachCompleted === true;
   const isCoachCompleted = analysis.coachCompleted === true || hasCoachFeedback;
   const analysisTabLabel = isCoachCompleted ? "Análisis" : "Análisis IA";
   const analysisSummaryTitle = isCoachCompleted ? "Resumen del Análisis" : "Resumen del Análisis de IA";
@@ -3534,6 +3534,14 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="text-sm font-semibold">Comentario global</div>
+                    <FormattedText
+                      text={resolvedCoachSummary || 'Sin comentario global'}
+                      className="text-sm text-muted-foreground"
+                    />
+                  </div>
+                  <div className="text-sm font-semibold">Calificaciones y comentarios del entrenador</div>
                   {(() => {
                     // Debug: mostrar información sobre los IDs
                     const allChecklistIds = checklistState.flatMap(cat => cat.items.map(it => it.id));
@@ -3627,13 +3635,6 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       </div>
                     ));
                   })()}
-                  <div className="space-y-2">
-                    <div className="text-sm font-semibold">Comentario global</div>
-                  <FormattedText
-                    text={resolvedCoachSummary || 'Sin comentario global'}
-                    className="text-sm text-muted-foreground"
-                  />
-                  </div>
                 </CardContent>
               </Card>
             ) : (
