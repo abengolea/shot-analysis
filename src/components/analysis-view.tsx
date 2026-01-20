@@ -72,6 +72,7 @@ import { getAuth, getIdToken } from "firebase/auth";
 import ShareButtons from "@/components/share-buttons";
 import { useToast } from "@/hooks/use-toast";
 import { getItemWeight, getDefaultWeights } from "@/lib/scoring-client";
+import { normalizeVideoUrl } from "@/lib/video-url";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, addDoc, serverTimestamp, query, where, doc, getDoc } from "firebase/firestore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -2375,12 +2376,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   };
 
   const resolveVideoSrc = (src?: string | null) => {
-    if (!src) return null;
-    if (src.startsWith('temp://')) {
-      const name = src.replace('temp://', '');
-      return `/api/local-video?name=${encodeURIComponent(name)}`;
-    }
-    return src;
+    return normalizeVideoUrl(src);
   };
 
   // Función para renderizar smart keyframes (data URLs)

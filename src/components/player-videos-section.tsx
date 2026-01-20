@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { Calendar, Target, Play, Star, TrendingUp, TrendingDown } from "lucide-react";
 import { ShotAnalysis } from "@/lib/types";
 import { VideoPlayer } from "@/components/video-player";
+import { normalizeVideoUrl } from "@/lib/video-url";
 
 interface PlayerVideosSectionProps {
   analyses: ShotAnalysis[];
@@ -84,6 +85,10 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
   const averageScore = sortedAnalyses.length > 0 
     ? Math.round(sortedAnalyses.reduce((sum, a) => sum + toPct(a.score || 0), 0) / sortedAnalyses.length)
     : 0;
+
+  const selectedVideoUrl = selectedAnalysis?.videoUrl
+    ? normalizeVideoUrl(selectedAnalysis.videoUrl)
+    : null;
 
   const scoreTrend = sortedAnalyses.length >= 2 ? (() => {
     const newest = sortedAnalyses[0];
@@ -166,7 +171,9 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
               const strengths = Array.isArray(analysis.strengths) ? analysis.strengths : [];
               const weaknesses = Array.isArray(analysis.weaknesses) ? analysis.weaknesses : [];
               const thumbnailUrl = getThumbnailUrl(analysis);
-              const videoPreviewUrl = !thumbnailUrl && analysis.videoUrl ? analysis.videoUrl : null;
+              const videoPreviewUrl = !thumbnailUrl && analysis.videoUrl
+                ? normalizeVideoUrl(analysis.videoUrl)
+                : null;
               const analysisLabel = getAnalysisLabel(analysis);
               const shortId = analysis.id ? analysis.id.slice(0, 8).toUpperCase() : "";
               const hasVideo = Boolean(analysis.videoUrl);
@@ -358,12 +365,12 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
               
               <div className="space-y-4">
                 {/* Video Player */}
-                {selectedAnalysis.videoUrl ? (
+                {selectedVideoUrl ? (
                   <div className="space-y-2">
-                    <VideoPlayer src={selectedAnalysis.videoUrl} />
+                    <VideoPlayer src={selectedVideoUrl} />
                     <div className="flex items-center justify-end">
                       <Button asChild variant="outline" size="sm">
-                        <a href={selectedAnalysis.videoUrl} target="_blank" rel="noopener noreferrer">
+                        <a href={selectedVideoUrl} target="_blank" rel="noopener noreferrer">
                           Abrir video en otra pestaña
                         </a>
                       </Button>
