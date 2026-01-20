@@ -24,6 +24,7 @@ export function NotificationsBell() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [ticketsUnread, setTicketsUnread] = useState<number>(0);
   const unread = messages.filter(m => !m.read);
+  const hasUnreadSystemMessage = unread.some((m) => m.fromId === "system" || m.toId === "system");
   const totalUnread = (unread?.length || 0) + (ticketsUnread || 0);
   const isAdmin = (userProfile as any)?.role === 'admin';
   const toDate = (value: any) => {
@@ -125,7 +126,7 @@ export function NotificationsBell() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-          <Bell className="h-5 w-5" />
+          <Bell className={`h-5 w-5 ${hasUnreadSystemMessage ? "text-red-500" : ""}`} />
           {totalUnread > 0 && (
             <span className="absolute -top-1 -right-1 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] h-4 min-w-4 px-1">
               {totalUnread}
