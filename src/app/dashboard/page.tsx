@@ -198,18 +198,36 @@ export default function DashboardPage() {
   const lastJump = lastScoreByType('Lanzamiento de Media Distancia (Jump Shot)');
   const lastFree = lastScoreByType('Tiro Libre');
 
-  // Función para obtener el color del badge según el status
-  const getStatusBadge = (status: string) => {
+  // Función para obtener el/los badge(s) según el status
+  const getStatusBadge = (status: string, unlockStatus?: { status?: string }) => {
+    let baseBadge: JSX.Element;
     switch (status) {
       case 'analyzed':
-        return <Badge className="bg-green-100 text-green-800">Analizado</Badge>;
+        baseBadge = <Badge className="bg-green-100 text-green-800">Analizado</Badge>;
+        break;
       case 'uploaded':
-        return <Badge className="bg-blue-100 text-blue-800">Subido</Badge>;
+        baseBadge = <Badge className="bg-blue-100 text-blue-800">Subido</Badge>;
+        break;
       case 'ai_failed':
-        return <Badge className="bg-red-100 text-red-800">Error IA</Badge>;
+        baseBadge = <Badge className="bg-red-100 text-red-800">Error IA</Badge>;
+        break;
       default:
-        return <Badge variant="secondary">{status}</Badge>;
+        baseBadge = <Badge variant="secondary">{status}</Badge>;
+        break;
     }
+
+    const extraBadge = unlockStatus?.status === 'paid_pending_review'
+      ? <Badge className="bg-amber-100 text-amber-800">En espera de devolución del entrenador</Badge>
+      : unlockStatus?.status === 'pending_payment'
+        ? <Badge className="bg-yellow-100 text-yellow-800">Pago pendiente</Badge>
+        : null;
+
+    return (
+      <span className="inline-flex flex-wrap gap-2">
+        {baseBadge}
+        {extraBadge}
+      </span>
+    );
   };
 
 
@@ -469,7 +487,7 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Calendar className="h-4 w-4" />
                           <FormattedDate dateString={analysis.createdAt} />
-                          {getStatusBadge(analysis.status)}
+                          {getStatusBadge(analysis.status, statusMeta.unlockStatus)}
                         </div>
                         {analysis.status === 'analyzed' && hasCoachFeedback && (
                           <div className="mt-1 text-xs text-emerald-700">

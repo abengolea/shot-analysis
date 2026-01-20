@@ -509,12 +509,6 @@ export function AnalysisPageClient({ id }: { id: string }) {
                     Ver revisión del entrenador
                   </Button>
                 </Link>
-                <Link href={`/player/coaches?analysisId=${analysis.id}`}>
-                  <Button size="default" variant="outline" className="border-primary/30 hover:bg-primary/5">
-                    <UserCircle className="mr-2 h-4 w-4" />
-                    Solicitar otra revisión con otro entrenador
-                  </Button>
-                </Link>
               </div>
             ) : unlockStatus?.status === 'paid_pending_review' ? (
               <div className="flex flex-col items-end gap-2">
@@ -526,22 +520,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
                   <p className="mt-1 text-xs">
                     Pendiente evaluación por {paidCoachLabel}. Te notificaremos cuando esté listo.
                   </p>
-                  <p className="mt-1 text-xs">
-                    Si querés otra revisión con un entrenador distinto, podés solicitarla abajo.
-                  </p>
                 </div>
-                <Link href={`/player/coaches?analysisId=${analysis.id}`}>
-                  <Button size="default" variant="outline" className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100">
-                    <Clock className="mr-2 h-4 w-4" />
-                    Ver estado de revisión
-                  </Button>
-                </Link>
-                <Link href={`/player/coaches?analysisId=${analysis.id}`}>
-                  <Button size="default" variant="outline" className="border-primary/30 hover:bg-primary/5">
-                    <UserCircle className="mr-2 h-4 w-4" />
-                    Solicitar otra revisión con otro entrenador
-                  </Button>
-                </Link>
               </div>
             ) : (
               <Link href={`/player/coaches?analysisId=${analysis.id}`}>
