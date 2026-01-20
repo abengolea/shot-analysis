@@ -12,6 +12,7 @@
  */
 
 import {ai} from '@/ai/genkit';
+import { extractKeyframesFromBuffer } from '@/lib/ffmpeg';
 import {z} from 'genkit';
 
 const AnalyzeBasketballShotInputSchema = z.object({
@@ -44,6 +45,219 @@ const AnalyzeBasketballShotInputSchema = z.object({
   }).optional(),
 });
 export type AnalyzeBasketballShotInput = z.infer<typeof AnalyzeBasketballShotInputSchema>;
+
+type DomainCheckResult = {
+  isBasketball: boolean;
+  confidence: number;
+  hasHoop: boolean;
+  hasPlayer: boolean;
+  hasBall: boolean;
+  isShootingAction: boolean;
+  rationale: string;
+};
+
+type PreviewFrame = {
+  index: number;
+  timestamp: number;
+  dataUrl: string;
+};
+
+async function fetchVideoBuffer(videoUrl: string): Promise<Buffer | null> {
+  try {
+    const resp = await fetch(videoUrl);
+    if (!resp.ok) {
+      console.warn('[domain-check] Video fetch error:', resp.status);
+      return null;
+    }
+    const ab = await resp.arrayBuffer();
+    return Buffer.from(ab);
+  } catch (e) {
+    console.warn('[domain-check] Video fetch exception:', e);
+    return null;
+  }
+}
+
+async function extractPreviewFrames(videoUrl: string, targetFrames = 6): Promise<PreviewFrame[]> {
+  const videoBuffer = await fetchVideoBuffer(videoUrl);
+  if (!videoBuffer || videoBuffer.length === 0) return [];
+  const frames = await extractKeyframesFromBuffer(videoBuffer, targetFrames);
+  return frames.map((frame) => ({
+    index: frame.index,
+    timestamp: Number.isFinite(frame.timestamp) ? frame.timestamp : 0,
+    dataUrl: `data:image/jpeg;base64,${frame.imageBuffer.toString('base64')}`,
+  }));
+}
+
+async function detectBasketballDomain(videoUrl: string): Promise<DomainCheckResult> {
+  const hasKey = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENAI_API_KEY);
+  if (!hasKey) {
+    return {
+      isBasketball: true,
+      confidence: 0.1,
+      hasHoop: false,
+      hasPlayer: false,
+      hasBall: false,
+      isShootingAction: false,
+      rationale: 'No se pudo verificar contenido (sin API key).',
+    };
+  }
+
+  const frames = await extractPreviewFrames(videoUrl, 6);
+  if (frames.length === 0) {
+    return {
+      isBasketball: true,
+      confidence: 0.1,
+      hasHoop: false,
+      hasPlayer: false,
+      hasBall: false,
+      isShootingAction: false,
+      rationale: 'No se pudieron extraer frames para verificacion.',
+    };
+  }
+
+  const parts: any[] = [
+    {
+      text:
+        'Eres un verificador de contenido MUY estricto. Solo responde isBasketball=true si se ve claramente ' +
+        'un jugador lanzando una pelota de basquet hacia un aro o tablero. Si hay dudas, responde false. ' +
+        'Responde SOLO JSON con los campos: ' +
+        '{"isBasketball": boolean, "confidence": number, "hasHoop": boolean, "hasPlayer": boolean, "hasBall": boolean, "isShootingAction": boolean, "rationale": string}.',
+    },
+  ];
+
+  frames.forEach((frame) => {
+    parts.push({ text: `Frame index=${frame.index} ts=${frame.timestamp.toFixed(2)}s` });
+    parts.push({ media: { url: frame.dataUrl, contentType: 'image/jpeg' } });
+  });
+
+  parts.push({
+    text:
+      'Devuelve JSON estricto con TODOS los campos requeridos. Si no puedes confirmar, usa false.',
+  });
+
+  const result = await ai.generate(parts);
+  const text = (result as any)?.outputText ?? (result as any)?.text ?? '';
+  let parsed: DomainCheckResult | null = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) parsed = JSON.parse(match[0]);
+  }
+  if (!parsed) {
+    return {
+      isBasketball: true,
+      confidence: 0.1,
+      hasHoop: false,
+      hasPlayer: false,
+      hasBall: false,
+      isShootingAction: false,
+      rationale: 'Respuesta invalida del verificador de contenido.',
+    };
+  }
+  return parsed;
+}
+
+function buildNonEvaluableAnalysis(reason: string): AnalyzeBasketballShotOutput {
+  const baseReason = reason || 'No evaluable: contenido no corresponde a basquet.';
+  const userFacingMessage =
+    'NO DETECTAMOS UN VIDEO /O VIDEOS DE LANZAMIENTOS DE BASQUET.';
+  const makeItem = (id: string, name: string, description: string) => ({
+    id,
+    name,
+    description: description || 'No provisto por IA',
+    status: 'no_evaluable' as const,
+    rating: 0,
+    timestamp: 'N/A',
+    evidencia: 'No provisto por IA',
+    na: true,
+    razon: baseReason,
+    comment: baseReason,
+  });
+
+  const detailedChecklist = [
+    {
+      category: 'Preparacion',
+      items: [
+        makeItem('alineacion_pies', 'Alineacion de los pies', 'Posicion respecto al aro'),
+        makeItem('alineacion_cuerpo', 'Alineacion del cuerpo', 'Hombros, caderas y pies alineados'),
+        makeItem('muneca_cargada', 'Muneca cargada', 'Flexion hacia atras para backspin'),
+        makeItem('flexion_rodillas', 'Flexion de rodillas', 'Profundidad controlada'),
+        makeItem('hombros_relajados', 'Hombros relajados', 'Sin tension excesiva'),
+        makeItem('enfoque_visual', 'Enfoque visual', 'Mirada fija en el aro'),
+      ],
+    },
+    {
+      category: 'Ascenso',
+      items: [
+        makeItem('mano_no_dominante_ascenso', 'Mano no dominante (ascenso)', 'Acompana sin empujar'),
+        makeItem('codos_cerca_cuerpo', 'Codos cerca del cuerpo', 'Alineados y cercanos al eje'),
+        makeItem('angulo_codo_fijo_ascenso', 'Angulo de codo estable', 'Mantiene angulo fijo hasta el set point'),
+        makeItem('subida_recta_balon', 'Subida recta del balon', 'Ascenso vertical y cercano'),
+        makeItem('trayectoria_hasta_set_point', 'Trayectoria hasta set point', 'Recto y cercano al eje'),
+        makeItem('set_point', 'Set point', 'Altura adecuada y estable'),
+        makeItem('tiempo_lanzamiento', 'Tiempo de lanzamiento', 'Rapidez y continuidad del gesto'),
+      ],
+    },
+    {
+      category: 'Fluidez',
+      items: [
+        makeItem('tiro_un_solo_tiempo', 'Tiro en un solo tiempo', 'Sin detencion en el set point'),
+        makeItem('sincronia_piernas', 'Transferencia energetica', 'Sincronia con piernas'),
+      ],
+    },
+    {
+      category: 'Liberacion',
+      items: [
+        makeItem('mano_no_dominante_liberacion', 'Mano no dominante (liberacion)', 'Se suelta antes'),
+        makeItem('extension_completa_brazo', 'Extension completa del brazo', 'Follow-through completo'),
+        makeItem('giro_pelota', 'Giro de la pelota', 'Backspin uniforme'),
+        makeItem('angulo_salida', 'Angulo de salida', 'Recomendado 45-52 grados'),
+      ],
+    },
+    {
+      category: 'Seguimiento/Post-liberacion',
+      items: [
+        makeItem('equilibrio_post_liberacion', 'Equilibrio general', 'Estabilidad y aterrizaje controlado'),
+        makeItem('duracion_follow_through', 'Duracion del follow-through', 'Mantener extension'),
+        makeItem('consistencia_general', 'Consistencia general', 'Repetibilidad del gesto'),
+      ],
+    },
+  ];
+
+  const allItems = detailedChecklist.flatMap((cat) => cat.items);
+  const listaNoEvaluables = allItems.map((item) => `${item.id}: ${baseReason}`);
+
+  return {
+    verificacion_inicial: {
+      duracion_video: 'N/A',
+      mano_tiro: 'N/A',
+      salta: false,
+      canasta_visible: false,
+      angulo_camara: 'N/A',
+      elementos_entorno: [],
+      tiros_detectados: 0,
+      tiros_por_segundo: 0,
+    },
+    analysisSummary: userFacingMessage,
+    strengths: [baseReason],
+    weaknesses: [baseReason],
+    recommendations: ['Subi un video de lanzamiento de basquet con el aro visible.'],
+    selectedKeyframes: [],
+    keyframeAnalysis: 'No hay keyframes validos para analisis tecnico.',
+    detailedChecklist,
+    resumen_evaluacion: {
+      parametros_evaluados: 0,
+      parametros_no_evaluables: allItems.length,
+      lista_no_evaluables: listaNoEvaluables,
+      score_global: 0,
+      nota: `Score no calculable: ${allItems.length} parametros no evaluables.`,
+      confianza_analisis: 'baja',
+    },
+    caracteristicas_unicas: ['No provisto por IA', 'No provisto por IA', 'No provisto por IA'],
+    advertencia: userFacingMessage,
+  };
+}
 
 // Prompt para detección de lanzamientos
 const detectShotsPrompt = ai.definePrompt({
@@ -140,9 +354,11 @@ SALIDA (JSON ESTRICTO)
 }
 
 REGLAS DE RESPUESTA
+- Debes analizar TODO el video, no cortes antes de que termine.
 - Devuelve EXCLUSIVAMENTE el JSON anterior; sin texto fuera del objeto.
 - Tiempos en milisegundos desde el comienzo del clip.
 - Asegura: shots_count === shots.length, campos obligatorios no nulos, sin NaN, sin solapes.
+ - En notes incluye la señal visual usada (balón visible, extensión de codo, follow-through, etc.).
 
 Video: {{videoUrl}}`
 });
@@ -377,7 +593,7 @@ FORMATO DE RESPUESTA:
     "angulo_camara": "frontal/lateral/trasero",
     "elementos_entorno": ["aro", "tablero", "cancha"],
     "tiros_detectados": ${shotDetection.shots_count},
-    "tiros_por_segundo": ${(shotDetection.shots_count / 15).toFixed(2)},
+    "tiros_por_segundo": "CALCULAR_SI_HAY_DURACION",
     "deteccion_ia": {
       "angulo_detectado": "frontal/lateral/trasero",
       "estrategia_usada": "detección previa",
@@ -427,7 +643,7 @@ FORMATO DE RESPUESTA:
   },
   "caracteristicas_unicas": [
     "Video de baloncesto con ${shotDetection.shots_count} tiros",
-    "Duración de 15 segundos",
+    "Duración real del video (si es visible)",
     "Análisis técnico detallado"
   ]
 }
@@ -679,6 +895,17 @@ function buildLibrePrompt(input: AnalyzeBasketballShotInput): string {
   
   return `Eres un sistema experto de análisis de TIRO LIBRE en baloncesto.
 
+DETECCIÓN DE TIROS (OBLIGATORIO):
+1. Observa TODO el video desde el inicio hasta el final.
+2. Cuenta CADA tiro completo (preparación → liberación → follow-through).
+3. Si hay varios tiros, NO te quedes con el primero: enuméralos.
+4. Si solo ves 1 tiro, indícalo explícitamente.
+
+CONSISTENCIA GENERAL:
+Si hay ≥2 tiros, evalúa la repetibilidad del gesto entre tiros.
+Compara set point, codos cerca del cuerpo, ángulo de salida y equilibrio post‑liberación.
+Si no es visible o hay <2 tiros, marca "no_evaluable" con razón específica.
+
 INFORMACIÓN DEL JUGADOR
 ${input.ageCategory ? `- Categoría de edad: ${input.ageCategory}` : '- Presumir edad basándose en tamaño corporal, proporciones, altura relativa al aro y contexto'}
 
@@ -736,25 +963,32 @@ function buildTresPuntosPrompt(input: AnalyzeBasketballShotInput): string {
   
   let prompt = `Analiza este video de tiro de baloncesto y describe qué ves.
 
+DETECCIÓN DE TIROS (OBLIGATORIO):
+1. Observa TODO el video desde el inicio hasta el final.
+2. Cuenta CADA tiro completo (preparación → liberación → follow-through).
+3. Si hay varios tiros, NO te quedes con el primero: enuméralos.
+4. Si solo ves 1 tiro, indícalo explícitamente.
+
 KEYFRAMES DISPONIBLES PARA ANÁLISIS:
 ${input.availableKeyframes && input.availableKeyframes.length > 0 ? 
   input.availableKeyframes.map(kf => `- Frame ${kf.index}: ${kf.timestamp.toFixed(1)}s - ${kf.description}`).join('\n') :
   'No hay keyframes disponibles'}
 
-INSTRUCCIONES PARA SELECCIÓN DE KEYFRAMES:
-1. Observa TODOS los keyframes disponibles
-2. Selecciona los 6 MÁS IMPORTANTES técnicamente
-3. Prioriza frames que muestren: preparación, set point, liberación, follow-through
-4. Evita frames con poca visibilidad del jugador
-5. selectedKeyframes debe contener exactamente 6 índices (0-15)
+INSTRUCCIONES PARA KEYFRAMES:
+1. Usa SOLO los keyframes listados arriba (no inventes índices).
+2. Selecciona HASTA 6 keyframes más importantes técnicamente:
+   - Si hay 6 o más, devuelve exactamente 6.
+   - Si hay menos de 6, devuelve los disponibles.
+3. Prioriza preparación, set point, liberación, follow-through.
+4. Si NO hay keyframes, usa "selectedKeyframes": [] y explica en "keyframeAnalysis".
 
 Responde en formato JSON con:
 - verificacion_inicial: qué ves en el video (duración, mano, salta, canasta, ángulo, entorno)
-- analysisSummary: resumen simple de lo que observas
+- analysisSummary: resumen simple de lo que observas (incluye cantidad de tiros)
 - strengths: 2-3 fortalezas que ves
 - weaknesses: 2-3 debilidades que ves
-- selectedKeyframes: [6 índices de los frames más importantes técnicamente]
-- keyframeAnalysis: explicación de por qué seleccionaste estos frames
+- selectedKeyframes: [] si no hay keyframes disponibles
+- keyframeAnalysis: explica que no hay keyframes si corresponde
 - detailedChecklist: solo 3 parámetros básicos con status, rating, comment
 
 Formato simple:
@@ -765,13 +999,14 @@ Formato simple:
     "salta": true/false,
     "canasta_visible": true/false,
     "angulo_camara": "frontal/lateral",
-    "elementos_entorno": ["aro", "tablero"]
+    "elementos_entorno": ["aro", "tablero"],
+    "tiros_detectados": X
   },
-  "analysisSummary": "Descripción simple del tiro",
+  "analysisSummary": "Descripción simple del video con X tiros detectados",
   "strengths": ["Fortaleza 1", "Fortaleza 2"],
   "weaknesses": ["Debilidad 1", "Debilidad 2"],
-  "selectedKeyframes": [2, 5, 8, 11, 14, 15],
-  "keyframeAnalysis": "Seleccioné frames que muestran preparación (2), set point (8), liberación (11) y follow-through (15)",
+  "selectedKeyframes": [],
+  "keyframeAnalysis": "No hay keyframes disponibles para este análisis",
   "detailedChecklist": [{
     "category": "Preparación",
     "items": [{
@@ -819,6 +1054,7 @@ Antes de analizar, DEMUESTRA que ves el video respondiendo:
 4. ¿Se ve la canasta en el video? (sí/no)
 5. ¿Desde qué ángulo está grabado? (frontal/lateral/diagonal)
 6. ¿Qué elementos del entorno son visibles? (pared, suelo, otros objetos)
+7. ¿Cuántos tiros completos ves en el video?
 
 🎯 SISTEMA DE PESOS ACTUALIZADO (para calcular score_global):
 - FLUIDEZ: 47.5% peso (CRÍTICO - más importante)
@@ -834,10 +1070,12 @@ Antes de analizar, DEMUESTRA que ves el video respondiendo:
 
 📸 EVIDENCIA VISUAL (Solo para PRO):
 Para cada parámetro evaluado, identifica 1-3 fotogramas específicos que respalden tu evaluación:
-- frameId: Usa "frame_X" donde X es el índice del fotograma (0-15)
+- frameId: Usa "frame_X" donde X es el índice del fotograma (0-15) SOLO si existen keyframes
 - label: Momento del tiro (preparacion, ascenso, set_point, liberacion, follow_through)
 - angle: Ángulo de cámara (frontal, lateral, diagonal)
 - note: Descripción específica de lo que se ve en ese fotograma
+
+Si NO hay keyframes, omite evidenceFrames o déjalos como [] y NO inventes frameId.
 
 Ejemplo: Si evalúas "codos cerca del cuerpo" como "Incorrecto", identifica los fotogramas donde se ve claramente la separación de los codos.
 
@@ -1005,7 +1243,16 @@ Checklist obligatorio (22 parámetros):
      - Estabilización: ¿Mantiene la posición sin balanceos o ajustes compensatorios?
      - Consistencia: ¿Repite el mismo patrón de aterrizaje en tiros múltiples?
    - id: "duracion_follow_through", name: "Duración del follow-through"
-   - id: "consistencia_general", name: "Consistencia general"`;
+   - id: "consistencia_general", name: "Consistencia general"
+     EVALÚA la repetibilidad del gesto entre tiros. Compara al menos 2 tiros en:
+     set point (altura/timing), codos cerca del cuerpo, ángulo de salida y equilibrio post‑liberación.
+     ESCALA:
+     5 = patrón casi idéntico en ≥80% de tiros
+     4 = leves variaciones no sistemáticas
+     3 = variaciones visibles en 1–2 aspectos clave
+     2 = variaciones grandes en ≥2 aspectos
+     1 = patrón cambia claramente entre tiros
+     SI < 2 TIROS o no es visible en el ángulo: marcar como "no_evaluable" con razón específica`;
   }
 
   // ✨ INYECTAR GUÍAS POR CATEGORÍA
@@ -1208,6 +1455,31 @@ const analyzeBasketballShotFlow = ai.defineFlow(
     outputSchema: AnalyzeBasketballShotOutputSchema,
   },
   async input => {
+    // Verificacion de dominio para evitar alucinaciones
+    try {
+      const domainCheck = await detectBasketballDomain(input.videoUrl);
+      const strictConfirm =
+        domainCheck.isBasketball === true &&
+        domainCheck.confidence >= 0.85 &&
+        domainCheck.hasHoop === true &&
+        domainCheck.hasPlayer === true &&
+        domainCheck.hasBall === true &&
+        domainCheck.isShootingAction === true;
+      const notConfirmedBasketball = !strictConfirm;
+      console.warn('[analyzeBasketballShotFlow] Dominio detectado:', domainCheck);
+      if (notConfirmedBasketball) {
+        const reason = domainCheck.isBasketball
+          ? `No se pudo confirmar que sea basquet (confianza ${domainCheck.confidence.toFixed(2)}). ${domainCheck.rationale}`
+          : `Contenido no corresponde a basquet. ${domainCheck.rationale}`;
+        console.warn('[analyzeBasketballShotFlow] Dominio no confirmado:', reason);
+        return buildNonEvaluableAnalysis(reason);
+      }
+    } catch (e: any) {
+      const reason = `No se pudo verificar contenido. ${e?.message || e || 'Error desconocido'}`;
+      console.warn('[analyzeBasketballShotFlow] Verificacion de contenido fallo:', reason);
+      return buildNonEvaluableAnalysis(reason);
+    }
+
     // Construir el prompt dinámicamente
     const dynamicPrompt = await buildAnalysisPrompt(input);
 
@@ -1219,9 +1491,14 @@ const analyzeBasketballShotFlow = ai.defineFlow(
     try {
       parsed = JSON.parse(jsonText);
     } catch (e) {
-      throw new Error('Respuesta de IA inválida: no es JSON valido.');
+      return buildNonEvaluableAnalysis('Respuesta invalida de IA: no es JSON valido.');
     }
 
-    return AnalyzeBasketballShotOutputSchema.parse(parsed);
+    try {
+      return AnalyzeBasketballShotOutputSchema.parse(parsed);
+    } catch (e: any) {
+      const details = e?.errors?.[0]?.message ? ` ${e.errors[0].message}` : '';
+      return buildNonEvaluableAnalysis(`Respuesta invalida de IA: faltan campos requeridos.${details}`);
+    }
   }
 );
