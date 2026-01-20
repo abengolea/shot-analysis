@@ -240,9 +240,9 @@ function buildNonEvaluableAnalysis(reason: string): AnalyzeBasketballShotOutput 
       tiros_por_segundo: 0,
     },
     analysisSummary: userFacingMessage,
-    strengths: [baseReason],
-    weaknesses: [baseReason],
-    recommendations: ['Subi un video de lanzamiento de basquet con el aro visible.'],
+    strengths: [],
+    weaknesses: [],
+    recommendations: [],
     selectedKeyframes: [],
     keyframeAnalysis: 'No hay keyframes validos para analisis tecnico.',
     detailedChecklist,
@@ -358,7 +358,7 @@ REGLAS DE RESPUESTA
 - Devuelve EXCLUSIVAMENTE el JSON anterior; sin texto fuera del objeto.
 - Tiempos en milisegundos desde el comienzo del clip.
 - Asegura: shots_count === shots.length, campos obligatorios no nulos, sin NaN, sin solapes.
- - En notes incluye la señal visual usada (balón visible, extensión de codo, follow-through, etc.).
+- En notes incluye la señal visual usada (balón visible, extensión de codo, follow-through, etc.).
 
 Video: {{videoUrl}}`
 });
@@ -538,6 +538,8 @@ INSTRUCCIONES CRÍTICAS:
 3. NO cambies los timestamps detectados
 4. Analiza SOLO los tiros detectados
 5. Si detectaste ${shotDetection.shots_count} tiros, analiza ${shotDetection.shots_count} tiros
+6. analysisSummary y deteccion_ia deben reflejar exactamente ${shotDetection.shots_count}
+7. NO asumas duración fija; usa la duración real si es visible
 
 VERIFICACIÓN INICIAL OBLIGATORIA:
 Antes de analizar, DEMUESTRA que ves el video real respondiendo:
@@ -702,7 +704,10 @@ const analyzeShotPromptTest = ai.definePrompt({
   name: 'analyzeShotPromptTest',
   input: {schema: AnalyzeBasketballShotInputSchema},
   output: {schema: AnalyzeBasketballShotOutputSchema},
-  prompt: `Analiza este video de baloncesto y responde en JSON:
+  prompt: `Analiza este video de baloncesto COMPLETO y responde en JSON.
+REGLAS:
+- NO inventes tiros ni asumas duración fija.
+- "tiros_detectados" y "analysisSummary" deben coincidir.
 
 {
   "verificacion_inicial": {
@@ -711,14 +716,15 @@ const analyzeShotPromptTest = ai.definePrompt({
     "salta": true,
     "canasta_visible": true,
     "angulo_camara": "lateral",
-    "elementos_entorno": ["aro", "tablero"]
+    "elementos_entorno": ["aro", "tablero"],
+    "tiros_detectados": 2
   },
-  "analysisSummary": "Tiro de baloncesto observado",
+  "analysisSummary": "Video de 5.2s con 2 tiros detectados",
   "strengths": ["Buena postura", "Extensión completa"],
   "weaknesses": ["Timing mejorable"],
   "recommendations": ["Trabajar en sincronización"],
-  "selectedKeyframes": [1, 3, 5, 7, 9, 11],
-  "keyframeAnalysis": "Frames seleccionados muestran el movimiento completo",
+  "selectedKeyframes": [],
+  "keyframeAnalysis": "No hay keyframes disponibles para este análisis",
   "detailedChecklist": [{
     "category": "Preparación",
     "items": [{
@@ -765,8 +771,8 @@ const analyzeShotPromptTestWithEvidence = ai.definePrompt({
   "strengths": ["Buena postura", "Extensión completa"],
   "weaknesses": ["Timing mejorable"],
   "recommendations": ["Trabajar en sincronización"],
-  "selectedKeyframes": [1, 3, 5, 7, 9, 11],
-  "keyframeAnalysis": "Frames seleccionados muestran el movimiento completo",
+  "selectedKeyframes": [],
+  "keyframeAnalysis": "No hay keyframes disponibles para este análisis",
   "detailedChecklist": [{
     "category": "Preparación",
     "items": [{
@@ -777,20 +783,7 @@ const analyzeShotPromptTestWithEvidence = ai.definePrompt({
       "rating": 4,
       "na": false,
       "comment": "Pies bien posicionados",
-      "evidenceFrames": [
-        {
-          "frameId": "frame_2",
-          "label": "preparacion",
-          "angle": "frontal",
-          "note": "Pies alineados correctamente con el aro"
-        },
-        {
-          "frameId": "frame_4",
-          "label": "preparacion", 
-          "angle": "lateral",
-          "note": "Posición estable antes del tiro"
-        }
-      ]
+      "evidenceFrames": []
     }]
   }],
   "resumen_evaluacion": {
@@ -801,7 +794,7 @@ const analyzeShotPromptTestWithEvidence = ai.definePrompt({
     "nota": "CALCULAR conteos reales basados en detailedChecklist",
     "confianza_analisis": "media"
   },
-  "caracteristicas_unicas": ["Video de prueba", "Análisis con evidencia visual", "Fotogramas específicos"]
+  "caracteristicas_unicas": ["Video de prueba", "Análisis con evidencia visual", "Sin keyframes"]
 }
 
 📸 EVIDENCIA VISUAL:
@@ -810,6 +803,8 @@ Para cada parámetro evaluado, identifica 1-3 fotogramas específicos que respal
 - label: Momento del tiro (preparacion, ascenso, set_point, liberacion, follow_through)
 - angle: Ángulo de cámara (frontal, lateral, diagonal)
 - note: Descripción específica de lo que se ve en ese fotograma
+
+Si NO hay keyframes disponibles, devuelve evidenceFrames: [] y NO inventes frameId.
 
 Video: {{videoUrl}}`,
 });
@@ -852,8 +847,8 @@ Formato JSON:
   "strengths": ["Detecté X tiros"],
   "weaknesses": ["N/A"],
   "recommendations": ["N/A"],
-  "selectedKeyframes": [1, 2, 3],
-  "keyframeAnalysis": "N/A",
+  "selectedKeyframes": [],
+  "keyframeAnalysis": "No hay keyframes disponibles para este análisis",
   "detailedChecklist": [{
     "category": "Detección",
     "items": [{
@@ -900,11 +895,13 @@ DETECCIÓN DE TIROS (OBLIGATORIO):
 2. Cuenta CADA tiro completo (preparación → liberación → follow-through).
 3. Si hay varios tiros, NO te quedes con el primero: enuméralos.
 4. Si solo ves 1 tiro, indícalo explícitamente.
+5. NO inventes tiros ni asumas duración fija del video.
 
 CONSISTENCIA GENERAL:
 Si hay ≥2 tiros, evalúa la repetibilidad del gesto entre tiros.
 Compara set point, codos cerca del cuerpo, ángulo de salida y equilibrio post‑liberación.
 Si no es visible o hay <2 tiros, marca "no_evaluable" con razón específica.
+Indica qué tiros comparaste (ej: tiro 1 vs tiro 2, con timestamps de liberación).
 
 INFORMACIÓN DEL JUGADOR
 ${input.ageCategory ? `- Categoría de edad: ${input.ageCategory}` : '- Presumir edad basándose en tamaño corporal, proporciones, altura relativa al aro y contexto'}
@@ -981,10 +978,11 @@ INSTRUCCIONES PARA KEYFRAMES:
    - Si hay menos de 6, devuelve los disponibles.
 3. Prioriza preparación, set point, liberación, follow-through.
 4. Si NO hay keyframes, usa "selectedKeyframes": [] y explica en "keyframeAnalysis".
+5. Si NO hay keyframes, deja evidenceFrames como [] y NO inventes frameId.
 
 Responde en formato JSON con:
 - verificacion_inicial: qué ves en el video (duración, mano, salta, canasta, ángulo, entorno)
-- analysisSummary: resumen simple de lo que observas (incluye cantidad de tiros)
+- analysisSummary: resumen simple de lo que observas (incluye cantidad real de tiros detectados)
 - strengths: 2-3 fortalezas que ves
 - weaknesses: 2-3 debilidades que ves
 - selectedKeyframes: [] si no hay keyframes disponibles
@@ -1085,6 +1083,7 @@ Ejemplo: Si evalúas "codos cerca del cuerpo" como "Incorrecto", identifica los 
 3. DESCRIBE LITERALMENTE lo que ves (NO interpretación)
 4. SCORE basado únicamente en evidencia visual
 5. Si NO es visible: score = 0 y feedback = "No visible en este ángulo"
+6. NO inventes tiros ni asumas duración fija del video
 
 ⚠️ IMPORTANTE: Es NORMAL que algunos parámetros no se puedan evaluar por limitaciones del video.
 NO intentes evaluar parámetros que no puedes ver claramente. Marca como "no_evaluable" con razón específica.
@@ -1252,7 +1251,8 @@ Checklist obligatorio (22 parámetros):
      3 = variaciones visibles en 1–2 aspectos clave
      2 = variaciones grandes en ≥2 aspectos
      1 = patrón cambia claramente entre tiros
-     SI < 2 TIROS o no es visible en el ángulo: marcar como "no_evaluable" con razón específica`;
+     SI < 2 TIROS o no es visible en el ángulo: marcar como "no_evaluable" con razón específica
+     OBLIGATORIO: menciona tiros comparados con timestamps (ej: tiro 1 vs tiro 2, release 2.4s vs 6.8s)`;
   }
 
   // ✨ INYECTAR GUÍAS POR CATEGORÍA
@@ -1376,6 +1376,10 @@ FORMATO DE RESPUESTA OBLIGATORIO - RESPETA LÍMITES DE CARACTERES:
 ⚠️ ADVERTENCIA FINAL:
 Si tu análisis podría aplicar a CUALQUIER video de baloncesto, será RECHAZADO.
 Cada análisis debe ser TAN específico que SOLO aplique a ESTE video.
+
+🔒 REGLA CRÍTICA DE COHERENCIA:
+- El número de tiros en verificacion_inicial.tiros_detectados y en analysisSummary debe coincidir.
+- No inventes tiros ni resumenes con conteos contradictorios.
 
 🚨 VALIDACIÓN CRÍTICA - OBLIGATORIO:
 - description: OBLIGATORIO y no vacío en cada item de detailedChecklist
