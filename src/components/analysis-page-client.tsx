@@ -232,16 +232,19 @@ export function AnalysisPageClient({ id }: { id: string }) {
         const userId = user?.uid || null;
         const coachAccess = userId ? (analysisData.coachAccess || {})[userId] : null;
         const hasCoachAccess = !!coachAccess && coachAccess.status === 'paid';
+        const isAssignedCoach = Boolean(
+          userId && analysisData.coachId && String(analysisData.coachId) === String(userId)
+        );
         const isOwnerPlayer = userId && analysisPlayerId && String(analysisPlayerId) === String(userId);
         const effectiveRole = userRole === 'admin'
           ? 'admin'
-          : hasCoachAccess
+          : (hasCoachAccess || isAssignedCoach)
             ? 'coach'
             : isOwnerPlayer
               ? 'player'
               : userRole;
 
-        if (hasCoachAccess) {
+        if (hasCoachAccess || isAssignedCoach) {
           try { localStorage.setItem('preferredRole', 'coach'); } catch {}
         }
         setViewerRole(effectiveRole || null);
@@ -267,19 +270,20 @@ export function AnalysisPageClient({ id }: { id: string }) {
             hasCoachAccess: !!analysisData.coachAccess,
             coachAccessKeys: analysisData.coachAccess ? Object.keys(analysisData.coachAccess) : [],
             coachAccessForUser: coachAccess,
-            status: coachAccess?.status
+            status: coachAccess?.status,
+            isAssignedCoach
           });
           
-          if (!coachAccess || coachAccess.status !== 'paid') {
-            console.error(`[AnalysisPageClient] ❌ Coach no tiene acceso pagado:`, {
+          if (!hasCoachAccess && !isAssignedCoach) {
+            console.error(`[AnalysisPageClient] ❌ Coach sin acceso:`, {
               hasAccess: !!coachAccess,
               status: coachAccess?.status,
-              required: 'paid'
+              required: 'paid_or_assigned'
             });
             throw new Error('No tienes acceso a este análisis. Debes comprar el acceso primero.');
           }
           
-          console.log(`[AnalysisPageClient] ✅ Coach tiene acceso pagado`);
+          console.log(`[AnalysisPageClient] ✅ Coach con acceso`);
         }
 
         console.log(`[AnalysisPageClient] ✅ Análisis procesado correctamente`);
@@ -536,7 +540,11 @@ export function AnalysisPageClient({ id }: { id: string }) {
 
       {/* Componente principal de análisis */}
       {analysis ? (
-        <AnalysisView analysis={analysis} player={player || {} as Player} />
+        <AnalysisView
+          analysis={analysis}
+          player={player || ({} as Player)}
+          viewerRole={resolvedRole}
+        />
       ) : (
         <Card className="border-yellow-200 bg-yellow-50">
           <CardHeader>
