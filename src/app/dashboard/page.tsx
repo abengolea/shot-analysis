@@ -51,7 +51,9 @@ export default function DashboardPage() {
     hasCoachFeedback?: boolean;
     reviewedCoachIds?: string[];
     unlockStatus?: {
+      status?: 'none' | 'pending_payment' | 'paid_pending_review' | 'reviewed';
       paidCoachIds?: Array<{ coachId: string; coachName: string }>;
+      pendingCoachIds?: Array<{ coachId: string; coachName: string }>;
     };
   }>>({});
   const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
