@@ -756,7 +756,10 @@ const analyzeShotPromptTestWithEvidence = ai.definePrompt({
   name: 'analyzeShotPromptTestWithEvidence',
   input: {schema: AnalyzeBasketballShotInputSchema},
   output: {schema: AnalyzeBasketballShotOutputSchema},
-  prompt: `Analiza este video de baloncesto y responde en JSON. Para cada parámetro evaluado, incluye evidencia visual específica:
+  prompt: `Analiza este video de baloncesto COMPLETO y responde en JSON. Para cada parámetro evaluado, incluye evidencia visual específica.
+REGLAS:
+- NO inventes tiros ni asumas duración fija.
+- "tiros_detectados" y "analysisSummary" deben coincidir.
 
 {
   "verificacion_inicial": {
@@ -765,9 +768,10 @@ const analyzeShotPromptTestWithEvidence = ai.definePrompt({
     "salta": true,
     "canasta_visible": true,
     "angulo_camara": "lateral",
-    "elementos_entorno": ["aro", "tablero"]
+    "elementos_entorno": ["aro", "tablero"],
+    "tiros_detectados": 2
   },
-  "analysisSummary": "Tiro de baloncesto observado",
+  "analysisSummary": "Video de 5.2s con 2 tiros detectados",
   "strengths": ["Buena postura", "Extensión completa"],
   "weaknesses": ["Timing mejorable"],
   "recommendations": ["Trabajar en sincronización"],
@@ -824,6 +828,8 @@ INSTRUCCIONES CRÍTICAS:
 4. Cada lanzamiento individual = 1 tiro
 5. Si el jugador hace varios tiros seguidos, cuenta CADA UNO
 6. IMPORTANTE: El video puede durar más de 30 segundos - sigue viendo hasta el final
+7. NO inventes tiros ni asumas duración fija
+8. "tiros_detectados" y "analysisSummary" deben coincidir
 
 EJEMPLO DE DETECCIÓN:
 - 0-5s: Tiro 1
@@ -879,7 +885,51 @@ const analyzeShotPromptTestPage = ai.definePrompt({
   name: 'analyzeShotPromptTestPage',
   input: {schema: AnalyzeBasketballShotInputSchema},
   output: {schema: AnalyzeBasketballShotOutputSchema},
-  prompt: `Describe exactamente lo que ves en este video de baloncesto. Si no ves algo, di "no visible". No inventes nada.
+  prompt: `Analiza este video de baloncesto COMPLETO y responde en JSON.
+REGLAS:
+- NO inventes tiros ni asumas duración fija.
+- "tiros_detectados" y "analysisSummary" deben coincidir.
+- Si no ves algo, di "no visible".
+
+Formato JSON:
+{
+  "verificacion_inicial": {
+    "duracion_video": "X.Xs",
+    "mano_tiro": "derecha/izquierda/no visible",
+    "salta": true/false,
+    "canasta_visible": true/false,
+    "angulo_camara": "frontal/lateral/diagonal/no visible",
+    "elementos_entorno": ["aro", "tablero"],
+    "tiros_detectados": X
+  },
+  "analysisSummary": "Video de X.Xs con X tiros detectados",
+  "strengths": ["N/A"],
+  "weaknesses": ["N/A"],
+  "recommendations": ["N/A"],
+  "selectedKeyframes": [],
+  "keyframeAnalysis": "No hay keyframes disponibles para este análisis",
+  "detailedChecklist": [{
+    "category": "Detección",
+    "items": [{
+      "id": "tiros_detectados",
+      "name": "Tiros detectados",
+      "description": "Número de tiros en el video",
+      "status": "Correcto",
+      "rating": 5,
+      "na": false,
+      "comment": "Detecté X tiros en el video"
+    }]
+  }],
+  "resumen_evaluacion": {
+    "parametros_evaluados": "CALCULAR_DINAMICAMENTE",
+    "parametros_no_evaluables": "CALCULAR_DINAMICAMENTE",
+    "lista_no_evaluables": "CALCULAR_DINAMICAMENTE",
+    "score_global": 5.0,
+    "nota": "CALCULAR conteos reales basados en detailedChecklist",
+    "confianza_analisis": "alta"
+  },
+  "caracteristicas_unicas": ["Video de baloncesto", "X tiros detectados", "Duración X segundos"]
+}
 
 Video: {{videoUrl}}`
 });
@@ -896,6 +946,8 @@ DETECCIÓN DE TIROS (OBLIGATORIO):
 3. Si hay varios tiros, NO te quedes con el primero: enuméralos.
 4. Si solo ves 1 tiro, indícalo explícitamente.
 5. NO inventes tiros ni asumas duración fija del video.
+6. analysisSummary y tiros_detectados deben coincidir.
+7. Si no hay keyframes, usa selectedKeyframes: [] y evidenceFrames: [].
 
 CONSISTENCIA GENERAL:
 Si hay ≥2 tiros, evalúa la repetibilidad del gesto entre tiros.
@@ -1094,16 +1146,6 @@ Ejemplos comunes:
 - "flexion_rodillas": si el ángulo es frontal
 - "enfoque_visual": si no se ve la cara
 - "giro_pelota": si no se ve el balón claramente
-
-⛔ PALABRAS PROHIBIDAS (si las usas, serás rechazado):
-- "bien alineado", "buena postura", "adecuado", "correcto"
-- "mejora la técnica", "trabaja en", "mantén"
-- "general", "aproximadamente", "parece que"
-
-✅ PALABRAS REQUERIDAS (debes usar):
-- "En el segundo X.X", "Entre X.Xs y X.Xs"
-- "Visible/No visible", "Parcialmente oculto"
-- "Ángulo de cámara no permite ver"
 
 ⚠️ FORMATO ESTRICTO DE CAMPOS:
 - timestamp: SOLO tiempo (ej: "3.2s", "4.5s-5.0s") - NO descripciones largas

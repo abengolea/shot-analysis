@@ -19,6 +19,13 @@ interface PlayerVideosSectionProps {
 export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSectionProps) {
   const [selectedAnalysis, setSelectedAnalysis] = useState<ShotAnalysis | null>(null);
 
+  const isNonBasketballAnalysis = (analysis: ShotAnalysis) => {
+    const warning = (analysis as any)?.advertencia || (analysis as any)?.analysisResult?.advertencia || '';
+    const summary = analysis?.analysisSummary || '';
+    const text = `${warning} ${summary}`.toLowerCase();
+    return /no corresponde a basquet|no detectamos/.test(text);
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('es-ES', {
       year: 'numeric',
@@ -170,6 +177,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
             {sortedAnalyses.map((analysis) => {
               const strengths = Array.isArray(analysis.strengths) ? analysis.strengths : [];
               const weaknesses = Array.isArray(analysis.weaknesses) ? analysis.weaknesses : [];
+              const isNonBasketball = isNonBasketballAnalysis(analysis);
               const thumbnailUrl = getThumbnailUrl(analysis);
               const videoPreviewUrl = !thumbnailUrl && analysis.videoUrl
                 ? normalizeVideoUrl(analysis.videoUrl)
@@ -272,7 +280,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
 
                     {/* Fortalezas y Debilidades */}
                     <div className="space-y-2">
-                      {strengths.length > 0 && (
+                      {!isNonBasketball && strengths.length > 0 && (
                         <div>
                           <p className="text-xs font-medium text-green-600 mb-1">Fortalezas</p>
                           <div className="flex flex-wrap gap-1">
@@ -290,7 +298,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                         </div>
                       )}
 
-                      {weaknesses.length > 0 && (
+                      {!isNonBasketball && weaknesses.length > 0 && (
                         <div>
                           <p className="text-xs font-medium text-orange-600 mb-1">Áreas de Mejora</p>
                           <div className="flex flex-wrap gap-1">
@@ -363,7 +371,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                 </Button>
               </div>
               
-              <div className="space-y-4">
+            <div className="space-y-4">
                 {/* Video Player */}
                 {selectedVideoUrl ? (
                   <div className="space-y-2">
@@ -408,44 +416,48 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                 </div>
 
                 {/* Detalles Completos */}
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <h4 className="font-semibold mb-2">Fortalezas</h4>
-                    <ul className="space-y-1">
-                      {(Array.isArray(selectedAnalysis.strengths) ? selectedAnalysis.strengths : []).map((strength, index) => (
-                        <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
-                          <div className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0" />
-                          {strength}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  
-                  <div>
-                    <h4 className="font-semibold mb-2">Áreas de Mejora</h4>
-                    <ul className="space-y-1">
-                      {(Array.isArray(selectedAnalysis.weaknesses) ? selectedAnalysis.weaknesses : []).map((weakness, index) => (
-                        <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
-                          <div className="w-1.5 h-1.5 bg-orange-600 rounded-full mt-2 flex-shrink-0" />
-                          {weakness}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
+                {!isNonBasketballAnalysis(selectedAnalysis) && (
+                  <>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <h4 className="font-semibold mb-2">Fortalezas</h4>
+                        <ul className="space-y-1">
+                          {(Array.isArray(selectedAnalysis.strengths) ? selectedAnalysis.strengths : []).map((strength, index) => (
+                            <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
+                              <div className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0" />
+                              {strength}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      
+                      <div>
+                        <h4 className="font-semibold mb-2">Áreas de Mejora</h4>
+                        <ul className="space-y-1">
+                          {(Array.isArray(selectedAnalysis.weaknesses) ? selectedAnalysis.weaknesses : []).map((weakness, index) => (
+                            <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
+                              <div className="w-1.5 h-1.5 bg-orange-600 rounded-full mt-2 flex-shrink-0" />
+                              {weakness}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
 
-                {Array.isArray(selectedAnalysis.recommendations) && selectedAnalysis.recommendations.length > 0 && (
-                  <div>
-                    <h4 className="font-semibold mb-2">Recomendaciones</h4>
-                    <ul className="space-y-1">
-                      {(Array.isArray(selectedAnalysis.recommendations) ? selectedAnalysis.recommendations : []).map((rec, index) => (
-                        <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
-                          <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-2 flex-shrink-0" />
-                          {rec}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                    {Array.isArray(selectedAnalysis.recommendations) && selectedAnalysis.recommendations.length > 0 && (
+                      <div>
+                        <h4 className="font-semibold mb-2">Recomendaciones</h4>
+                        <ul className="space-y-1">
+                          {(Array.isArray(selectedAnalysis.recommendations) ? selectedAnalysis.recommendations : []).map((rec, index) => (
+                            <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
+                              <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-2 flex-shrink-0" />
+                              {rec}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>

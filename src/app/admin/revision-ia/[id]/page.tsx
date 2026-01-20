@@ -73,7 +73,9 @@ type Analysis = {
     weaknesses?: string[];
     recommendations?: string[];
     detailedChecklist?: any[];
+    advertencia?: string;
   } | null;
+  advertencia?: string;
 };
 
 export default function AdminRevisionIADetailPage() {
@@ -110,6 +112,13 @@ export default function AdminRevisionIADetailPage() {
   const [questioned, setQuestioned] = useState<Record<string, boolean>>({});
 
   const issueMap = useMemo(() => Object.fromEntries(ISSUE_OPTIONS.map(o => [o.id, o.label])), []);
+  const isNonBasketballAnalysis = (input: Analysis | null) => {
+    if (!input) return false;
+    const warning = input.advertencia || input.analysisResult?.advertencia || '';
+    const summary = input.analysisSummary || input.analysisResult?.analysisSummary || '';
+    const text = `${warning} ${summary}`.toLowerCase();
+    return /no corresponde a basquet|no detectamos/.test(text);
+  };
 
   const load = async () => {
     try {
@@ -145,6 +154,7 @@ export default function AdminRevisionIADetailPage() {
           recommendations: Array.isArray(a.recommendations) ? a.recommendations : undefined,
           detailedChecklist: Array.isArray(a.detailedChecklist) ? a.detailedChecklist : undefined,
           analysisResult: a.analysisResult || null,
+          advertencia: a.advertencia || a.analysisResult?.advertencia,
         });
         setPlayerId(String(a.playerId || ''));
       }
@@ -306,18 +316,22 @@ export default function AdminRevisionIADetailPage() {
           {(() => {
             const checklistAll = (((analysis as any)?.detailedChecklist) || ((analysis as any)?.analysisResult?.detailedChecklist) || []) as any[];
             const flatItems: any[] = checklistAll.flatMap((c: any) => Array.isArray(c?.items) ? c.items : []);
+            const isEvaluable = (item: any) => !item?.na && item?.status !== 'no_evaluable';
             const strengthsFromChecklist: string[] = flatItems
-              .filter((it: any) => (typeof it.rating === 'number' ? it.rating >= 4 : (it.status === 'Correcto' || it.status === 'Excelente')))
+              .filter((it: any) => isEvaluable(it) && (typeof it.rating === 'number' ? it.rating >= 4 : (it.status === 'Correcto' || it.status === 'Excelente')))
               .sort((a: any, b: any) => (Number(b?.rating ?? 3) - Number(a?.rating ?? 3)))
               .map((it: any) => String(it?.name || it?.id))
               .filter(Boolean);
             const weaknessesFromChecklist: string[] = flatItems
-              .filter((it: any) => (typeof it.rating === 'number' ? it.rating <= 2 : (it.status === 'Incorrecto' || it.status === 'Incorrecto leve')))
+              .filter((it: any) => isEvaluable(it) && (typeof it.rating === 'number' ? it.rating <= 2 : (it.status === 'Incorrecto' || it.status === 'Incorrecto leve')))
               .sort((a: any, b: any) => (Number(a?.rating ?? 3) - Number(b?.rating ?? 3)))
               .map((it: any) => String(it?.name || it?.id))
               .filter(Boolean);
             const recommendationsFromChecklist: string[] = flatItems
-              .filter((it: any) => (typeof it.rating === 'number' ? it.rating <= 3 : (it.status === 'Mejorable' || it.status === 'Incorrecto' || it.status === 'Incorrecto leve')))
+              .filter((it: any) =>
+                isEvaluable(it) &&
+                (typeof it.rating === 'number' ? it.rating <= 3 : (it.status === 'Mejorable' || it.status === 'Incorrecto' || it.status === 'Incorrecto leve'))
+              )
               .sort((a: any, b: any) => {
                 const ra = Number(a?.rating ?? 3); const rb = Number(b?.rating ?? 3);
                 if (ra !== rb) return ra - rb; // peor primero
@@ -331,9 +345,19 @@ export default function AdminRevisionIADetailPage() {
             const aiStrengths: string[] = ((analysis as any)?.analysisResult?.strengths || (analysis as any)?.strengths || strengthsFromChecklist || []) as string[];
             const aiWeaknesses: string[] = ((analysis as any)?.analysisResult?.weaknesses || (analysis as any)?.weaknesses || weaknessesFromChecklist || []) as string[];
             const aiRecommendations: string[] = ((analysis as any)?.analysisResult?.recommendations || (analysis as any)?.recommendations || recommendationsFromChecklist || []) as string[];
+            const nonBasketball = isNonBasketballAnalysis(analysis);
+            const filteredStrengths = nonBasketball ? [] : aiStrengths;
+            const filteredWeaknesses = nonBasketball ? [] : aiWeaknesses;
+            const filteredRecommendations = nonBasketball ? [] : aiRecommendations;
 
             // Guardar en variables globales del closure para usar en el JSX siguiente
-            (analysis as any).__derived = { aiSummary, aiStrengths, aiWeaknesses, aiRecommendations, checklistAll };
+            (analysis as any).__derived = {
+              aiSummary,
+              aiStrengths: filteredStrengths,
+              aiWeaknesses: filteredWeaknesses,
+              aiRecommendations: filteredRecommendations,
+              checklistAll
+            };
             return null;
           })()}
           <div className="space-y-1">
