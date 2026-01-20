@@ -3,10 +3,10 @@ import { adminDb } from '@/lib/firebase-admin';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: playerId } = params;
+    const { id: playerId } = await params;
 
     if (!playerId) {
       return NextResponse.json(

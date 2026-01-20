@@ -2898,17 +2898,10 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   <CardHeader>
                     <CardTitle className="font-headline flex items-center gap-2 text-green-900">
                       <UserCircle className="h-5 w-5" />
-                      Comentarios del Entrenador
+                    Comentarios del Entrenador{coachFeedbackCoachName ? ` ${coachFeedbackCoachName}` : ""}
                     </CardTitle>
                     <CardDescription className="text-green-700">
-                      <span className="block">
-                        {isCoach ? 'Tu revisión de este análisis:' : 'Tu entrenador ha revisado este análisis y dejó los siguientes comentarios.'}
-                      </span>
-                      {coachFeedbackCoachName && (
-                        <span className="mt-1 block text-sm font-medium text-green-800">
-                          Revisado por: {coachFeedbackCoachName}
-                        </span>
-                      )}
+                    {isCoach ? 'Tu revisión de este análisis:' : 'Tu entrenador ha revisado este análisis y dejó los siguientes comentarios.'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>

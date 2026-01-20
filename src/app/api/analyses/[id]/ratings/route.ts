@@ -152,6 +152,13 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     const decoded = await adminAuth.verifyIdToken(token);
     const uid = decoded.uid;
 
+    const [coachSnap, playerSnap] = await Promise.all([
+      adminDb.collection('coaches').doc(uid).get(),
+      adminDb.collection('players').doc(uid).get(),
+    ]);
+    const role = coachSnap.exists ? (coachSnap.data() as any)?.role : (playerSnap.exists ? (playerSnap.data() as any)?.role : undefined);
+    if (role !== 'coach' && role !== 'admin') return { ok: false, reason: 'Role mismatch' };
+
     const analysisRef = adminDb.collection('analyses').doc(analysisId);
     const analysisSnap = await analysisRef.get();
     if (!analysisSnap.exists) return { ok: false, reason: 'Analysis not found' };
@@ -159,11 +166,16 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     const playerId = analysis?.playerId;
     if (!playerId) return { ok: false, reason: 'Player missing' };
 
-    const playerSnap = await adminDb.collection('players').doc(playerId).get();
-    const player = playerSnap.exists ? playerSnap.data() as any : null;
+    if (role === 'admin') return { ok: true };
+
+    const playerDoc = await adminDb.collection('players').doc(playerId).get();
+    const player = playerDoc.exists ? playerDoc.data() as any : null;
     const assignedCoachId = player?.coachId || null;
+    const coachAccess = (analysis?.coachAccess || {}) as Record<string, any>;
+    const hasPaidCoachAccess = coachAccess?.[uid]?.status === 'paid';
 
     if (assignedCoachId && assignedCoachId === uid) return { ok: true };
+    if (hasPaidCoachAccess) return { ok: true };
     return { ok: false, reason: 'Forbidden' };
   } catch (e) {
     console.error('verifyCoachPermission error', e);

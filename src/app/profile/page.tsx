@@ -202,7 +202,20 @@ export default function ProfilePage() {
         payload.name = formData.name;
       }
 
-      if (!isCoach) {
+      if (isCoach) {
+        if (formData.experience !== undefined) payload.experience = formData.experience;
+        if (formData.bio !== undefined) payload.bio = formData.bio;
+
+        const rateNum = formData.ratePerAnalysis === '' || formData.ratePerAnalysis === undefined
+          ? undefined
+          : Number(formData.ratePerAnalysis);
+        if (typeof rateNum === 'number' && !Number.isNaN(rateNum)) payload.ratePerAnalysis = rateNum;
+
+        const yearsNum = formData.yearsOfExperience === '' || formData.yearsOfExperience === undefined
+          ? undefined
+          : Number(formData.yearsOfExperience);
+        if (typeof yearsNum === 'number' && !Number.isNaN(yearsNum)) payload.yearsOfExperience = yearsNum;
+      } else {
         // Normalización específica de jugador
         if (formData.dob) {
           const dobVal = formData.dob;
@@ -330,8 +343,8 @@ export default function ProfilePage() {
                       <Input
                         id="ratePerAnalysis"
                         type="number"
-                        value={formData.ratePerAnalysis || ''}
-                        onChange={(e) => handleInputChange('ratePerAnalysis', parseFloat(e.target.value))}
+                        value={formData.ratePerAnalysis ?? ''}
+                        onChange={(e) => handleInputChange('ratePerAnalysis', e.target.value === '' ? '' : parseFloat(e.target.value))}
                         disabled={!isEditing}
                       />
                     </div>
@@ -340,8 +353,8 @@ export default function ProfilePage() {
                       <Input
                         id="yearsOfExperience"
                         type="number"
-                        value={formData.yearsOfExperience || ''}
-                        onChange={(e) => handleInputChange('yearsOfExperience', parseInt(e.target.value))}
+                        value={formData.yearsOfExperience ?? ''}
+                        onChange={(e) => handleInputChange('yearsOfExperience', e.target.value === '' ? '' : parseInt(e.target.value))}
                         disabled={!isEditing}
                       />
                     </div>

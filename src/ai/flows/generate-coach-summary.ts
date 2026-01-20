@@ -28,13 +28,18 @@ const generateCoachSummaryPrompt = ai.definePrompt({
   name: 'generateCoachSummaryPrompt',
   input: { schema: GenerateCoachSummaryInputSchema },
   output: { schema: GenerateCoachSummaryOutputSchema },
-  prompt: `Sos un entrenador de básquet. Redactá un resumen corto y claro en español (máx. 60 palabras).
+  prompt: `Sos un entrenador de básquet. Redactá un resumen completo en español.
 
 Reglas:
 - No inventes información que no esté en los datos.
-- Si hay feedback del coach, priorizalo. Si no, usá el resumen y checklist automático.
-- Incluí 1–2 fortalezas y 2–3 mejoras concretas.
-- Tono profesional y alentador.
+- Si hay feedback del coach, evitá repetir textualmente lo que dijo la IA.
+- Si hay pocas correcciones, empezá con una frase tipo: "En líneas generales estoy de acuerdo con las devoluciones de la IA, pero no concuerdo con estos puntos:".
+- Si hay muchas correcciones, enfocá el resumen principalmente en esas correcciones y en las recomendaciones propias.
+- Si no hay feedback del coach, basate en el resumen y checklist automático.
+- Incluí 2–3 fortalezas y 3–5 mejoras concretas.
+- Luego listá explícitamente qué ítems fueron corregidos y por qué.
+- Cerrá con próximos pasos accionables.
+- Tono profesional, claro y alentador.
 
 Tipo de tiro: {{shotType}}
 Resumen IA: {{analysisSummary}}
