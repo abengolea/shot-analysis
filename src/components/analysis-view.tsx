@@ -1509,6 +1509,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
   const [keyframeComments, setKeyframeComments] = useState<KeyframeComment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [isCommentFocused, setIsCommentFocused] = useState(false);
+  const isCommentFocusedRef = useRef(false);
   const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   type KeyframeAnnotation = { id?: string; overlayUrl: string; createdAt: string };
@@ -1534,7 +1535,6 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
 
   const beginDraw = (e: React.MouseEvent<HTMLCanvasElement>) => {
     setIsCommentFocused(false);
-    if (isCommentFocused) return;
     if (toolRef.current === 'move') return;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const x = e.clientX - rect.left; const y = e.clientY - rect.top;
@@ -1568,7 +1568,6 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
     }
   };
   const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isCommentFocused) return;
     if (!drawingRef.current) return;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const x = e.clientX - rect.left; const y = e.clientY - rect.top;
@@ -4163,7 +4162,12 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                   ref={canvasRef}
                   className="absolute inset-0"
                   style={{ cursor: toolRef.current === 'pencil' || toolRef.current === 'line' || toolRef.current === 'circle' ? 'crosshair' : toolRef.current === 'eraser' ? 'cell' : 'default' }}
-                  onMouseDown={(e) => { setIsCommentFocused(false); beginDraw(e); }}
+                  onMouseDown={(e) => {
+                    if (commentInputRef.current) commentInputRef.current.blur();
+                    isCommentFocusedRef.current = false;
+                    setIsCommentFocused(false);
+                    beginDraw(e);
+                  }}
                   onMouseMove={draw}
                   onMouseUp={endDraw}
                   onMouseLeave={endDraw}
@@ -4284,8 +4288,15 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                         placeholder="Añade tu comentario aquí..."
                         value={newComment}
                         onChange={(e) => setNewComment(e.target.value)}
-                        onFocus={() => { toolRef.current = 'move'; setIsCommentFocused(true); }}
-                        onBlur={() => setIsCommentFocused(false)}
+                        onFocus={() => {
+                          toolRef.current = 'move';
+                          isCommentFocusedRef.current = true;
+                          setIsCommentFocused(true);
+                        }}
+                        onBlur={() => {
+                          isCommentFocusedRef.current = false;
+                          setIsCommentFocused(false);
+                        }}
                         autoFocus
                       />
                       <Button className="w-full" onClick={() => { toolRef.current = 'move'; void saveComment(); }}>
