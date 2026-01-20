@@ -37,6 +37,8 @@ env:
     secret: GEMINI_API_KEY
   - variable: FIREBASE_ADMIN_PROJECT_ID
     value: "shotanalisys"
+  - variable: POSE_SERVICE_URL
+    value: "https://pose-economy-stagin-602998191800.us-east4.run.app/pose"
 
 # Defines a "flow" that can be deployed to Cloud Functions.
 # This can be triggered via an HTTP request or any other supported
