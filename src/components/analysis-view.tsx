@@ -89,6 +89,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const { userProfile, user } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+  const [isClearingScore, setIsClearingScore] = useState(false);
       // Funciones auxiliares para visualización
   const getScoreColor = (score: number) => {
     if (score >= 90) return 'text-green-600';
@@ -249,10 +250,23 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   };
   const availableAngles = knownAngles.filter((a) => hasAngleAvailable(a));
 
-              // Verificar si el análisis es parcial (menos de 2 ángulos)
+  // Verificar si el análisis es parcial (menos de 2 ángulos)
   // Solo mostrar como parcial si hay menos de 2 videos, no 4
   const isPartialAnalysis = availableAngles.length < 2;
   const missingAngles = knownAngles.filter((angle) => !availableAngles.includes(angle));
+  const [partialModalOpen, setPartialModalOpen] = useState(false);
+  const [partialModalDismissed, setPartialModalDismissed] = useState(false);
+
+  useEffect(() => {
+    if (isPartialAnalysis && !partialModalDismissed) {
+      setPartialModalOpen(true);
+      return;
+    }
+    if (!isPartialAnalysis) {
+      setPartialModalOpen(false);
+      setPartialModalDismissed(false);
+    }
+  }, [isPartialAnalysis, partialModalDismissed]);
 
       // Estado del checklist (usar directamente lo que venga en analysis)
   const normalizeChecklist = (input: any): ChecklistCategory[] => {
@@ -454,6 +468,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         return canonical;
   };
 
+  const analysisResult: any = (analysis as any).analysisResult || {};
+  const [remoteAnalysisResult, setRemoteAnalysisResult] = useState<any | null>(null);
   const [checklistState, setChecklistState] = useState<ChecklistCategory[]>(() => {
         if (analysis.detailedChecklist && Array.isArray(analysis.detailedChecklist)) {
       const normalized = normalizeChecklist(analysis.detailedChecklist);
@@ -461,6 +477,52 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
     return [];
   });
+  const [remoteChecklist, setRemoteChecklist] = useState<ChecklistCategory[] | null>(null);
+
+  useEffect(() => {
+    const hasLocalChecklist = Array.isArray(analysis.detailedChecklist) && analysis.detailedChecklist.length > 0;
+    const checklistUrl =
+      (analysis as any).detailedChecklistUrl ||
+      analysisResult?.detailedChecklistUrl ||
+      (analysis as any)?.analysisResult?.detailedChecklistUrl;
+    if (hasLocalChecklist || remoteChecklist || !checklistUrl) return;
+
+    const loadChecklist = async () => {
+      try {
+        const resp = await fetch(String(checklistUrl));
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const checklist = Array.isArray(data?.detailedChecklist) ? data.detailedChecklist : data;
+        if (Array.isArray(checklist)) {
+          const normalized = normalizeChecklist(checklist);
+          setRemoteChecklist(normalized);
+          setChecklistState(normalized);
+        }
+      } catch {}
+    };
+    loadChecklist();
+  }, [analysis, analysisResult, remoteChecklist]);
+
+  useEffect(() => {
+    const analysisUrl =
+      (analysis as any).analysisResultUrl ||
+      analysisResult?.analysisResultUrl ||
+      (analysis as any)?.analysisResult?.analysisResultUrl;
+    if (remoteAnalysisResult || !analysisUrl) return;
+
+    const loadAnalysis = async () => {
+      try {
+        const resp = await fetch(String(analysisUrl));
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const result = data?.analysisResult ?? data;
+        if (result && typeof result === 'object') {
+          setRemoteAnalysisResult(result);
+        }
+      } catch {}
+    };
+    loadAnalysis();
+  }, [analysis, analysisResult, remoteAnalysisResult]);
 
   // ===== Feedback del entrenador (privado para jugador y coach) =====
   const [coachFeedbackByItemId, setCoachFeedbackByItemId] = useState<Record<string, { rating?: number; comment?: string }>>({});
@@ -835,27 +897,27 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const scoreLabel = (r: number) => (r >= 4.5 ? "Excelente" : r >= 4 ? "Correcto" : r >= 3 ? "Mejorable" : r >= 2 ? "Incorrecto leve" : "Incorrecto");
 
   // Asegurar que otros campos opcionales existan (tomando de analysisResult si es necesario)
-  const analysisResult: any = (analysis as any).analysisResult || {};
-  if (allRatings.length === 0 && Array.isArray(analysisResult.detailedChecklist)) {
-    allRatings = (analysisResult.detailedChecklist as any[])
+  const resolvedAnalysisResult = remoteAnalysisResult || analysisResult;
+  if (allRatings.length === 0 && Array.isArray(resolvedAnalysisResult.detailedChecklist)) {
+    allRatings = (resolvedAnalysisResult.detailedChecklist as any[])
       .flatMap((c: any) => c.items || [])
       .map((it: any) => (typeof it.rating === 'number' ? it.rating : mapStatusToRating(it.status)))
       .filter((v: any) => typeof v === 'number');
   }
-  const derivedSummary: string = analysis.analysisSummary || analysisResult.analysisSummary || 'Análisis completado';
+  const derivedSummary: string = analysis.analysisSummary || resolvedAnalysisResult.analysisSummary || 'Análisis completado';
   // Preferir valores del análisis; si no, usar los derivados del checklist; si tampoco, usar analysisResult
   const strengthsFromChecklist = checklistStrengths || [];
   const weaknessesFromChecklist = checklistWeaknesses || [];
   const recommendationsFromChecklist = checklistRecommendations || [];
   const derivedStrengths: string[] = (analysis.strengths && analysis.strengths.length > 0)
     ? analysis.strengths
-    : (strengthsFromChecklist.length > 0 ? strengthsFromChecklist : (analysisResult.strengths || []));
+    : (strengthsFromChecklist.length > 0 ? strengthsFromChecklist : (resolvedAnalysisResult.strengths || []));
   const derivedWeaknesses: string[] = (analysis.weaknesses && analysis.weaknesses.length > 0)
     ? analysis.weaknesses
-    : (weaknessesFromChecklist.length > 0 ? weaknessesFromChecklist : (analysisResult.weaknesses || []));
+    : (weaknessesFromChecklist.length > 0 ? weaknessesFromChecklist : (resolvedAnalysisResult.weaknesses || []));
   const derivedRecommendations: string[] = (analysis.recommendations && analysis.recommendations.length > 0)
     ? analysis.recommendations
-    : (recommendationsFromChecklist.length > 0 ? recommendationsFromChecklist : (analysisResult.recommendations || []));
+    : (recommendationsFromChecklist.length > 0 ? recommendationsFromChecklist : (resolvedAnalysisResult.recommendations || []));
   const derivedKeyframeAnalysis: string | null = (analysis as any).keyframeAnalysis || analysisResult.keyframeAnalysis || null;
 
   const toPct = (score: number): number => {
@@ -863,6 +925,14 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     if (score <= 5) return Math.round((score / 5) * 100);
     return Math.round(score);
   };
+
+  const ownerId = (analysis as any)?.playerId || (player as any)?.id;
+  const isOwnerPlayer = Boolean(currentUserId && ownerId && String(currentUserId) === String(ownerId));
+  const nonBasketballWarning =
+    (analysis as any).advertencia || (analysisResult as any).advertencia || '';
+  const isNonBasketballVideo =
+    /no corresponde a basquet|no detectamos/i.test(nonBasketballWarning || derivedSummary);
+  const canClearScore = Boolean(isOwnerPlayer && currentUserId);
 
   const safeAnalysis = {
     ...analysis,
@@ -2793,26 +2863,32 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 </CardContent>
               </Card>
             )}
-            {/* Aviso de análisis parcial */}
+            {/* Aviso de análisis parcial (modal) */}
             {isPartialAnalysis && (
-              <Card className="border-amber-200 bg-amber-50">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-amber-800">
-                    <ShieldAlert className="h-5 w-5" />
-                    Análisis Parcial
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <p className="text-amber-700">
+              <Dialog
+                open={partialModalOpen}
+                onOpenChange={(open) => {
+                  setPartialModalOpen(open);
+                  if (!open) setPartialModalDismissed(true);
+                }}
+              >
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-amber-800">
+                      <ShieldAlert className="h-5 w-5" />
+                      Análisis Parcial
+                    </DialogTitle>
+                    <DialogDescription className="text-amber-700">
                       Este análisis se realizó con videos limitados. Para un análisis completo, se recomienda subir videos desde múltiples ángulos.
-                    </p>
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-3">
                     <div className="flex flex-wrap gap-2">
                       <span className="text-sm font-medium text-amber-700">Videos disponibles:</span>
-                      {availableAngles.map(angle => (
+                      {availableAngles.map((angle) => (
                         <Badge key={angle} variant="secondary" className="bg-amber-100 text-amber-800">
-                          {angle === 'front' ? 'Frente' : 
-                           angle === 'back' ? 'Espalda' : 
+                          {angle === 'front' ? 'Frente' :
+                           angle === 'back' ? 'Espalda' :
                            angle === 'left' ? 'Izquierda' : 'Derecha'}
                         </Badge>
                       ))}
@@ -2820,18 +2896,23 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     {missingAngles.length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         <span className="text-sm font-medium text-amber-700">Ángulos faltantes:</span>
-                        {missingAngles.map(angle => (
+                        {missingAngles.map((angle) => (
                           <Badge key={angle} variant="outline" className="border-amber-300 text-amber-600">
-                            {angle === 'front' ? 'Frente' : 
-                             angle === 'back' ? 'Espalda' : 
+                            {angle === 'front' ? 'Frente' :
+                             angle === 'back' ? 'Espalda' :
                              angle === 'left' ? 'Izquierda' : 'Derecha'}
                           </Badge>
                         ))}
                       </div>
                     )}
                   </div>
-                </CardContent>
-              </Card>
+                  <DialogFooter>
+                    <Button onClick={() => { setPartialModalOpen(false); setPartialModalDismissed(true); }}>
+                      Aceptar
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             )}
 
             {/* PUNTUACIÓN GLOBAL (si existe scoreMetadata) */}
@@ -2876,6 +2957,11 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       <strong> Calculado:</strong> {new Date((safeAnalysis as any).scoreMetadata.calculatedAt).toLocaleString('es-ES')}
                     </p>
                   </div>
+                  {isPartialAnalysis && availableAngles.length === 1 && (
+                    <p className="mt-3 text-sm text-amber-700">
+                      Nota: la puntuación global se calculó con un solo video.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -2917,23 +3003,75 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 </Badge>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground">{safeAnalysis.analysisSummary}</p>
-                {avgRating != null && (
-                  <div className="mt-3 flex items-center gap-3">
-                    <Badge>{Math.round((avgRating/5)*100)} / 100</Badge>
-                    <span className="text-sm text-muted-foreground">Evaluación final: {scoreLabel(avgRating)}</span>
+                {isNonBasketballVideo && (
+                  <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                    <div className="flex items-start gap-2">
+                      <ShieldAlert className="mt-0.5 h-4 w-4" />
+                      <div>
+                        <p className="text-sm font-medium">Esto no es basquet.</p>
+                        <p className="text-xs text-amber-800">{nonBasketballWarning}</p>
+                        {canClearScore && (
+                          <div className="mt-3">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={isClearingScore}
+                              onClick={async () => {
+                                try {
+                                  setIsClearingScore(true);
+                                  const auth = getAuth();
+                                  const cu = auth.currentUser;
+                                  if (!cu) throw new Error('Usuario no autenticado');
+                                  const token = await getIdToken(cu, true);
+                                  const res = await fetch(`/api/analyses/${analysis.id}/clear-score`, {
+                                    method: 'POST',
+                                    headers: { Authorization: `Bearer ${token}` },
+                                  });
+                                  if (!res.ok) throw new Error('No se pudo borrar la calificación');
+                                  toast({ title: 'Calificación eliminada', description: 'No afectará tu promedio.' });
+                                } catch (e: any) {
+                                  toast({
+                                    title: 'No se pudo borrar la calificación',
+                                    description: e?.message || 'Error desconocido',
+                                    variant: 'destructive',
+                                  });
+                                } finally {
+                                  setIsClearingScore(false);
+                                }
+                              }}
+                            >
+                              {isClearingScore ? 'Eliminando…' : 'Eliminar calificación'}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
-                <div className="mt-6 rounded-md border bg-muted/30 p-4">
-                  <p className="text-sm font-medium">¿Te sirvió este análisis? Compartilo en tus redes:</p>
-                  <div className="mt-3">
-                    <ShareButtons text="Mirá mi análisis de tiro en IaShot" />
+                <p className="text-muted-foreground">{safeAnalysis.analysisSummary}</p>
+                {(avgRating != null || isNonBasketballVideo) && (
+                  <div className="mt-3 flex items-center gap-3">
+                    <Badge>
+                      {isNonBasketballVideo ? 0 : Math.round((avgRating! / 5) * 100)} / 100
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      Evaluación final: {isNonBasketballVideo ? 'No evaluable' : scoreLabel(avgRating!)}
+                    </span>
                   </div>
-                </div>
+                )}
+                {!isNonBasketballVideo && (
+                  <div className="mt-6 rounded-md border bg-muted/30 p-4">
+                    <p className="text-sm font-medium">¿Te sirvió este análisis? Compartilo en tus redes:</p>
+                    <div className="mt-3">
+                      <ShareButtons text="Mirá mi análisis de tiro en IaShot" />
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
             {/* Fortalezas, Debilidades y Recomendaciones (IA) */}
+            {!isNonBasketballVideo && (
             <div className="grid gap-4 md:grid-cols-2">
               <Card>
                 <CardHeader>
@@ -2976,7 +3114,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 </CardContent>
               </Card>
             </div>
+            )}
 
+            {!isNonBasketballVideo && (
             <Card>
               <CardHeader>
                 <CardTitle className="font-headline flex items-center gap-2 text-accent">
@@ -2998,6 +3138,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 )}
               </CardContent>
             </Card>
+            )}
 
             {/* (Videos y Fotogramas) fue movido a la pestaña "videos" */}
           </div>
