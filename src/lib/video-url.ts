@@ -28,8 +28,15 @@ export const normalizeVideoUrl = (src?: string | null): string | null => {
     const name = src.replace("temp://", "");
     return `/api/local-video?name=${encodeURIComponent(name)}`;
   }
-  if (src.startsWith("gs://")) {
-    return gsToHttps(src);
+  const fixed = fixUndefinedBucket(src);
+  if (fixed.startsWith("gs://")) {
+    return `/api/video-proxy?src=${encodeURIComponent(fixed)}`;
   }
-  return fixUndefinedBucket(src);
+  if (
+    fixed.includes("storage.googleapis.com/") ||
+    fixed.includes("firebasestorage.googleapis.com/")
+  ) {
+    return `/api/video-proxy?src=${encodeURIComponent(fixed)}`;
+  }
+  return fixed;
 };
