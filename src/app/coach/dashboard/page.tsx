@@ -33,6 +33,7 @@ export default function CoachDashboardPage() {
   const [analyses, setAnalyses] = useState<any[]>([]);
   const [extraPlayerNames, setExtraPlayerNames] = useState<Record<string, string>>({});
   const [extraPlayers, setExtraPlayers] = useState<Record<string, Player>>({});
+  const [analysisPlayerById, setAnalysisPlayerById] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<string>("messages");
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false);
   const [messagesTab, setMessagesTab] = useState<"requests" | "messages" | "system">("requests");
@@ -93,6 +94,8 @@ export default function CoachDashboardPage() {
   };
   const extractAnalysisIdFromText = (text?: string | null) => {
     if (!text) return "";
+    const urlMatch = text.match(/analysis\/([A-Za-z0-9_-]+)/);
+    if (urlMatch?.[1]) return urlMatch[1];
     const match = text.match(/analysis_[A-Za-z0-9_-]+/);
     return match?.[0] || "";
   };
@@ -225,12 +228,36 @@ export default function CoachDashboardPage() {
     return visibleMessages.filter((m) => m.fromId !== 'system' && m.toId !== 'system');
   }, [visibleMessages]);
   const requestMessages = useMemo(() => {
+    const requestPattern = /(analiz|analis|revis|evalu|feedback|devoluci|tiros?)/i;
     return visibleMessages.filter((m) => {
       const isSystemMessage = m.fromId === 'system';
-      const isAnalysisMessage = Boolean(m.analysisId);
-      return !isSystemMessage && !isAnalysisMessage && m.fromId !== user?.uid;
+      const isFromCoach = m.fromId === user?.uid;
+      const hasAnalysisRef = Boolean(m.analysisId) || Boolean(extractAnalysisIdFromText(m.text));
+      const looksLikeRequest = requestPattern.test(m.text || '');
+      return !isSystemMessage && !isFromCoach && (hasAnalysisRef || looksLikeRequest);
     });
   }, [visibleMessages, user]);
+  const analysisIdsFromMessages = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of messages) {
+      const resolvedId = m.analysisId || extractAnalysisIdFromText(m.text);
+      if (resolvedId) ids.add(String(resolvedId));
+    }
+    return Array.from(ids);
+  }, [messages]);
+  const missingAnalysisIds = useMemo(() => {
+    return analysisIdsFromMessages.filter((id) => !analysisPlayerById[id]);
+  }, [analysisIdsFromMessages, analysisPlayerById]);
+  const playerIdsFromAnalysisMessages = useMemo(() => {
+    return Object.values(analysisPlayerById).map((id) => String(id)).filter(Boolean);
+  }, [analysisPlayerById]);
+  const requestPlayerIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of requestMessages) {
+      if (m?.fromId) ids.add(String(m.fromId));
+    }
+    return Array.from(ids);
+  }, [requestMessages]);
   const systemMessages = useMemo(() => {
     return visibleMessages.filter((m) => m.fromId === 'system' || m.toId === 'system');
   }, [visibleMessages]);
@@ -255,6 +282,34 @@ export default function CoachDashboardPage() {
       const pid = (p as any)?.id;
       if (pid && !byId[pid]) byId[pid] = p;
     }
+    for (const pid of playerIdsFromAnalysisMessages) {
+      if (!pid || byId[pid]) continue;
+      byId[pid] = {
+        id: pid,
+        name: playerNameLookup[pid] || pid,
+        avatarUrl: 'https://placehold.co/100x100.png',
+        role: 'player',
+        status: 'pending',
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        playerLevel: '-',
+        ageGroup: '-',
+      } as any;
+    }
+    for (const pid of requestPlayerIds) {
+      if (!pid || byId[pid]) continue;
+      byId[pid] = {
+        id: pid,
+        name: playerNameLookup[pid] || pid,
+        avatarUrl: 'https://placehold.co/100x100.png',
+        role: 'player',
+        status: 'pending',
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        playerLevel: '-',
+        ageGroup: '-',
+      } as any;
+    }
     for (const a of analyses) {
       const pid = a?.playerId ? String(a.playerId) : '';
       if (!pid || byId[pid]) continue;
@@ -271,7 +326,7 @@ export default function CoachDashboardPage() {
       } as any;
     }
     return Object.values(byId) as Player[];
-  }, [players, extraPlayers, analyses, playerNameLookup]);
+  }, [players, extraPlayers, analyses, playerNameLookup, requestPlayerIds, playerIdsFromAnalysisMessages]);
   const playerOptions = useMemo(() => {
     const options = mergedPlayers.map(p => ({ id: p.id, name: p.name }));
     return [{ id: 'all', name: 'Todos' }, ...options];
@@ -296,6 +351,16 @@ export default function CoachDashboardPage() {
     for (const id of Object.keys(extraPlayerNames)) known.add(id);
     for (const id of Object.keys(extraPlayers)) known.add(id);
     const seen = new Set<string>();
+    for (const pid of playerIdsFromAnalysisMessages) {
+      if (!pid || seen.has(pid) || known.has(pid)) continue;
+      seen.add(pid);
+      missing.push(pid);
+    }
+    for (const pid of requestPlayerIds) {
+      if (!pid || seen.has(pid) || known.has(pid)) continue;
+      seen.add(pid);
+      missing.push(pid);
+    }
     for (const a of analyses) {
       const pid = a?.playerId ? String(a.playerId) : '';
       if (!pid || seen.has(pid) || known.has(pid)) continue;
@@ -303,7 +368,32 @@ export default function CoachDashboardPage() {
       missing.push(pid);
     }
     return missing;
-  }, [analyses, players, extraPlayerNames, extraPlayers]);
+  }, [analyses, players, extraPlayerNames, extraPlayers, requestPlayerIds, playerIdsFromAnalysisMessages]);
+
+  useEffect(() => {
+    if (missingAnalysisIds.length === 0) return;
+    let cancelled = false;
+    const loadMissingAnalyses = async () => {
+      try {
+        const found: Record<string, string> = {};
+        for (const id of missingAnalysisIds) {
+          const snap = await getDoc(doc(db as any, 'analyses', id));
+          if (!snap.exists()) continue;
+          const data = snap.data() as any;
+          if (data?.playerId) {
+            found[id] = String(data.playerId);
+          }
+        }
+        if (!cancelled && Object.keys(found).length > 0) {
+          setAnalysisPlayerById((prev) => ({ ...prev, ...found }));
+        }
+      } catch (e) {
+        console.error('Error cargando análisis para mensajes:', e);
+      }
+    };
+    loadMissingAnalyses();
+    return () => { cancelled = true; };
+  }, [missingAnalysisIds]);
 
   useEffect(() => {
     if (missingPlayerIds.length === 0) return;
@@ -554,6 +644,8 @@ export default function CoachDashboardPage() {
                   const isAnalysisMessage = Boolean(resolvedAnalysisId);
                   const showProposalActions = !isSystemMessage && !isAnalysisMessage;
                   const analysisHref = resolvedAnalysisId ? `/analysis/${resolvedAnalysisId}#messages` : '';
+                  const playerIdForAnalysis = resolvedAnalysisId ? analysisPlayerById[resolvedAnalysisId] : '';
+                  const playerProfileHref = playerIdForAnalysis ? `/players/${playerIdForAnalysis}` : '';
                   return (
                   <Card key={m.id} className="hover:shadow-sm">
                     <CardHeader className="pb-2 flex flex-row items-center justify-between">
@@ -568,6 +660,11 @@ export default function CoachDashboardPage() {
                         {isAnalysisMessage && (
                           <Link className="text-xs text-primary" href={analysisHref}>
                             Ir al lanzamiento
+                          </Link>
+                        )}
+                        {playerProfileHref && (
+                          <Link className="text-xs text-primary" href={playerProfileHref}>
+                            Ver perfil del jugador
                           </Link>
                         )}
                         {showProposalActions && (
@@ -642,6 +739,8 @@ export default function CoachDashboardPage() {
                   const showProposalActions = !isSystemMessage && !isAnalysisMessage;
                   const analysisHref = resolvedAnalysisId ? `/analysis/${resolvedAnalysisId}#messages` : '';
                   const isOwnMessage = m.fromId === user?.uid;
+                  const playerIdForAnalysis = resolvedAnalysisId ? analysisPlayerById[resolvedAnalysisId] : '';
+                  const playerProfileHref = playerIdForAnalysis ? `/players/${playerIdForAnalysis}` : '';
                   return (
                   <Card key={m.id} className="hover:shadow-sm">
                     <CardHeader className="pb-2 flex flex-row items-center justify-between">
@@ -656,6 +755,11 @@ export default function CoachDashboardPage() {
                         {isAnalysisMessage && (
                           <Link className="text-xs text-primary" href={analysisHref}>
                             Ir al lanzamiento
+                          </Link>
+                        )}
+                        {playerProfileHref && (
+                          <Link className="text-xs text-primary" href={playerProfileHref}>
+                            Ver perfil del jugador
                           </Link>
                         )}
                         {showProposalActions && !isOwnMessage && (
@@ -726,7 +830,10 @@ export default function CoachDashboardPage() {
                   <div className="py-8 text-center text-muted-foreground">Sin mensajes de sistema</div>
                 )}
                 {systemMessages.map((m) => {
-                  const analysisHref = m.analysisId ? `/analysis/${m.analysisId}#messages` : '';
+                  const resolvedAnalysisId = m.analysisId || extractAnalysisIdFromText(m.text);
+                  const analysisHref = resolvedAnalysisId ? `/analysis/${resolvedAnalysisId}#messages` : '';
+                  const playerIdForAnalysis = resolvedAnalysisId ? analysisPlayerById[resolvedAnalysisId] : '';
+                  const playerProfileHref = playerIdForAnalysis ? `/players/${playerIdForAnalysis}` : '';
                   return (
                   <Card key={m.id} className="hover:shadow-sm">
                     <CardHeader className="pb-2 flex flex-row items-center justify-between">
@@ -738,9 +845,14 @@ export default function CoachDashboardPage() {
                         {!m.read && (
                           <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
                         )}
-                        {m.analysisId && (
+                        {resolvedAnalysisId && (
                           <Link className="text-xs text-primary" href={analysisHref}>
                             Ir al lanzamiento
+                          </Link>
+                        )}
+                        {playerProfileHref && (
+                          <Link className="text-xs text-primary" href={playerProfileHref}>
+                            Ver perfil del jugador
                           </Link>
                         )}
                       </div>
