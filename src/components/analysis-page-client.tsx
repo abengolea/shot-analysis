@@ -229,9 +229,10 @@ export function AnalysisPageClient({ id }: { id: string }) {
         } as any;
 
         const analysisPlayerId = analysisData.playerId;
-        const coachAccess = (analysisData.coachAccess || {})[user.uid];
+        const userId = user?.uid || null;
+        const coachAccess = userId ? (analysisData.coachAccess || {})[userId] : null;
         const hasCoachAccess = !!coachAccess && coachAccess.status === 'paid';
-        const isOwnerPlayer = analysisPlayerId && String(analysisPlayerId) === String(user.uid);
+        const isOwnerPlayer = userId && analysisPlayerId && String(analysisPlayerId) === String(userId);
         const effectiveRole = userRole === 'admin'
           ? 'admin'
           : hasCoachAccess
@@ -246,15 +247,15 @@ export function AnalysisPageClient({ id }: { id: string }) {
         setViewerRole(effectiveRole || null);
 
         console.log(`[AnalysisPageClient] 👤 Usuario autenticado:`, {
-          uid: user.uid,
+          uid: userId || 'anon',
           role: effectiveRole
         });
 
         // Si es jugador, verificar que el análisis le pertenece
-        if (effectiveRole === 'player' && analysisData.playerId !== user.uid) {
+        if (effectiveRole === 'player' && userId && analysisData.playerId !== userId) {
           console.error(`[AnalysisPageClient] ❌ Jugador no tiene permiso:`, {
             analysisPlayerId: analysisData.playerId,
-            userUid: user.uid
+            userUid: userId
           });
           throw new Error('No tienes permiso para ver este análisis');
         }
@@ -262,7 +263,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
         // Si es coach, verificar que tenga acceso pagado al análisis
         if (effectiveRole === 'coach') {
           console.log(`[AnalysisPageClient] 🔐 Verificando acceso del coach:`, {
-            coachUid: user.uid,
+            coachUid: userId || 'anon',
             hasCoachAccess: !!analysisData.coachAccess,
             coachAccessKeys: analysisData.coachAccess ? Object.keys(analysisData.coachAccess) : [],
             coachAccessForUser: coachAccess,

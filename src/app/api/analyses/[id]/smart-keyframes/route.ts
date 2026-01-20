@@ -126,7 +126,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
           return [angle, frames] as const;
         } catch (e) {
           console.warn(`⚠️ No se pudieron leer smart keyframes de ${angle}`, e);
-          return [angle, []] as const;
+          return [angle, [] as SmartKeyframe[]] as const;
         }
       })
     );

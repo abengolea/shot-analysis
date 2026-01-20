@@ -8,6 +8,7 @@ import { scheduleKeyframesExtraction } from '@/lib/keyframes-backfill';
 import { sendCustomEmail } from '@/lib/email-service';
 import { getAppBaseUrl } from '@/lib/app-url';
 import { buildScoreMetadata, loadWeightsFromFirestore } from '@/lib/scoring';
+import type { ChecklistCategory, DetailedChecklistItem } from '@/lib/types';
 // Acción: añadir entrenador desde el formulario de registro de coaches
 const AddCoachSchema = z.object({
     name: z.string().min(2, "Nombre demasiado corto"),
@@ -20,6 +21,36 @@ type AddCoachState = {
     success: boolean;
     message: string;
     errors?: Record<string, string[]>;
+};
+
+const normalizeDetailedChecklist = (input: any[]): ChecklistCategory[] => {
+    if (!Array.isArray(input)) return [];
+    const toRating = (value: any): DetailedChecklistItem['rating'] => {
+        if (value === 0) return 0;
+        if (typeof value !== 'number' || Number.isNaN(value)) return undefined;
+        const rounded = Math.round(value);
+        if (rounded <= 0) return 0;
+        if (rounded >= 5) return 5;
+        return rounded as 1 | 2 | 3 | 4;
+    };
+    return input.map((cat) => ({
+        category: String(cat?.category || 'SIN CATEGORIA'),
+        items: Array.isArray(cat?.items)
+            ? cat.items.map((it: any) => ({
+                id: String(it?.id || ''),
+                name: String(it?.name || ''),
+                description: String(it?.description || ''),
+                status: (it?.status as DetailedChecklistItem['status']) || 'Mejorable',
+                rating: toRating(it?.rating),
+                na: Boolean(it?.na),
+                comment: String(it?.comment || ''),
+                timestamp: typeof it?.timestamp === 'string' ? it.timestamp : undefined,
+                evidencia: typeof it?.evidencia === 'string' ? it.evidencia : undefined,
+                razon: typeof it?.razon === 'string' ? it.razon : undefined,
+                coachComment: typeof it?.coachComment === 'string' ? it.coachComment : undefined,
+            }))
+            : [],
+    }));
 };
 
 export async function addCoach(prevState: AddCoachState, formData: FormData): Promise<AddCoachState> {
@@ -929,7 +960,8 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         let scoreMetadata = undefined;
         if (detailedChecklist.length > 0) {
             const weights = await loadWeightsFromFirestore(shotType);
-            scoreMetadata = buildScoreMetadata(detailedChecklist, shotType, weights);
+            const normalizedChecklist = normalizeDetailedChecklist(detailedChecklist);
+            scoreMetadata = buildScoreMetadata(normalizedChecklist, shotType, weights);
         }
 
         const analysisResultWithScore = scoreMetadata
