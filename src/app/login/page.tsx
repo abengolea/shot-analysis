@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { LoginForm } from "@/components/login-form";
 import { BasketballIcon } from "@/components/icons";
 
@@ -15,7 +16,15 @@ export default function LoginPage() {
               Selecciona tu rol e ingresa tus credenciales.
             </p>
          </div>
-        <LoginForm />
+        <Suspense
+          fallback={
+            <div className="p-6 text-center text-sm text-muted-foreground">
+              Cargando...
+            </div>
+          }
+        >
+          <LoginForm />
+        </Suspense>
         <p className="mt-6 text-center text-sm text-muted-foreground">
           ¿No tienes una cuenta?{' '}
           <Link href="/register" className="font-semibold text-primary hover:underline">

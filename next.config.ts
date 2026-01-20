@@ -41,6 +41,13 @@ const nextConfig: NextConfig = {
       };
     }
     
+    if (isServer) {
+      config.externals = [
+        ...(config.externals || []),
+        { "onnxruntime-node": "commonjs onnxruntime-node" },
+      ];
+    }
+
     // Resolver problemas con Konva
     config.resolve.alias = {
       ...config.resolve.alias,
