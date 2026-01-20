@@ -464,6 +464,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   // ===== Feedback del entrenador (privado para jugador y coach) =====
   const [coachFeedbackByItemId, setCoachFeedbackByItemId] = useState<Record<string, { rating?: number; comment?: string }>>({});
   const [coachSummary, setCoachSummary] = useState<string>("");
+  const seededCoachSummaryRef = useRef(false);
   const [coachFeedbackCoachName, setCoachFeedbackCoachName] = useState<string | null>(null);
   const [coachFeedbackCoachId, setCoachFeedbackCoachId] = useState<string | null>(null);
   const [generatingSummary, setGeneratingSummary] = useState(false);
@@ -481,6 +482,18 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const canComment = Boolean(
     isAdmin || (isCoachRole && (!player?.coachId || currentUserId === player?.coachId || hasPaidCoachAccess))
   );
+  const fallbackCoachSummary = (() => {
+    const raw =
+      (analysis as any)?.coachSummary ??
+      (analysis as any)?.coachFeedback?.coachSummary ??
+      (analysis as any)?.coachFeedback?.summary ??
+      (analysis as any)?.coachSummaryText ??
+      "";
+    return typeof raw === "string" ? raw : "";
+  })();
+  const resolvedCoachSummary =
+    coachSummary.trim().length > 0 ? coachSummary : fallbackCoachSummary;
+
   const hasCoachFeedback = useMemo(() => {
     const hasItems = Object.values(coachFeedbackByItemId).some((entry) => {
       if (!entry) return false;
@@ -488,8 +501,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       const hasComment = typeof entry.comment === 'string' && entry.comment.trim().length > 0;
       return hasRating || hasComment;
     });
-    return hasItems || coachSummary.trim().length > 0;
-  }, [coachFeedbackByItemId, coachSummary]);
+    return hasItems || resolvedCoachSummary.trim().length > 0;
+  }, [coachFeedbackByItemId, resolvedCoachSummary]);
   const showCoachChecklistTab = isCoach || hasCoachFeedback;
   const isCoachCompleted = analysis.coachCompleted === true || hasCoachFeedback;
   const analysisTabLabel = isCoachCompleted ? "Análisis" : "Análisis IA";
@@ -550,6 +563,18 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       return <span key={`text-${idx}`}>{segment.value}</span>;
     });
   };
+
+  useEffect(() => {
+    if (seededCoachSummaryRef.current) return;
+    if (coachSummary.trim().length > 0) {
+      seededCoachSummaryRef.current = true;
+      return;
+    }
+    if (fallbackCoachSummary.trim().length > 0) {
+      setCoachSummary(fallbackCoachSummary);
+      seededCoachSummaryRef.current = true;
+    }
+  }, [coachSummary, fallbackCoachSummary]);
 
   useEffect(() => {
     if (!analysis?.id || !user) {
@@ -2655,12 +2680,12 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             {/* Debug: verificar estado del coachSummary */}
             {(() => {
               console.log('[Render] 🔍 Estado del coachSummary:', {
-                hasCoachSummary: !!coachSummary,
-                coachSummaryLength: coachSummary?.length || 0,
-                coachSummaryPreview: coachSummary?.substring(0, 50) || 'vacío',
+                hasCoachSummary: !!resolvedCoachSummary,
+                coachSummaryLength: resolvedCoachSummary?.length || 0,
+                coachSummaryPreview: resolvedCoachSummary?.substring(0, 50) || 'vacío',
                 isEditingCoachFeedback,
                 isCoach,
-                willShow: coachSummary && coachSummary.trim().length > 0 && !isEditingCoachFeedback
+                willShow: resolvedCoachSummary && resolvedCoachSummary.trim().length > 0 && !isEditingCoachFeedback
               });
               return null;
             })()}
@@ -2861,10 +2886,10 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
             {/* Comentarios del Entrenador (mostrar antes del análisis de IA si existen) */}
             {(() => {
-              const shouldShow = coachSummary && coachSummary.trim().length > 0 && !isEditingCoachFeedback;
+              const shouldShow = resolvedCoachSummary && resolvedCoachSummary.trim().length > 0 && !isEditingCoachFeedback;
               console.log('[CoachComments] 🎯 Verificando si mostrar comentarios:', {
-                hasCoachSummary: !!coachSummary,
-                coachSummaryLength: coachSummary?.length || 0,
+                hasCoachSummary: !!resolvedCoachSummary,
+                coachSummaryLength: resolvedCoachSummary?.length || 0,
                 isEditingCoachFeedback,
                 shouldShow
               });
@@ -2880,7 +2905,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <FormattedText text={coachSummary} className="text-muted-foreground" />
+                    <FormattedText text={resolvedCoachSummary} className="text-muted-foreground" />
                   </CardContent>
                 </Card>
               ) : null;
@@ -3612,7 +3637,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   <div className="space-y-2">
                     <div className="text-sm font-semibold">Comentario global</div>
                   <FormattedText
-                    text={coachSummary || 'Sin comentario global'}
+                    text={resolvedCoachSummary || 'Sin comentario global'}
                     className="text-sm text-muted-foreground"
                   />
                   </div>
