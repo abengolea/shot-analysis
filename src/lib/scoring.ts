@@ -273,7 +273,8 @@ export function computeFinalScoreWithTransparency(categories: ChecklistCategory[
   }
   
   const totalWeight = evaluableWeight + (nonEvaluableCount * 0); // Solo contar peso de evaluables
-  const finalScore = evaluableWeight > 0 ? (totalScore / evaluableWeight) * 100 : 0;
+  // totalScore ya está en escala 0..100 ponderada por peso
+  const finalScore = evaluableWeight > 0 ? (totalScore / evaluableWeight) : 0;
   
   // Determinar confianza basada en porcentaje de parámetros evaluables
   const evaluabilityRatio = evaluableCount / (evaluableCount + nonEvaluableCount);

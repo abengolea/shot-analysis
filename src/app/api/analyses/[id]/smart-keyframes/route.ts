@@ -85,13 +85,13 @@ const normalizeFrame = (data: any): SmartKeyframe | null => {
   };
 };
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!adminDb || !adminAuth) {
       return NextResponse.json({ error: 'Admin SDK no inicializado' }, { status: 500 });
     }
 
-    const analysisId = params.id;
+    const { id: analysisId } = await params;
     if (!analysisId) {
       return NextResponse.json({ error: 'ID de análisis requerido' }, { status: 400 });
     }

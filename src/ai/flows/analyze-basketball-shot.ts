@@ -1074,6 +1074,7 @@ FORMATO DE RESPUESTA OBLIGATORIO - RESPETA LÍMITES DE CARACTERES:
         {
           "id": "alineacion_pies",
           "name": "Alineación de los pies",
+          "description": "Posición de los pies respecto al aro",
           "status": "Correcto",
           "rating": 4,
           "na": false,
@@ -1130,6 +1131,9 @@ Si tu análisis podría aplicar a CUALQUIER video de baloncesto, será RECHAZADO
 Cada análisis debe ser TAN específico que SOLO aplique a ESTE video.
 
 🚨 VALIDACIÓN CRÍTICA - OBLIGATORIO:
+- description: OBLIGATORIO y no vacío en cada item de detailedChecklist
+- recommendations: OBLIGATORIO, mínimo 3 elementos con timestamps
+- timestamp y evidencia: OBLIGATORIOS en cada item (si no_evaluable, usa "N/A")
 - timestamp: SOLO "X.Xs" (ej: "3.2s") - MÁXIMO 10 caracteres
 - comment: MÁXIMO 100 caracteres
 - evidencia: MÁXIMO 60 caracteres
@@ -1174,7 +1178,7 @@ Video a analizar: {{videoUrl}}`;
 }
 
 // Función principal que selecciona el prompt correcto
-function buildAnalysisPrompt(input: AnalyzeBasketballShotInput): string {
+export async function buildAnalysisPrompt(input: AnalyzeBasketballShotInput): Promise<string> {
   // Detectar tipo de tiro
   const esTiroLibre = detectTiroLibre(input.shotType);
   
@@ -1186,6 +1190,17 @@ function buildAnalysisPrompt(input: AnalyzeBasketballShotInput): string {
   }
 }
 
+function extractJsonBlock(text: string): string | null {
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenceMatch?.[1]) return fenceMatch[1];
+  const first = text.indexOf('{');
+  const last = text.lastIndexOf('}');
+  if (first >= 0 && last > first) {
+    return text.slice(first, last + 1);
+  }
+  return null;
+}
+
 const analyzeBasketballShotFlow = ai.defineFlow(
   {
     name: 'analyzeBasketballShotFlow',
@@ -1194,17 +1209,19 @@ const analyzeBasketballShotFlow = ai.defineFlow(
   },
   async input => {
     // Construir el prompt dinámicamente
-    const dynamicPrompt = buildAnalysisPrompt(input);
-    
-    // Crear el prompt con la configuración dinámica
-    const analyzeShotPrompt = ai.definePrompt({
-      name: 'analyzeShotPrompt',
-      input: {schema: AnalyzeBasketballShotInputSchema},
-      output: {schema: AnalyzeBasketballShotOutputSchema},
-      prompt: dynamicPrompt,
-    });
-    
-    const {output} = await analyzeShotPrompt(input);
-    return output!;
+    const dynamicPrompt = await buildAnalysisPrompt(input);
+
+    const result = await ai.generate([{ text: dynamicPrompt }]);
+    const text = (result as any)?.outputText ?? (result as any)?.text ?? '';
+    const jsonText = extractJsonBlock(text) ?? text;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonText);
+    } catch (e) {
+      throw new Error('Respuesta de IA inválida: no es JSON valido.');
+    }
+
+    return AnalyzeBasketballShotOutputSchema.parse(parsed);
   }
 );
