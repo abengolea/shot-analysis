@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import { getAppBaseUrl } from '@/lib/app-url';
+import { buildConversationId, getMessageType } from '@/lib/message-utils';
 
 type KeyframeComment = {
   id?: string;
@@ -144,6 +145,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           angle,
           index,
           link,
+          messageType: getMessageType({ fromId: perm.uid, analysisId }),
+          conversationId: buildConversationId({ fromId: perm.uid, toId: playerId, analysisId }),
         });
       }
     } catch (e) {

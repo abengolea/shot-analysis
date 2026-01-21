@@ -1,6 +1,7 @@
 import { adminDb } from '@/lib/firebase-admin';
 import { sendCustomEmail } from '@/lib/email-service';
 import { getAppBaseUrl } from '@/lib/app-url';
+import { buildConversationId, getMessageType } from '@/lib/message-utils';
 
 const MP_BASE = process.env.MP_BASE_URL || 'https://api.mercadopago.com';
 const MP_PLATFORM_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN_AR || '';
@@ -385,6 +386,12 @@ export async function processCoachReviewPayment(params: {
         analysisId: analysisId || null,
         createdAt: nowIso,
         read: false,
+        messageType: getMessageType({ fromId: 'system', analysisId: analysisId || null }),
+        conversationId: buildConversationId({
+          fromId: 'system',
+          toId: coachId,
+          analysisId: analysisId || null,
+        }),
       });
     }
 
@@ -424,6 +431,12 @@ export async function processCoachReviewPayment(params: {
         analysisId: analysisId || null,
         createdAt: nowIso,
         read: false,
+        messageType: getMessageType({ fromId: 'system', analysisId: analysisId || null }),
+        conversationId: buildConversationId({
+          fromId: 'system',
+          toId: playerId,
+          analysisId: analysisId || null,
+        }),
       });
     }
 

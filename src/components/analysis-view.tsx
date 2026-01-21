@@ -79,6 +79,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, Briefcase, Clock, Trophy } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { buildConversationId, getMessageType } from "@/lib/message-utils";
 
 interface AnalysisViewProps {
   analysis: ShotAnalysis;
@@ -613,6 +614,13 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
   const [analysisMessages, setAnalysisMessages] = useState<Message[]>([]);
   const [analysisMessageText, setAnalysisMessageText] = useState("");
   const [sendingAnalysisMessage, setSendingAnalysisMessage] = useState(false);
+  const getAnalysisMessageOriginLabel = (m: Message) => {
+    if (m.fromId === "system") return "Sistema";
+    if (viewerId && m.fromId === viewerId) return "Tú";
+    return isCoach ? "Jugador" : "Entrenador";
+  };
+  const isKeyframeMessage = (m: Message) =>
+    Boolean(m.keyframeUrl || m.angle || typeof m.index === "number");
 
   const toMessageDate = (value: any) => {
     if (!value) return null;
@@ -1120,6 +1128,12 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
         analysisId: analysis.id || null,
         createdAt: serverTimestamp(),
         read: false,
+        messageType: getMessageType({ fromId: user.uid, analysisId: analysis.id || null }),
+        conversationId: buildConversationId({
+          fromId: user.uid,
+          toId: selectedCoachForMessage.id,
+          analysisId: analysis.id || null,
+        }),
       };
       await addDoc(colRef, payload as any);
       setMessageDialogOpen(false);
@@ -1166,6 +1180,12 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
         analysisId: analysis.id,
         createdAt: serverTimestamp(),
         read: false,
+        messageType: getMessageType({ fromId: user.uid, analysisId: analysis.id }),
+        conversationId: buildConversationId({
+          fromId: user.uid,
+          toId,
+          analysisId: analysis.id,
+        }),
       };
       if (!isCoach) {
         payload.toCoachDocId = toId;
@@ -3999,8 +4019,10 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                 <ul className="space-y-3">
                   {analysisMessages.map((m) => (
                     <li key={m.id} className="rounded border p-3 text-sm">
-                      <div className="text-xs text-muted-foreground mb-1">
-                        {(m.fromName || 'Sistema')} · {formatMessageDate(m.createdAt)}
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-1">
+                        <Badge variant="outline">{getAnalysisMessageOriginLabel(m)}</Badge>
+                        {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                        <span>{(m.fromName || "Sistema")} · {formatMessageDate(m.createdAt)}</span>
                       </div>
                       <div className="whitespace-pre-wrap">{renderMessageText(m.text)}</div>
                     </li>

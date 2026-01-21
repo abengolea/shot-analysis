@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import { getAppBaseUrl } from '@/lib/app-url';
+import { buildConversationId, getMessageType } from '@/lib/message-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -129,6 +130,8 @@ export async function POST(req: NextRequest) {
         analysisId,
         createdAt: new Date().toISOString(),
         read: false,
+        messageType: getMessageType({ fromId: 'system', analysisId }),
+        conversationId: buildConversationId({ fromId: 'system', toId: coachId, analysisId }),
       });
 
       if (playerId) {
@@ -141,6 +144,8 @@ export async function POST(req: NextRequest) {
           analysisId,
           createdAt: new Date().toISOString(),
           read: false,
+          messageType: getMessageType({ fromId: 'system', analysisId }),
+          conversationId: buildConversationId({ fromId: 'system', toId: playerId, analysisId }),
         });
       }
     } catch (e) {

@@ -226,6 +226,12 @@ export type Message = {
   read: boolean;
   readAt?: string; // ISO
   analysisId?: string | null;
+  messageType?: 'system' | 'analysis' | 'direct';
+  conversationId?: string;
+  keyframeUrl?: string;
+  angle?: 'front' | 'back' | 'left' | 'right';
+  index?: number;
+  link?: string;
   // Archivado por el coach (ocultar en su panel)
   archivedForCoach?: boolean;
   archivedAt?: string; // ISO

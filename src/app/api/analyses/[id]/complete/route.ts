@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { buildConversationId, getMessageType } from '@/lib/message-utils';
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -37,8 +38,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           toId: data.playerId,
           toName: data.playerName || data.playerId,
           text: 'Tu análisis fue revisado por el entrenador y ya está disponible la devolución.',
+          analysisId: id,
           createdAt: nowIso,
           read: false,
+          messageType: getMessageType({ fromId: uid, analysisId: id }),
+          conversationId: buildConversationId({ fromId: uid, toId: data.playerId, analysisId: id }),
         } as any;
         await adminDb.collection('messages').add(msg);
       }

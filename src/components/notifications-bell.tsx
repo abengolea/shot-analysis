@@ -24,7 +24,9 @@ export function NotificationsBell() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [ticketsUnread, setTicketsUnread] = useState<number>(0);
   const unread = messages.filter(m => !m.read);
-  const hasUnreadSystemMessage = unread.some((m) => m.fromId === "system" || m.toId === "system");
+  const hasUnreadSystemMessage = unread.some(
+    (m) => m.messageType === "system" || m.fromId === "system" || m.toId === "system"
+  );
   const totalUnread = (unread?.length || 0) + (ticketsUnread || 0);
   const isAdmin = (userProfile as any)?.role === 'admin';
   const toDate = (value: any) => {

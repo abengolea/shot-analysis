@@ -24,6 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { buildConversationId, getMessageType } from "@/lib/message-utils";
 
 export default function CoachDashboardPage() {
   const { user } = useAuth();
@@ -92,12 +93,39 @@ export default function CoachDashboardPage() {
       return <span key={`text-${idx}`}>{segment.value}</span>;
     });
   };
+  const getOriginLabel = (m: Message) => {
+    if (m.fromId === "system") return "Sistema";
+    if (m.fromId === user?.uid) return "Tú";
+    return "Jugador";
+  };
+  const isKeyframeMessage = (m: Message) =>
+    Boolean(m.keyframeUrl || m.angle || typeof m.index === "number");
   const extractAnalysisIdFromText = (text?: string | null) => {
     if (!text) return "";
     const urlMatch = text.match(/analysis\/([A-Za-z0-9_-]+)/);
     if (urlMatch?.[1]) return urlMatch[1];
     const match = text.match(/analysis_[A-Za-z0-9_-]+/);
     return match?.[0] || "";
+  };
+  const getConversationKeyFromMessage = (m: Message, analysisIdOverride?: string) =>
+    m.conversationId || buildConversationId({
+      fromId: m.fromId,
+      toId: m.toId,
+      analysisId: analysisIdOverride ?? m.analysisId ?? null,
+    });
+  const groupMessages = (list: Message[], getKey: (m: Message) => string) => {
+    const grouped = new Map<string, { latest: Message; count: number }>();
+    for (const m of list) {
+      const key = getKey(m) || m.id;
+      const existing = grouped.get(key);
+      if (!existing) {
+        grouped.set(key, { latest: m, count: 1 });
+        continue;
+      }
+      const next = getTime(m.createdAt) > getTime(existing.latest.createdAt) ? m : existing.latest;
+      grouped.set(key, { latest: next, count: existing.count + 1 });
+    }
+    return Array.from(grouped.values()).sort((a, b) => getTime(b.latest.createdAt) - getTime(a.latest.createdAt));
   };
 
   useEffect(() => {
@@ -261,6 +289,21 @@ export default function CoachDashboardPage() {
   const systemMessages = useMemo(() => {
     return visibleMessages.filter((m) => m.fromId === 'system' || m.toId === 'system');
   }, [visibleMessages]);
+  const groupedRequestMessages = useMemo(() => {
+    return groupMessages(requestMessages, (m) =>
+      getConversationKeyFromMessage(m, m.analysisId || extractAnalysisIdFromText(m.text))
+    );
+  }, [requestMessages]);
+  const groupedConversationMessages = useMemo(() => {
+    return groupMessages(totalConversationMessages, (m) =>
+      getConversationKeyFromMessage(m, m.analysisId || extractAnalysisIdFromText(m.text))
+    );
+  }, [totalConversationMessages]);
+  const groupedSystemMessages = useMemo(() => {
+    return groupMessages(systemMessages, (m) =>
+      getConversationKeyFromMessage(m, m.analysisId || extractAnalysisIdFromText(m.text))
+    );
+  }, [systemMessages]);
   const playerNameLookup = useMemo(() => {
     const base: Record<string, string> = {};
     for (const p of players) {
@@ -428,9 +471,15 @@ export default function CoachDashboardPage() {
   }, [missingPlayerIds]);
   const markAsRead = async (m: Message) => {
     try {
-      if (!m.read) {
-        await updateDoc(doc(db as any, 'messages', m.id), { read: true, readAt: new Date().toISOString() });
-      }
+      const analysisIdOverride = m.analysisId || extractAnalysisIdFromText(m.text);
+      const key = getConversationKeyFromMessage(m, analysisIdOverride);
+      const toMark = messages.filter((msg) => {
+        const msgKey = getConversationKeyFromMessage(msg, msg.analysisId || extractAnalysisIdFromText(msg.text));
+        return !msg.read && msgKey === key;
+      });
+      await Promise.all(toMark.map((msg) =>
+        updateDoc(doc(db as any, 'messages', msg.id), { read: true, readAt: new Date().toISOString() })
+      ));
     } catch (e) {
       console.error('No se pudo marcar como leído:', e);
     }
@@ -460,6 +509,13 @@ export default function CoachDashboardPage() {
         text: replyText.trim(),
         createdAt: serverTimestamp(),
         read: false,
+        analysisId: replyFor.analysisId || null,
+        messageType: getMessageType({ fromId: user.uid, analysisId: replyFor.analysisId || null }),
+        conversationId: buildConversationId({
+          fromId: user.uid,
+          toId: replyFor.fromId,
+          analysisId: replyFor.analysisId || null,
+        }),
       } as any;
       await addDoc(colRef, payload);
       setReplyText("");
@@ -520,6 +576,13 @@ export default function CoachDashboardPage() {
         text: rejectText.trim(),
         createdAt: serverTimestamp(),
         read: false,
+        analysisId: rejectFor.analysisId || null,
+        messageType: getMessageType({ fromId: user.uid, analysisId: rejectFor.analysisId || null }),
+        conversationId: buildConversationId({
+          fromId: user.uid,
+          toId: rejectFor.fromId,
+          analysisId: rejectFor.analysisId || null,
+        }),
       } as any;
       await addDoc(colRef, payload);
       // Marcar el mensaje original como leído
@@ -544,6 +607,11 @@ export default function CoachDashboardPage() {
         <p className="mt-2 text-muted-foreground">
           Gestiona tus jugadores y revisa las solicitudes de conexión.
         </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link href="/coach/compare">Comparar antes y después</Link>
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -635,10 +703,10 @@ export default function CoachDashboardPage() {
             </TabsList>
             <TabsContent value="requests" className="mt-4">
               <div className="grid gap-4">
-                {requestMessages.length === 0 && (
+                {groupedRequestMessages.length === 0 && (
                   <div className="py-8 text-center text-muted-foreground">Sin solicitudes</div>
                 )}
-                {requestMessages.map((m) => {
+                {groupedRequestMessages.map(({ latest: m, count }) => {
                   const isSystemMessage = m.fromId === 'system';
                   const resolvedAnalysisId = m.analysisId || extractAnalysisIdFromText(m.text);
                   const isAnalysisMessage = Boolean(resolvedAnalysisId);
@@ -717,6 +785,12 @@ export default function CoachDashboardPage() {
                       </div>
                     </CardHeader>
                     <CardContent>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-2">
+                        <Badge variant="outline">{getOriginLabel(m)}</Badge>
+                        {resolvedAnalysisId && <Badge variant="secondary">Lanzamiento</Badge>}
+                        {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                        {count > 1 && <Badge variant="outline">{count} mensajes</Badge>}
+                      </div>
                       <div className="text-sm text-muted-foreground mb-1">
                         {formatDate(m.createdAt)}
                       </div>
@@ -729,10 +803,10 @@ export default function CoachDashboardPage() {
             </TabsContent>
             <TabsContent value="messages" className="mt-4">
               <div className="grid gap-4">
-                {totalConversationMessages.length === 0 && (
+                {groupedConversationMessages.length === 0 && (
                   <div className="py-8 text-center text-muted-foreground">Sin mensajes</div>
                 )}
-                {totalConversationMessages.map((m) => {
+                {groupedConversationMessages.map(({ latest: m, count }) => {
                   const isSystemMessage = m.fromId === 'system';
                   const resolvedAnalysisId = m.analysisId || extractAnalysisIdFromText(m.text);
                   const isAnalysisMessage = Boolean(resolvedAnalysisId);
@@ -814,6 +888,12 @@ export default function CoachDashboardPage() {
                       </div>
                     </CardHeader>
                     <CardContent>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-2">
+                        <Badge variant="outline">{getOriginLabel(m)}</Badge>
+                        {resolvedAnalysisId && <Badge variant="secondary">Lanzamiento</Badge>}
+                        {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                        {count > 1 && <Badge variant="outline">{count} mensajes</Badge>}
+                      </div>
                       <div className="text-sm text-muted-foreground mb-1">
                         {formatDate(m.createdAt)}
                       </div>
@@ -826,10 +906,10 @@ export default function CoachDashboardPage() {
             </TabsContent>
             <TabsContent value="system" className="mt-4">
               <div className="grid gap-4">
-                {systemMessages.length === 0 && (
+                {groupedSystemMessages.length === 0 && (
                   <div className="py-8 text-center text-muted-foreground">Sin mensajes de sistema</div>
                 )}
-                {systemMessages.map((m) => {
+                {groupedSystemMessages.map(({ latest: m, count }) => {
                   const resolvedAnalysisId = m.analysisId || extractAnalysisIdFromText(m.text);
                   const analysisHref = resolvedAnalysisId ? `/analysis/${resolvedAnalysisId}#messages` : '';
                   const playerIdForAnalysis = resolvedAnalysisId ? analysisPlayerById[resolvedAnalysisId] : '';
@@ -858,6 +938,12 @@ export default function CoachDashboardPage() {
                       </div>
                     </CardHeader>
                     <CardContent>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-2">
+                        <Badge variant="outline">{getOriginLabel(m)}</Badge>
+                        {resolvedAnalysisId && <Badge variant="secondary">Lanzamiento</Badge>}
+                        {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                        {count > 1 && <Badge variant="outline">{count} mensajes</Badge>}
+                      </div>
                       <div className="text-sm text-muted-foreground mb-1">
                         {formatDate(m.createdAt)}
                       </div>

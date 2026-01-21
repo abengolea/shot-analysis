@@ -39,6 +39,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import type { Message } from "@/lib/types";
 import { getClientAppBaseUrl } from "@/lib/app-url";
+import { buildConversationId, getMessageType } from "@/lib/message-utils";
 
 export default function CoachesPage() {
   const { user, userProfile } = useAuth();
@@ -519,6 +520,12 @@ export default function CoachesPage() {
                               analysisId: analysisIdFromQuery || null,
                               createdAt: serverTimestamp(),
                               read: false,
+                              messageType: getMessageType({ fromId: user.uid, analysisId: analysisIdFromQuery || null }),
+                              conversationId: buildConversationId({
+                                fromId: user.uid,
+                                toId: coach.id,
+                                analysisId: analysisIdFromQuery || null,
+                              }),
                             };
                             await addDoc(colRef, payload as any);
                             setHelpOpenFor(null);

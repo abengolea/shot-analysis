@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { buildConversationId, getMessageType } from "@/lib/message-utils";
 
 export default function PlayerMessagesPage() {
   const { user, userProfile } = useAuth();
@@ -42,6 +43,22 @@ export default function PlayerMessagesPage() {
   const formatDate = (value: any) => {
     const d = toDate(value);
     return d ? d.toLocaleString() : "Fecha desconocida";
+  };
+  const getConversationKey = (m: Message) =>
+    m.conversationId || buildConversationId({ fromId: m.fromId, toId: m.toId, analysisId: m.analysisId || null });
+  const groupMessages = (list: Message[]) => {
+    const grouped = new Map<string, { latest: Message; count: number }>();
+    for (const m of list) {
+      const key = getConversationKey(m) || m.id;
+      const existing = grouped.get(key);
+      if (!existing) {
+        grouped.set(key, { latest: m, count: 1 });
+        continue;
+      }
+      const next = getTime(m.createdAt) > getTime(existing.latest.createdAt) ? m : existing.latest;
+      grouped.set(key, { latest: next, count: existing.count + 1 });
+    }
+    return Array.from(grouped.values()).sort((a, b) => getTime(b.latest.createdAt) - getTime(a.latest.createdAt));
   };
   const renderMessageText = (text: string) => {
     if (!text) return null;
@@ -77,6 +94,12 @@ export default function PlayerMessagesPage() {
       return <span key={`text-${idx}`}>{segment.value}</span>;
     });
   };
+  const getOriginLabel = (m: Message) => {
+    if (m.fromId === "system") return "Sistema";
+    return "Entrenador";
+  };
+  const isKeyframeMessage = (m: Message) =>
+    Boolean(m.keyframeUrl || m.angle || typeof m.index === "number");
 
   useEffect(() => {
     if (!user) return;
@@ -140,12 +163,15 @@ export default function PlayerMessagesPage() {
     }
     return visibleMessages.filter((m) => m.fromId !== "system" && m.toId !== "system");
   }, [activeTab, visibleMessages]);
+  const groupedTabMessages = useMemo(() => groupMessages(tabMessages), [tabMessages]);
 
   const markAsRead = async (m: Message) => {
     try {
-      if (!m.read) {
-        await updateDoc(doc(db as any, "messages", m.id), { read: true, readAt: new Date().toISOString() });
-      }
+      const key = getConversationKey(m);
+      const toMark = messages.filter((msg) => !msg.read && getConversationKey(msg) === key);
+      await Promise.all(toMark.map((msg) =>
+        updateDoc(doc(db as any, "messages", msg.id), { read: true, readAt: new Date().toISOString() })
+      ));
     } catch (e) {
       console.error("No se pudo marcar como leído:", e);
     }
@@ -164,8 +190,15 @@ export default function PlayerMessagesPage() {
         toCoachDocId: replyFor.fromId,
         toName: replyFor.fromName || replyFor.fromId,
         text: replyText.trim(),
+        analysisId: replyFor.analysisId || null,
         createdAt: serverTimestamp(),
         read: false,
+        messageType: getMessageType({ fromId: user.uid, analysisId: replyFor.analysisId || null }),
+        conversationId: buildConversationId({
+          fromId: user.uid,
+          toId: replyFor.fromId,
+          analysisId: replyFor.analysisId || null,
+        }),
       } as any;
       await addDoc(colRef, payload);
       setReplyText("");
@@ -212,10 +245,10 @@ export default function PlayerMessagesPage() {
         </TabsList>
         <TabsContent value="messages" className="mt-4">
           <div className="grid gap-4">
-            {tabMessages.length === 0 && (
+            {groupedTabMessages.length === 0 && (
               <div className="py-10 text-center text-muted-foreground">No hay mensajes todavía.</div>
             )}
-            {tabMessages.map((m) => (
+            {groupedTabMessages.map(({ latest: m, count }) => (
               <Card key={m.id} className="hover:shadow-sm">
                 <CardHeader className="pb-2 flex flex-row items-center justify-between">
                   <CardTitle className="text-base">
@@ -254,6 +287,12 @@ export default function PlayerMessagesPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-2">
+                    <Badge variant="outline">{getOriginLabel(m)}</Badge>
+                    {m.analysisId && <Badge variant="secondary">Lanzamiento</Badge>}
+                    {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                    {count > 1 && <Badge variant="outline">{count} mensajes</Badge>}
+                  </div>
                   <div className="text-sm text-muted-foreground mb-1">
                     {formatDate(m.createdAt)}
                   </div>
@@ -265,10 +304,10 @@ export default function PlayerMessagesPage() {
         </TabsContent>
         <TabsContent value="launches" className="mt-4">
           <div className="grid gap-4">
-            {tabMessages.length === 0 && (
+            {groupedTabMessages.length === 0 && (
               <div className="py-10 text-center text-muted-foreground">No hay mensajes de lanzamientos todavía.</div>
             )}
-            {tabMessages.map((m) => (
+            {groupedTabMessages.map(({ latest: m, count }) => (
               <Card key={m.id} className="hover:shadow-sm">
                 <CardHeader className="pb-2 flex flex-row items-center justify-between">
                   <CardTitle className="text-base">
@@ -307,6 +346,12 @@ export default function PlayerMessagesPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-2">
+                    <Badge variant="outline">{getOriginLabel(m)}</Badge>
+                    {m.analysisId && <Badge variant="secondary">Lanzamiento</Badge>}
+                    {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                    {count > 1 && <Badge variant="outline">{count} mensajes</Badge>}
+                  </div>
                   <div className="text-sm text-muted-foreground mb-1">
                     {formatDate(m.createdAt)}
                   </div>
@@ -318,10 +363,10 @@ export default function PlayerMessagesPage() {
         </TabsContent>
         <TabsContent value="system" className="mt-4">
           <div className="grid gap-4">
-            {tabMessages.length === 0 && (
+            {groupedTabMessages.length === 0 && (
               <div className="py-10 text-center text-muted-foreground">No hay mensajes de sistema todavía.</div>
             )}
-            {tabMessages.map((m) => (
+            {groupedTabMessages.map(({ latest: m, count }) => (
               <Card key={m.id} className="hover:shadow-sm">
                 <CardHeader className="pb-2 flex flex-row items-center justify-between">
                   <CardTitle className="text-base">
@@ -343,6 +388,12 @@ export default function PlayerMessagesPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-2">
+                    <Badge variant="outline">{getOriginLabel(m)}</Badge>
+                    {m.analysisId && <Badge variant="secondary">Lanzamiento</Badge>}
+                    {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                    {count > 1 && <Badge variant="outline">{count} mensajes</Badge>}
+                  </div>
                   <div className="text-sm text-muted-foreground mb-1">
                     {formatDate(m.createdAt)}
                   </div>
