@@ -100,6 +100,59 @@ export async function reanalyzeAnalysis({
       availableKeyframes = buildFallbackKeyframes();
     }
 
+    let skipDomainCheck = false;
+    let detectedShotsCount: number | undefined = undefined;
+    try {
+      const primaryDetection = await detectShots({
+        videoUrl,
+        shotType: String(analysis.shotType || 'tres'),
+        ageCategory: ageCategory as any,
+        playerLevel: String(playerLevel),
+        availableKeyframes: [],
+      });
+      const count = typeof primaryDetection?.shots_count === 'number'
+        ? primaryDetection.shots_count
+        : Array.isArray(primaryDetection?.shots)
+          ? primaryDetection.shots.length
+          : 0;
+      skipDomainCheck = count > 0;
+      detectedShotsCount = count || undefined;
+    } catch {}
+
+    let shotFramesForPrompt: Array<{ idx: number; start_ms: number; release_ms: number; frames: string[] }> = [];
+    let shotFramesSource: string | undefined = undefined;
+    try {
+      if (analysis.shotFramesUrl) {
+        const resp = await fetch(String(analysis.shotFramesUrl));
+        if (resp.ok) {
+          const data = (await resp.json()) as { source?: string; shots?: Array<any> };
+          if (Array.isArray(data?.shots)) {
+            shotFramesSource = typeof data?.source === 'string' ? data.source : undefined;
+            shotFramesForPrompt = data.shots
+              .slice(0, 2)
+              .map((shot) => {
+                const rawFrames = Array.isArray(shot?.frames) ? shot.frames : [];
+                const frames = rawFrames
+                  .map((frame: any) => {
+                    if (typeof frame === 'string') return frame;
+                    if (frame && typeof frame.dataUrl === 'string') return frame.dataUrl;
+                    return '';
+                  })
+                  .filter((frame: string) => frame.startsWith('data:image'))
+                  .slice(0, 3);
+                return {
+                  idx: Number(shot?.idx || 0),
+                  start_ms: Number(shot?.start_ms || 0),
+                  release_ms: Number(shot?.release_ms || 0),
+                  frames,
+                };
+              })
+              .filter((shot) => shot.frames.length > 0);
+          }
+        }
+      }
+    } catch {}
+
     const aiResult = await analyzeBasketballShot({
       videoUrl,
       shotType: String(analysis.shotType || 'tres'),
@@ -107,6 +160,11 @@ export async function reanalyzeAnalysis({
       playerLevel: String(playerLevel),
       availableKeyframes,
       promptConfig,
+      ...(skipDomainCheck ? { skipDomainCheck: true } : {}),
+      ...(typeof detectedShotsCount === 'number' ? { detectedShotsCount } : {}),
+      ...(shotFramesForPrompt.length > 0
+        ? { shotFrames: { sourceAngle: shotFramesSource, shots: shotFramesForPrompt } }
+        : {}),
     });
 
     const detectionByLabel: Array<{ label: string; url: string; result: any }> = [];

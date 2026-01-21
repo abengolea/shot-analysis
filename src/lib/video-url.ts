@@ -35,10 +35,11 @@ export const normalizeVideoUrl = (src?: string | null): string | null => {
   if (fixed.startsWith("gs://")) {
     return `/api/video-proxy?src=${encodeURIComponent(fixed)}`;
   }
-  if (
-    fixed.includes("storage.googleapis.com/") ||
-    fixed.includes("firebasestorage.googleapis.com/")
-  ) {
+  if (fixed.includes("storage.googleapis.com/")) {
+    // Si es un URL público de GCS, no usar proxy (evita fallos en staging sin credenciales)
+    return fixed;
+  }
+  if (fixed.includes("firebasestorage.googleapis.com/")) {
     return `/api/video-proxy?src=${encodeURIComponent(fixed)}`;
   }
   return fixed;

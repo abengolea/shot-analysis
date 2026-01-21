@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { adminAuth, adminDb, adminStorage } from '@/lib/firebase-admin';
 import { scheduleKeyframesExtraction } from '@/lib/keyframes-backfill';
+import { buildEconomyEvidenceFromVideoUrl } from '@/lib/economy-evidence';
 import { sendCustomEmail } from '@/lib/email-service';
 import { getAppBaseUrl } from '@/lib/app-url';
 import { buildScoreMetadata, loadWeightsFromFirestore } from '@/lib/scoring';
@@ -953,27 +954,33 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         const ageCategory = mapAgeGroupToCategory(currentUser.ageGroup || 'Amateur');
         const playerLevel = mapPlayerLevel(currentUser.playerLevel || 'Principiante');
 
-        const analysisResult = await analyzeBasketballShot({
-            videoUrl: videoPath,
-            shotType,
-            ageCategory,
-            playerLevel,
-            availableKeyframes: [],
-        });
+        let skipDomainCheck = false;
+        let detectedShotsCount: number | undefined = undefined;
+        try {
+            const primaryDetection = await detectShots({
+                videoUrl: videoPath,
+                shotType,
+                ageCategory,
+                playerLevel,
+                availableKeyframes: [],
+            });
+            const count = typeof primaryDetection?.shots_count === 'number'
+                ? primaryDetection.shots_count
+                : Array.isArray(primaryDetection?.shots)
+                    ? primaryDetection.shots.length
+                    : 0;
+            skipDomainCheck = count > 0;
+            detectedShotsCount = count || undefined;
+        } catch {}
 
-        const detailedChecklist = Array.isArray(analysisResult?.detailedChecklist) ? analysisResult.detailedChecklist : [];
-        let scoreMetadata = undefined;
-        if (detailedChecklist.length > 0) {
-            const weights = await loadWeightsFromFirestore(shotType);
-            const normalizedChecklist = normalizeDetailedChecklist(detailedChecklist);
-            scoreMetadata = buildScoreMetadata(normalizedChecklist, shotType, weights);
-        }
-
-        let analysisResultWithScore = scoreMetadata
-            ? { ...analysisResult, scoreMetadata }
-            : analysisResult;
+        let availableKeyframes: Array<{ index: number; timestamp: number; description: string }> = [];
+        try {
+            const evidence = await buildEconomyEvidenceFromVideoUrl(videoPath, { targetFrames: 8 });
+            availableKeyframes = Array.isArray(evidence?.availableKeyframes) ? evidence.availableKeyframes : [];
+        } catch {}
 
         let shotFramesUrl: string | null = null;
+        let shotFramesForPrompt: Array<{ idx: number; start_ms: number; release_ms: number; frames: string[] }> = [];
         const detectionByLabel: Array<{ label: string; url: string; result: any }> = [];
         const buildShotsSummary = async (original: string, totalShots: number, byLabel: Array<{ label: string; count: number }>) => {
             const aiSummary = await generateAnalysisSummary({
@@ -1050,12 +1057,41 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                         }), { contentType: 'application/json' });
                         await fileRef.makePublic();
                         shotFramesUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+                        shotFramesForPrompt = shotFrames.slice(0, 2).map((shot) => ({
+                            ...shot,
+                            frames: Array.isArray(shot.frames) ? shot.frames.slice(0, 3) : [],
+                        }));
                     }
                 }
             }
         } catch (e) {
             console.warn('No se pudieron extraer frames por tiro', e);
         }
+
+        const analysisResult = await analyzeBasketballShot({
+            videoUrl: videoPath,
+            shotType,
+            ageCategory,
+            playerLevel,
+            availableKeyframes,
+            ...(skipDomainCheck ? { skipDomainCheck: true } : {}),
+            ...(typeof detectedShotsCount === 'number' ? { detectedShotsCount } : {}),
+            ...(shotFramesForPrompt.length > 0
+                ? { shotFrames: { sourceAngle: videoBackUrl ? 'back' : 'front', shots: shotFramesForPrompt } }
+                : {}),
+        });
+
+        const detailedChecklist = Array.isArray(analysisResult?.detailedChecklist) ? analysisResult.detailedChecklist : [];
+        let scoreMetadata = undefined;
+        if (detailedChecklist.length > 0) {
+            const weights = await loadWeightsFromFirestore(shotType);
+            const normalizedChecklist = normalizeDetailedChecklist(detailedChecklist);
+            scoreMetadata = buildScoreMetadata(normalizedChecklist, shotType, weights);
+        }
+
+        let analysisResultWithScore = scoreMetadata
+            ? { ...analysisResult, scoreMetadata }
+            : analysisResult;
 
         if (detectionByLabel.length > 0 && analysisResultWithScore?.verificacion_inicial) {
             let totalShots = 0;

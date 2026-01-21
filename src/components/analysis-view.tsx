@@ -907,6 +907,9 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
     .sort((a, b) => (a.rating || 3) - (b.rating || 3)) // 1 primero, luego 2
     .map((item) => item.name);
 
+  const scrubTimestamps = (text: string) =>
+    text.replace(/\b\d+(\.\d+)?s\b/g, '').replace(/\b\d+(\.\d+)?s-\d+(\.\d+)?s\b/g, '').trim();
+
   const checklistRecommendations = flatChecklistItems
     .filter(
       (item) =>
@@ -922,7 +925,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
       const lb = String(b.comment || '').length;
       return lb - la; // comentario más sustancioso primero
     })
-    .map((item) => `${item.name}: ${item.comment}`);
+    .map((item) => scrubTimestamps(`${item.name}: ${item.comment}`));
 
   // Evaluación final: promedio 1..5 (usa rating; si falta, mapea status legacy)
   const mapStatusToRating = (status?: DetailedChecklistItem["status"] | string): number | null => {
@@ -986,9 +989,9 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
   const isNonBasketballVideo =
     /no corresponde a basquet|no detectamos/i.test(nonBasketballWarning || derivedSummary);
   const canClearScore = Boolean(isOwnerPlayer && viewerId);
-  const hasStrengths = checklistStrengths.length > 0;
-  const hasWeaknesses = checklistWeaknesses.length > 0;
-  const hasRecommendations = checklistRecommendations.length > 0;
+  const hasStrengths = derivedStrengths.length > 0;
+  const hasWeaknesses = derivedWeaknesses.length > 0;
+  const hasRecommendations = derivedRecommendations.length > 0;
 
   const safeAnalysis = {
     ...analysis,
@@ -3201,7 +3204,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                 </CardHeader>
                 <CardContent>
                   <ul className="grid list-inside list-disc grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
-                    {checklistStrengths.map((s, i) => (
+                    {derivedStrengths.map((s, i) => (
                       <li key={i}>{s}</li>
                     ))}
                   </ul>
@@ -3217,7 +3220,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                 </CardHeader>
                 <CardContent>
                   <ul className="grid list-inside list-disc grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
-                    {checklistWeaknesses.map((w, i) => (
+                    {derivedWeaknesses.map((w, i) => (
                       <li key={i}>{w}</li>
                     ))}
                   </ul>
@@ -3236,7 +3239,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
               </CardHeader>
               <CardContent>
                 <ul className="list-inside list-disc space-y-2 text-muted-foreground">
-                  {checklistRecommendations.map((r, i) => (
+                  {derivedRecommendations.map((r, i) => (
                     <li key={i}>{r}</li>
                   ))}
                 </ul>

@@ -35,14 +35,24 @@ export async function generateAnalysisSummary(input: SummaryInput): Promise<stri
       ? `total=${input.shots.total}, por video=${input.shots.byLabel.map((s) => `${s.label}:${s.count}`).join(', ')}`
       : 'no disponible';
 
+    const baseSummaryRaw = input.baseSummary || '';
+    const baseSummary =
+      /no detectamos|no se pudo confirmar|no evaluable/i.test(baseSummaryRaw)
+        ? ''
+        : baseSummaryRaw;
     const payload = {
       verificacion_inicial: input.verificacion_inicial || {},
       strengths: safeList(input.strengths),
       weaknesses: safeList(input.weaknesses),
       recommendations: safeList(input.recommendations),
-      resumen_evaluacion: input.resumen_evaluacion || {},
+      resumen_evaluacion: {
+        parametros_evaluados: input.resumen_evaluacion?.parametros_evaluados,
+        parametros_no_evaluables: input.resumen_evaluacion?.parametros_no_evaluables,
+        lista_no_evaluables: input.resumen_evaluacion?.lista_no_evaluables,
+        confianza_analisis: input.resumen_evaluacion?.confianza_analisis,
+      },
       shots: shotsText,
-      baseSummary: input.baseSummary || '',
+      baseSummary,
     };
 
     const prompt = `Eres un entrenador de básquet y debes redactar un resumen FINAL del análisis.
@@ -52,7 +62,9 @@ REGLAS OBLIGATORIAS:
 2) Menciona la cantidad real de tiros y la distribución por video.
 3) No digas "un tiro" si el conteo es mayor.
 4) Si hay parámetros no evaluables, mencioná la limitación.
-5) Texto en español, 5 a 8 oraciones, claro y profesional.
+5) NO menciones puntajes, score global ni nivel de confianza.
+6) NO uses segundos, timestamps ni rangos temporales.
+7) Texto en español, 5 a 8 oraciones, claro y profesional.
 
 JSON:
 ${JSON.stringify(payload)}

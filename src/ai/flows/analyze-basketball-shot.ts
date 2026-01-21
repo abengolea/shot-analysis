@@ -27,6 +27,20 @@ const AnalyzeBasketballShotInputSchema = z.object({
   ]).describe('Age category of the player.'),
   playerLevel: z.string().describe('Skill level of the player.'),
   shotType: z.string().describe('Type of shot (e.g., free throw, three-pointer).'),
+  skipDomainCheck: z.boolean().optional().describe('Skip domain verification when shots were already detected.'),
+  detectedShotsCount: z.number().optional().describe('Pre-detected shots count (external signal).'),
+  shotFrames: z
+    .object({
+      sourceAngle: z.string().optional(),
+      shots: z.array(z.object({
+        idx: z.number(),
+        start_ms: z.number(),
+        release_ms: z.number(),
+        frames: z.array(z.string()),
+      })),
+    })
+    .optional()
+    .describe('Frames around release for spin/backspin evaluation.'),
   availableKeyframes: z.array(z.object({
     index: z.number().describe('Index of the keyframe (0-15)'),
     timestamp: z.number().describe('Timestamp in seconds'),
@@ -61,6 +75,44 @@ type PreviewFrame = {
   timestamp: number;
   dataUrl: string;
 };
+
+type ShotFramesInput = {
+  sourceAngle?: string;
+  shots: Array<{
+    idx: number;
+    start_ms: number;
+    release_ms: number;
+    frames: string[];
+  }>;
+};
+
+function buildShotFramesParts(
+  shotFrames?: ShotFramesInput
+): Array<{ text?: string; media?: { url: string; contentType: string } }> {
+  if (!shotFrames || !Array.isArray(shotFrames.shots) || shotFrames.shots.length === 0) return [];
+  const parts: Array<{ text?: string; media?: { url: string; contentType: string } }> = [];
+  const source = shotFrames.sourceAngle ? String(shotFrames.sourceAngle) : 'desconocido';
+  const maxShots = 2;
+  const maxFramesPerShot = 3;
+  const maxTotal = 9;
+  let totalFrames = 0;
+  parts.push({ text: `FRAMES POR TIRO (fuente: ${source})` });
+
+  for (const shot of shotFrames.shots.slice(0, maxShots)) {
+    const startSec = Number(shot.start_ms || 0) / 1000;
+    const releaseSec = Number(shot.release_ms || 0) / 1000;
+    parts.push({ text: `Shot ${shot.idx}: ${startSec.toFixed(2)}s → ${releaseSec.toFixed(2)}s` });
+    const frames = Array.isArray(shot.frames) ? shot.frames.slice(0, maxFramesPerShot) : [];
+    for (const frame of frames) {
+      if (totalFrames >= maxTotal) break;
+      if (typeof frame !== 'string' || !frame.startsWith('data:image')) continue;
+      parts.push({ media: { url: frame, contentType: 'image/jpeg' } });
+      totalFrames += 1;
+    }
+    if (totalFrames >= maxTotal) break;
+  }
+  return parts;
+}
 
 async function fetchVideoBuffer(videoUrl: string): Promise<Buffer | null> {
   try {
@@ -257,6 +309,236 @@ function buildNonEvaluableAnalysis(reason: string): AnalyzeBasketballShotOutput 
     caracteristicas_unicas: ['No provisto por IA', 'No provisto por IA', 'No provisto por IA'],
     advertencia: userFacingMessage,
   };
+}
+
+const checklistStatuses = ['Correcto', 'Mejorable', 'Incorrecto', 'no_evaluable'] as const;
+type ChecklistStatus = (typeof checklistStatuses)[number];
+
+function normalizeChecklistItem(input: any): {
+  id: string;
+  name: string;
+  description: string;
+  status: ChecklistStatus;
+  rating: number;
+  timestamp?: string;
+  evidencia?: string;
+  na: boolean;
+  razon?: string;
+  comment: string;
+  evidenceFrames?: Array<{ frameId: string; label: string; angle?: string; note?: string }>;
+} {
+  const rawStatus = String(input?.status || '');
+  const status: ChecklistStatus = (checklistStatuses as readonly string[]).includes(rawStatus)
+    ? (rawStatus as ChecklistStatus)
+    : (input?.na ? 'no_evaluable' : 'Mejorable');
+  const na = Boolean(input?.na) || status === 'no_evaluable';
+  const rawRating = typeof input?.rating === 'number' && Number.isFinite(input.rating)
+    ? Math.round(input.rating)
+    : undefined;
+  let rating = na ? 0 : (rawRating ?? (status === 'Correcto' ? 4 : status === 'Incorrecto' ? 2 : 3));
+  rating = Math.max(0, Math.min(5, rating));
+  const item: {
+    id: string;
+    name: string;
+    description: string;
+    status: ChecklistStatus;
+    rating: number;
+    na: boolean;
+    comment: string;
+    timestamp?: string;
+    evidencia?: string;
+    razon?: string;
+    evidenceFrames?: Array<{ frameId: string; label: string; angle?: string; note?: string }>;
+  } = {
+    id: String(input?.id || ''),
+    name: String(input?.name || ''),
+    description: String(input?.description || input?.name || ''),
+    status,
+    rating,
+    na,
+    comment: String(input?.comment || input?.evidencia || input?.razon || ''),
+  };
+  if (typeof input?.timestamp === 'string') item.timestamp = input.timestamp;
+  if (typeof input?.evidencia === 'string') item.evidencia = input.evidencia;
+  if (typeof input?.razon === 'string') item.razon = input.razon;
+  if (Array.isArray(input?.evidenceFrames)) item.evidenceFrames = input.evidenceFrames;
+  return item;
+}
+
+function normalizeDetailedChecklist(input: any): Array<{ category: string; items: ReturnType<typeof normalizeChecklistItem>[] }> {
+  if (!Array.isArray(input)) return [];
+  return input.map((cat) => ({
+    category: String(cat?.category || 'SIN CATEGORIA'),
+    items: Array.isArray(cat?.items) ? cat.items.map(normalizeChecklistItem) : [],
+  }));
+}
+
+function summarizeChecklist(detailedChecklist: Array<{ category: string; items: ReturnType<typeof normalizeChecklistItem>[] }>) {
+  const items = detailedChecklist.flatMap((cat) => cat.items);
+  const evaluables = items.filter((it) => !it.na && it.status !== 'no_evaluable');
+  const noEvaluables = items.filter((it) => it.na || it.status === 'no_evaluable');
+  const lista_no_evaluables = noEvaluables.map(
+    (it) => `${it.id}: ${it.razon || it.comment || 'No evaluable'}`
+  );
+  return {
+    parametros_evaluados: evaluables.length,
+    parametros_no_evaluables: noEvaluables.length,
+    lista_no_evaluables,
+  };
+}
+
+function normalizeResumenEvaluacion(output: AnalyzeBasketballShotOutput): AnalyzeBasketballShotOutput {
+  const resumen = summarizeChecklist(output.detailedChecklist || []);
+  const total = resumen.parametros_evaluados + resumen.parametros_no_evaluables;
+  const nota = `Score calculado con ${resumen.parametros_evaluados} de ${total} parámetros evaluables (${resumen.parametros_no_evaluables} no evaluables por limitaciones del video)`;
+  return {
+    ...output,
+    resumen_evaluacion: {
+      ...output.resumen_evaluacion,
+      parametros_evaluados: resumen.parametros_evaluados,
+      parametros_no_evaluables: resumen.parametros_no_evaluables,
+      lista_no_evaluables: resumen.lista_no_evaluables,
+      nota,
+    },
+  };
+}
+
+function enforceConsistencyEvaluable(
+  output: AnalyzeBasketballShotOutput,
+  detectedShotsCount?: number
+): AnalyzeBasketballShotOutput {
+  if (!detectedShotsCount || detectedShotsCount < 2) return output;
+  const categories = Array.isArray(output.detailedChecklist) ? output.detailedChecklist : [];
+  let updated = false;
+  for (const category of categories) {
+    for (const item of category.items || []) {
+      if (item.id !== 'consistencia_general') continue;
+      const text = `${item.comment || ''} ${item.evidencia || ''}`.toLowerCase();
+      const contradicts = text.includes('solo un tiro') || text.includes('sólo un tiro') || text.includes('n/a');
+      if (!item.na && item.status !== 'no_evaluable' && !contradicts) return output;
+      item.status = 'Mejorable';
+      item.rating = Math.max(1, Math.min(5, item.rating || 3));
+      item.na = false;
+      item.timestamp = 'N/A';
+      item.evidencia = 'Comparación general entre tiros detectados.';
+      item.comment = 'Evaluación basada en múltiples tiros detectados; precisión limitada por ángulo.';
+      if (item.razon) item.razon = '';
+      updated = true;
+      break;
+    }
+    if (updated) break;
+  }
+  if (!updated) return output;
+  return normalizeResumenEvaluacion({
+    ...output,
+    detailedChecklist: categories,
+  });
+}
+
+function enforceEquilibrioEvaluable(
+  output: AnalyzeBasketballShotOutput,
+  detectedShotsCount?: number
+): AnalyzeBasketballShotOutput {
+  if (!detectedShotsCount || detectedShotsCount < 1) return output;
+  const categories = Array.isArray(output.detailedChecklist) ? output.detailedChecklist : [];
+  let updated = false;
+  for (const category of categories) {
+    for (const item of category.items || []) {
+      if (item.id !== 'equilibrio_post_liberacion') continue;
+      if (!item.na && item.status !== 'no_evaluable') return output;
+      item.status = 'Mejorable';
+      item.rating = Math.max(1, Math.min(5, item.rating || 3));
+      item.na = false;
+      item.timestamp = item.timestamp || 'N/A';
+      item.evidencia = item.evidencia || 'Aterrizaje visible en al menos un ángulo.';
+      item.comment =
+        item.comment ||
+        'Evaluación basada en la estabilidad post-liberación; precisión limitada por ángulo.';
+      if (item.razon) item.razon = '';
+      updated = true;
+      break;
+    }
+    if (updated) break;
+  }
+  if (!updated) return output;
+  return normalizeResumenEvaluacion({
+    ...output,
+    detailedChecklist: categories,
+  });
+}
+
+function coerceAnalysisOutput(raw: any): AnalyzeBasketballShotOutput | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const detailedChecklist = normalizeDetailedChecklist(raw.detailedChecklist);
+  const resumen = summarizeChecklist(detailedChecklist);
+  const selectedKeyframes = Array.isArray(raw.selectedKeyframes)
+    ? raw.selectedKeyframes.map((v: any) => Number(v)).filter((v: any) => Number.isFinite(v))
+    : [];
+
+  const verificacion_inicial = {
+    duracion_video: String(raw?.verificacion_inicial?.duracion_video || 'N/A'),
+    mano_tiro: String(raw?.verificacion_inicial?.mano_tiro || 'N/A'),
+    salta: Boolean(raw?.verificacion_inicial?.salta),
+    canasta_visible: Boolean(raw?.verificacion_inicial?.canasta_visible),
+    angulo_camara: String(raw?.verificacion_inicial?.angulo_camara || 'N/A'),
+    elementos_entorno: Array.isArray(raw?.verificacion_inicial?.elementos_entorno)
+      ? raw.verificacion_inicial.elementos_entorno.map((v: any) => String(v))
+      : [],
+    ...(typeof raw?.verificacion_inicial?.tiros_detectados === 'number'
+      ? { tiros_detectados: raw.verificacion_inicial.tiros_detectados }
+      : {}),
+    ...(typeof raw?.verificacion_inicial?.tiros_por_segundo === 'number'
+      ? { tiros_por_segundo: raw.verificacion_inicial.tiros_por_segundo }
+      : {}),
+    ...(raw?.verificacion_inicial?.deteccion_ia
+      ? { deteccion_ia: raw.verificacion_inicial.deteccion_ia }
+      : {}),
+  };
+
+  const output = {
+    verificacion_inicial,
+    analysisSummary: String(raw?.analysisSummary || 'Análisis técnico del video.'),
+    strengths: Array.isArray(raw?.strengths) ? raw.strengths.map((v: any) => String(v)) : [],
+    weaknesses: Array.isArray(raw?.weaknesses) ? raw.weaknesses.map((v: any) => String(v)) : [],
+    recommendations: Array.isArray(raw?.recommendations)
+      ? raw.recommendations.map((v: any) => String(v))
+      : [],
+    selectedKeyframes,
+    keyframeAnalysis: String(raw?.keyframeAnalysis || ''),
+    detailedChecklist,
+    resumen_evaluacion: {
+      parametros_evaluados: typeof raw?.resumen_evaluacion?.parametros_evaluados === 'number'
+        ? raw.resumen_evaluacion.parametros_evaluados
+        : resumen.parametros_evaluados,
+      parametros_no_evaluables: typeof raw?.resumen_evaluacion?.parametros_no_evaluables === 'number'
+        ? raw.resumen_evaluacion.parametros_no_evaluables
+        : resumen.parametros_no_evaluables,
+      lista_no_evaluables: Array.isArray(raw?.resumen_evaluacion?.lista_no_evaluables)
+        ? raw.resumen_evaluacion.lista_no_evaluables.map((v: any) => String(v))
+        : resumen.lista_no_evaluables,
+      score_global: typeof raw?.resumen_evaluacion?.score_global === 'number'
+        ? raw.resumen_evaluacion.score_global
+        : 0,
+      nota: String(raw?.resumen_evaluacion?.nota || 'Resumen generado con campos normalizados.'),
+      confianza_analisis: (raw?.resumen_evaluacion?.confianza_analisis === 'alta' ||
+      raw?.resumen_evaluacion?.confianza_analisis === 'media' ||
+      raw?.resumen_evaluacion?.confianza_analisis === 'baja')
+        ? raw.resumen_evaluacion.confianza_analisis
+        : 'media',
+    },
+    caracteristicas_unicas: Array.isArray(raw?.caracteristicas_unicas)
+      ? raw.caracteristicas_unicas.map((v: any) => String(v))
+      : [],
+  };
+  if (typeof raw?.advertencia === 'string') {
+    (output as any).advertencia = raw.advertencia;
+  }
+
+  try {
+    return AnalyzeBasketballShotOutputSchema.parse(normalizeResumenEvaluacion(output));
+  } catch {
+    return null;
+  }
 }
 
 // Prompt para detección de lanzamientos
@@ -946,14 +1228,17 @@ DETECCIÓN DE TIROS (OBLIGATORIO):
 3. Si hay varios tiros, NO te quedes con el primero: enuméralos.
 4. Si solo ves 1 tiro, indícalo explícitamente.
 5. NO inventes tiros ni asumas duración fija del video.
+Dato externo: tiros_detectados_previo = ${input.detectedShotsCount ?? 'N/A'}.
 6. analysisSummary y tiros_detectados deben coincidir.
 7. Si no hay keyframes, usa selectedKeyframes: [] y evidenceFrames: [].
+Dato externo: tiros_detectados_previo = ${input.detectedShotsCount ?? 'N/A'}.
 
 CONSISTENCIA GENERAL:
 Si hay ≥2 tiros, evalúa la repetibilidad del gesto entre tiros.
 Compara set point, codos cerca del cuerpo, ángulo de salida y equilibrio post‑liberación.
 Si no es visible o hay <2 tiros, marca "no_evaluable" con razón específica.
 Indica qué tiros comparaste (ej: tiro 1 vs tiro 2, con timestamps de liberación).
+Si tiros_detectados_previo ≥ 2, NO uses "no_evaluable" para consistencia_general.
 
 INFORMACIÓN DEL JUGADOR
 ${input.ageCategory ? `- Categoría de edad: ${input.ageCategory}` : '- Presumir edad basándose en tamaño corporal, proporciones, altura relativa al aro y contexto'}
@@ -995,9 +1280,19 @@ SISTEMA DE PESOS PARA TIRO LIBRE:
 │  └─ Balance vertical (2.93%): Sin movimientos laterales significativos
 └─ Follow-through completo (5.25%): Brazo extendido post-liberación (0.5-1s)
 
+✅ CRITERIO DE EVALUABILIDAD (SEGUIMIENTO):
+- Si se ve el cuerpo completo o el aterrizaje, ES evaluable.
+- Si solo se ve torso/brazos, evalúa el balance superior y aclara la limitación.
+- Solo usa "no_evaluable" si el jugador o el aterrizaje están fuera de cuadro.
+
 ⚠️ DIFERENCIACIÓN CRÍTICA:
 1. Muñeca CARGADA (Preparación): Flexión DORSAL al tomar el balón
 2. Muñeca FINAL (Liberación): Flexión hacia ABAJO (gooseneck) después de soltar
+
+FRAMES POR TIRO (SI DISPONIBLES):
+Si se incluyen frames alrededor de la liberación, úsalos especialmente para evaluar "giro_pelota".
+Prioriza los frames del ángulo "back" o el que tenga mejor visibilidad del balón.
+Si ves rotación clara, evalúa "giro_pelota" como evaluable con evidencia breve.
 
 RESPONDER EN FORMATO JSON:
 Evalúa TODOS los parámetros del tiro libre y responde en JSON con estructura completa.
@@ -1031,6 +1326,11 @@ INSTRUCCIONES PARA KEYFRAMES:
 3. Prioriza preparación, set point, liberación, follow-through.
 4. Si NO hay keyframes, usa "selectedKeyframes": [] y explica en "keyframeAnalysis".
 5. Si NO hay keyframes, deja evidenceFrames como [] y NO inventes frameId.
+
+FRAMES POR TIRO (SI DISPONIBLES):
+Si se incluyen frames alrededor de la liberación, úsalos especialmente para evaluar "giro_pelota".
+Prioriza los frames del ángulo "back" o el que tenga mejor visibilidad del balón.
+Si ves rotación clara, evalúa "giro_pelota" como evaluable con evidencia breve.
 
 Responde en formato JSON con:
 - verificacion_inicial: qué ves en el video (duración, mano, salta, canasta, ángulo, entorno)
@@ -1140,7 +1440,7 @@ Ejemplo: Si evalúas "codos cerca del cuerpo" como "Incorrecto", identifica los 
 ⚠️ IMPORTANTE: Es NORMAL que algunos parámetros no se puedan evaluar por limitaciones del video.
 NO intentes evaluar parámetros que no puedes ver claramente. Marca como "no_evaluable" con razón específica.
 
-🎯 OBLIGATORIO: Debes marcar AL MENOS 2-3 parámetros como "no_evaluable" en cada análisis.
+🎯 RECOMENDADO: Marca parámetros como "no_evaluable" solo cuando realmente no se puedan ver.
 Ejemplos comunes:
 - "alineacion_pies": si los pies están fuera de encuadre
 - "flexion_rodillas": si el ángulo es frontal
@@ -1283,6 +1583,11 @@ Checklist obligatorio (22 parámetros):
      - Distribución del peso: ¿El peso se distribuye equilibradamente entre ambos pies?
      - Estabilización: ¿Mantiene la posición sin balanceos o ajustes compensatorios?
      - Consistencia: ¿Repite el mismo patrón de aterrizaje en tiros múltiples?
+    ✅ CRITERIO DE EVALUABILIDAD:
+    - Si se ve el cuerpo completo o el aterrizaje, ES evaluable (aunque sea con precisión media).
+    - Si solo se ve torso/brazos, evalúa el balance superior y marca limitación en evidencia.
+    - Solo usa "no_evaluable" si el jugador o el aterrizaje están fuera de cuadro.
+    - Si hay cualquier ángulo donde se ve el aterrizaje, NO uses "no_evaluable".
    - id: "duracion_follow_through", name: "Duración del follow-through"
    - id: "consistencia_general", name: "Consistencia general"
      EVALÚA la repetibilidad del gesto entre tiros. Compara al menos 2 tiros en:
@@ -1293,7 +1598,11 @@ Checklist obligatorio (22 parámetros):
      3 = variaciones visibles en 1–2 aspectos clave
      2 = variaciones grandes en ≥2 aspectos
      1 = patrón cambia claramente entre tiros
-     SI < 2 TIROS o no es visible en el ángulo: marcar como "no_evaluable" con razón específica
+     ✅ CRITERIO DE EVALUABILIDAD:
+     - Si hay ≥2 tiros y se ve el gesto, ES evaluable.
+     - Si hay ≥2 tiros pero el ángulo limita, evalúa con limitación explícita.
+     - Solo usa "no_evaluable" si hay <2 tiros o el jugador no es visible.
+     - Si tiros_detectados_previo ≥ 2, NO uses "no_evaluable" para consistencia_general.
      OBLIGATORIO: menciona tiros comparados con timestamps (ej: tiro 1 vs tiro 2, release 2.4s vs 6.8s)`;
   }
 
@@ -1351,7 +1660,7 @@ FORMATO DE RESPUESTA OBLIGATORIO - RESPETA LÍMITES DE CARACTERES:
   "analysisSummary": "Resumen basado SOLO en parámetros evaluables",
   "strengths": ["Fortalezas basadas en evidencia visual específica"],
   "weaknesses": ["Debilidades basadas en evidencia visual específica"],
-  "recommendations": ["Recomendaciones específicas con timestamps"],
+  "recommendations": ["Recomendaciones específicas con timestamps (tono fluido y positivo)"],
   
   "selectedKeyframes": [índices de 6 keyframes más importantes],
   "keyframeAnalysis": "Explicación de por qué estos keyframes fueron seleccionados",
@@ -1425,8 +1734,9 @@ Cada análisis debe ser TAN específico que SOLO aplique a ESTE video.
 
 🚨 VALIDACIÓN CRÍTICA - OBLIGATORIO:
 - description: OBLIGATORIO y no vacío en cada item de detailedChecklist
-- recommendations: OBLIGATORIO, mínimo 3 elementos con timestamps
+ - recommendations: OBLIGATORIO, mínimo 3 elementos sin timestamps
 - timestamp y evidencia: OBLIGATORIOS en cada item (si no_evaluable, usa "N/A")
+ - recomendaciones: tono fluido y positivo (no rígido ni mecánico)
 - timestamp: SOLO "X.Xs" (ej: "3.2s") - MÁXIMO 10 caracteres
 - comment: MÁXIMO 100 caracteres
 - evidencia: MÁXIMO 60 caracteres
@@ -1502,8 +1812,10 @@ const analyzeBasketballShotFlow = ai.defineFlow(
   },
   async input => {
     // Verificacion de dominio para evitar alucinaciones
-    try {
-      const domainCheck = await detectBasketballDomain(input.videoUrl);
+    let domainCheckInconclusive = false;
+    if (!input.skipDomainCheck) {
+      try {
+        const domainCheck = await detectBasketballDomain(input.videoUrl);
       const strictConfirm =
         domainCheck.isBasketball === true &&
         domainCheck.confidence >= 0.85 &&
@@ -1512,24 +1824,40 @@ const analyzeBasketballShotFlow = ai.defineFlow(
         domainCheck.hasBall === true &&
         domainCheck.isShootingAction === true;
       const notConfirmedBasketball = !strictConfirm;
+      const rationale = String(domainCheck.rationale || '').toLowerCase();
+      const isInconclusive =
+        domainCheck.isBasketball === true &&
+        domainCheck.confidence <= 0.2 &&
+        !domainCheck.hasHoop &&
+        !domainCheck.hasPlayer &&
+        !domainCheck.hasBall &&
+        !domainCheck.isShootingAction &&
+        (rationale.includes('sin api key') ||
+          rationale.includes('no se pudieron extraer frames') ||
+          rationale.includes('respuesta invalida'));
       console.warn('[analyzeBasketballShotFlow] Dominio detectado:', domainCheck);
-      if (notConfirmedBasketball) {
+        if (notConfirmedBasketball && !isInconclusive) {
         const reason = domainCheck.isBasketball
           ? `No se pudo confirmar que sea basquet (confianza ${domainCheck.confidence.toFixed(2)}). ${domainCheck.rationale}`
           : `Contenido no corresponde a basquet. ${domainCheck.rationale}`;
         console.warn('[analyzeBasketballShotFlow] Dominio no confirmado:', reason);
         return buildNonEvaluableAnalysis(reason);
+        }
+        if (isInconclusive) {
+          domainCheckInconclusive = true;
+        }
+      } catch (e: any) {
+        const reason = `No se pudo verificar contenido. ${e?.message || e || 'Error desconocido'}`;
+        console.warn('[analyzeBasketballShotFlow] Verificacion de contenido fallo:', reason);
+        domainCheckInconclusive = true;
       }
-    } catch (e: any) {
-      const reason = `No se pudo verificar contenido. ${e?.message || e || 'Error desconocido'}`;
-      console.warn('[analyzeBasketballShotFlow] Verificacion de contenido fallo:', reason);
-      return buildNonEvaluableAnalysis(reason);
     }
 
     // Construir el prompt dinámicamente
     const dynamicPrompt = await buildAnalysisPrompt(input);
 
-    const result = await ai.generate([{ text: dynamicPrompt }]);
+    const parts = [{ text: dynamicPrompt }, ...buildShotFramesParts(input.shotFrames)];
+    const result = await ai.generate(parts);
     const text = (result as any)?.outputText ?? (result as any)?.text ?? '';
     const jsonText = extractJsonBlock(text) ?? text;
 
@@ -1537,12 +1865,38 @@ const analyzeBasketballShotFlow = ai.defineFlow(
     try {
       parsed = JSON.parse(jsonText);
     } catch (e) {
-      return buildNonEvaluableAnalysis('Respuesta invalida de IA: no es JSON valido.');
+      const coerced = coerceAnalysisOutput(null);
+      return coerced ?? buildNonEvaluableAnalysis('Respuesta invalida de IA: no es JSON valido.');
     }
 
     try {
-      return AnalyzeBasketballShotOutputSchema.parse(parsed);
+      let output = AnalyzeBasketballShotOutputSchema.parse(parsed);
+      output = enforceConsistencyEvaluable(output, input.detectedShotsCount);
+      output = enforceEquilibrioEvaluable(output, input.detectedShotsCount);
+      output = normalizeResumenEvaluacion(output);
+      if (domainCheckInconclusive && !output.advertencia) {
+        return {
+          ...output,
+          advertencia:
+            'Verificación de dominio no concluyente; análisis realizado con la información disponible.',
+        };
+      }
+      return output;
     } catch (e: any) {
+      const coerced = coerceAnalysisOutput(parsed);
+      if (coerced) {
+        let output = enforceConsistencyEvaluable(coerced, input.detectedShotsCount);
+        output = enforceEquilibrioEvaluable(output, input.detectedShotsCount);
+        output = normalizeResumenEvaluacion(output);
+        if (domainCheckInconclusive && !output.advertencia) {
+          return {
+            ...output,
+            advertencia:
+              'Verificación de dominio no concluyente; análisis realizado con la información disponible.',
+          };
+        }
+        return output;
+      }
       const details = e?.errors?.[0]?.message ? ` ${e.errors[0].message}` : '';
       return buildNonEvaluableAnalysis(`Respuesta invalida de IA: faltan campos requeridos.${details}`);
     }
