@@ -32,7 +32,11 @@ env:
   - variable: MP_WEBHOOK_URL
     value: "https://chaaaas.com/api/payments/webhook"
   - variable: MP_ACCESS_TOKEN_AR
-    value: "APP_USR-3647146488744629-091106-8aeb480b57f1bbb536c0d2b1e876db05-799155933"
+    secret: MP_ACCESS_TOKEN_AR
+  - variable: MP_CLIENT_SECRET
+    secret: MP_CLIENT_SECRET
+  - variable: MP_SPONSOR_ID
+    value: "5523794913220352"
   - variable: DLOCAL_API_KEY
     secret: DLOCAL_API_KEY
   - variable: DLOCAL_SECRET_KEY

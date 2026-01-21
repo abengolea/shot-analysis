@@ -6,6 +6,7 @@ import { buildConversationId, getMessageType } from '@/lib/message-utils';
 const MP_BASE = process.env.MP_BASE_URL || 'https://api.mercadopago.com';
 const MP_PLATFORM_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN_AR || '';
 const MP_NOTIFICATION_URL = process.env.MP_WEBHOOK_URL || '';
+const MP_SPONSOR_ID_RAW = process.env.MP_SPONSOR_ID || process.env.MP_PLATFORM_USER_ID || '';
 
 type PreferenceItem = {
   title: string;
@@ -86,6 +87,18 @@ export async function createPreference(input: CreatePreferenceInput) {
 
   const canAutoReturn = Boolean(backUrls?.success && backUrls.success.startsWith('https://'));
 
+  const resolvedSponsorId = (() => {
+    if (typeof input.sponsorId !== 'undefined' && input.sponsorId !== null) {
+      const asNumber = Number(input.sponsorId);
+      return Number.isFinite(asNumber) ? asNumber : undefined;
+    }
+    if (MP_SPONSOR_ID_RAW) {
+      const asNumber = Number(MP_SPONSOR_ID_RAW);
+      return Number.isFinite(asNumber) ? asNumber : undefined;
+    }
+    return undefined;
+  })();
+
   const body = {
     items: [
       {
@@ -103,9 +116,7 @@ export async function createPreference(input: CreatePreferenceInput) {
     },
     notification_url: MP_NOTIFICATION_URL,
     ...(typeof input.marketplaceFeeARS === 'number' ? { marketplace_fee: Math.max(0, input.marketplaceFeeARS) } : {}),
-    ...(typeof input.sponsorId !== 'undefined' && input.sponsorId !== null
-      ? { sponsor_id: Number(input.sponsorId) }
-      : {}),
+    ...(typeof resolvedSponsorId === 'number' ? { sponsor_id: resolvedSponsorId } : {}),
     ...(backUrls ? { back_urls: backUrls } : {}),
     ...(canAutoReturn ? { auto_return: 'approved' as const } : {}),
   };
@@ -115,6 +126,7 @@ export async function createPreference(input: CreatePreferenceInput) {
     hasBackUrls: !!backUrls,
     canAutoReturn,
     isHttps: returnUrl?.startsWith('https://'),
+    sponsorId: resolvedSponsorId,
   });
 
   const res = await fetch(`${MP_BASE}/checkout/preferences`, {

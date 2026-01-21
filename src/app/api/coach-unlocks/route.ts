@@ -224,7 +224,6 @@ export async function POST(req: NextRequest) {
           ? {
               collectorAccessToken: paymentAccount.mpAccessToken,
               marketplaceFeeARS: platformFee,
-              sponsorId: paymentAccount.mpUserId,
             }
           : {}),
         returnBase: getAppBaseUrl({ requestOrigin: req.nextUrl.origin }),
