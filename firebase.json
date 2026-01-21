@@ -6,13 +6,35 @@
   "storage": {
     "rules": "storage.rules"
   },
-  "apphosting": [
-    {
-      "backendId": "shot-analysis-2-stagin",
-      "source": ".",
-      "alwaysDeployFromSource": true
-    }
-  ],
+  "apphosting": {
+    "backendId": "shot-analysis-2-stagin",
+    "source": ".",
+    "alwaysDeployFromSource": true,
+    "ignore": [
+      "**/.git/**",
+      "**/.next/**",
+      "**/.cursor/**",
+      "**/.idx/**",
+      "**/node_modules/**",
+      "**/firebase-debug.log",
+      "**/*.zip",
+      "**/*.mp4",
+      "**/*.mov",
+      "**/*.avi",
+      "**/*.mkv",
+      "**/*.csv",
+      "**/*.parquet",
+      "**/*.onnx",
+      "**/*.pt",
+      "**/*.ckpt",
+      "**/*.h5",
+      "docs/**",
+      "ml/**",
+      "pose-service/**",
+      "scripts/**",
+      "shotanalysia/**"
+    ]
+  },
   "emulators": {
     "auth": {
       "port": 9099
