@@ -26,9 +26,11 @@ import { PlayerProgressChart } from "@/components/player-progress-chart";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { PlayerVideosSection } from "@/components/player-videos-section";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useAuth } from "@/hooks/use-auth";
 import { db } from "@/lib/firebase";
-import { doc, updateDoc } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
+import { normalizeVideoUrl } from "@/lib/video-url";
 
 // Normaliza cualquier escala a 0..100 con 1 decimal (prioriza 1..5, luego 1..10)
 const toPct = (score: number): number => {
@@ -165,6 +167,18 @@ interface PlayerProfileClientProps {
   comments: PlayerComment[];
 }
 
+type ComparisonNote = {
+  id: string;
+  playerId: string;
+  coachId: string;
+  beforeAnalysisId: string;
+  afterAnalysisId: string;
+  comment: string;
+  createdAt?: any;
+  beforeLabel?: string;
+  afterLabel?: string;
+};
+
 export function PlayerProfileClient({ player, analyses, evaluations, comments }: PlayerProfileClientProps) {
   const { userProfile } = useAuth();
   const visibleAnalyses = useMemo(() => {
@@ -184,6 +198,8 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
   const [progressSummaryDraft, setProgressSummaryDraft] = useState<string>("");
   const [editingProgressSummary, setEditingProgressSummary] = useState(false);
   const [savingProgressSummary, setSavingProgressSummary] = useState(false);
+  const [comparisonNotes, setComparisonNotes] = useState<ComparisonNote[]>([]);
+  const [comparisonAnalyses, setComparisonAnalyses] = useState<Record<string, any>>({});
   const role = (userProfile as any)?.role;
   const canEditProgressSummary = Boolean(
     userProfile?.id &&
@@ -232,6 +248,96 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
   const filteredAnalyses = filter === 'all' 
     ? visibleAnalyses 
     : visibleAnalyses.filter(a => a.shotType === filter);
+
+  const analysisById = useMemo(() => {
+    const map: Record<string, any> = {};
+    visibleAnalyses.forEach((analysis: any) => {
+      if (analysis?.id) map[analysis.id] = analysis;
+    });
+    return map;
+  }, [visibleAnalyses]);
+
+  const getAnalysisLabel = (analysis: any) => {
+    const dateRaw = analysis?.createdAt;
+    const date = dateRaw ? new Date(dateRaw) : null;
+    const label = date && !Number.isNaN(date.getTime()) ? date.toLocaleString('es-ES') : 'Fecha desconocida';
+    const shotType = analysis?.shotType ? ` · ${analysis.shotType}` : '';
+    return `${label}${shotType}`;
+  };
+
+  const getAnalysisVideoUrl = (analysis: any) => {
+    const rawUrl =
+      analysis?.videoFrontUrl ||
+      analysis?.videoUrl ||
+      analysis?.videoLeftUrl ||
+      analysis?.videoRightUrl ||
+      analysis?.videoBackUrl;
+    return rawUrl ? (normalizeVideoUrl(String(rawUrl)) ?? undefined) : undefined;
+  };
+
+  useEffect(() => {
+    if (!player?.id) return;
+    const q = query(collection(db as any, 'comparisonNotes'), where('playerId', '==', player.id));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as ComparisonNote[];
+        list.sort((a, b) => {
+          const timeA = (a.createdAt && typeof a.createdAt?.toDate === 'function')
+            ? a.createdAt.toDate().getTime()
+            : new Date(a.createdAt || 0).getTime();
+          const timeB = (b.createdAt && typeof b.createdAt?.toDate === 'function')
+            ? b.createdAt.toDate().getTime()
+            : new Date(b.createdAt || 0).getTime();
+          return timeB - timeA;
+        });
+        setComparisonNotes(list);
+      },
+      (err) => {
+        console.error('Error cargando comparaciones:', err);
+      }
+    );
+    return () => unsub();
+  }, [player?.id]);
+
+  useEffect(() => {
+    const ids = new Set<string>();
+    comparisonNotes.forEach((note) => {
+      if (note.beforeAnalysisId) ids.add(note.beforeAnalysisId);
+      if (note.afterAnalysisId) ids.add(note.afterAnalysisId);
+    });
+    const missing = Array.from(ids).filter((id) => !analysisById[id] && !comparisonAnalyses[id]);
+    if (!missing.length) return;
+    const load = async () => {
+      try {
+        const entries = await Promise.all(
+          missing.map(async (id) => {
+            const snap = await getDoc(doc(db as any, 'analyses', id));
+            return [id, snap.exists() ? { id, ...(snap.data() as any) } : null] as const;
+          })
+        );
+        setComparisonAnalyses((prev) => {
+          const next = { ...prev };
+          entries.forEach(([id, data]) => {
+            if (data) next[id] = data;
+          });
+          return next;
+        });
+      } catch (error) {
+        console.error('Error cargando análisis de comparaciones:', error);
+      }
+    };
+    load();
+  }, [comparisonNotes, analysisById, comparisonAnalyses]);
+
+  const comparisonIds = useMemo(() => {
+    const ids = new Set<string>();
+    comparisonNotes.forEach((note) => {
+      if (note.beforeAnalysisId) ids.add(note.beforeAnalysisId);
+      if (note.afterAnalysisId) ids.add(note.afterAnalysisId);
+    });
+    return ids;
+  }, [comparisonNotes]);
 
   return (
     <div className="flex flex-col gap-8">
@@ -441,6 +547,7 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
                     <th className="text-left font-medium px-3 py-2">Tipo</th>
                     <th className="text-left font-medium px-3 py-2">Score</th>
                     <th className="text-left font-medium px-3 py-2">Estado</th>
+                    <th className="text-left font-medium px-3 py-2">Comparación</th>
                     <th className="text-left font-medium px-3 py-2">Acciones</th>
                   </tr>
                 </thead>
@@ -461,6 +568,18 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
                           <td className="px-3 py-2">{score}</td>
                           <td className="px-3 py-2">
                             <Badge variant={coachStatus.variant}>{coachStatus.label}</Badge>
+                          </td>
+                          <td className="px-3 py-2">
+                            {comparisonIds.has(a.id) ? (
+                              <Link
+                                href={`/coach/compare?playerId=${encodeURIComponent(player.id)}&focusAnalysisId=${encodeURIComponent(a.id)}`}
+                                className="inline-flex"
+                              >
+                                <Badge variant="outline">Comparado</Badge>
+                              </Link>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex flex-wrap items-center gap-2">
@@ -622,6 +741,73 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Comparaciones antes y después</CardTitle>
+              <CardDescription>
+                Comparaciones realizadas por el entrenador con videos y comentarios.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {comparisonNotes.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  Todavía no hay comparaciones guardadas.
+                </div>
+              ) : (
+                <Accordion type="single" collapsible className="space-y-2">
+                  {comparisonNotes.map((note) => {
+                    const before = analysisById[note.beforeAnalysisId] || comparisonAnalyses[note.beforeAnalysisId];
+                    const after = analysisById[note.afterAnalysisId] || comparisonAnalyses[note.afterAnalysisId];
+                    const shotType = (after || before)?.shotType || "Tiro";
+                    const beforeDate = before ? new Date(before.createdAt).toLocaleString('es-ES') : 'Fecha desconocida';
+                    const afterDate = after ? new Date(after.createdAt).toLocaleString('es-ES') : 'Fecha desconocida';
+                    return (
+                      <AccordionItem key={note.id} value={note.id} className="rounded-lg border px-4">
+                        <AccordionTrigger className="text-left">
+                          <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
+                            <span className="font-medium text-foreground">Comparación realizada</span>
+                            <span>· {shotType}</span>
+                            <span>· {beforeDate} → {afterDate}</span>
+                            <span>· Tiros evaluados: 2</span>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="space-y-4 pb-4">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <div className="text-xs font-medium text-muted-foreground">Video Antes</div>
+                              {getAnalysisVideoUrl(before) ? (
+                                <video
+                                  controls
+                                  className="w-full rounded-md border bg-black aspect-video"
+                                  src={getAnalysisVideoUrl(before)}
+                                />
+                              ) : (
+                                <div className="text-xs text-muted-foreground">Video no disponible.</div>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <div className="text-xs font-medium text-muted-foreground">Video Después</div>
+                              {getAnalysisVideoUrl(after) ? (
+                                <video
+                                  controls
+                                  className="w-full rounded-md border bg-black aspect-video"
+                                  src={getAnalysisVideoUrl(after)}
+                                />
+                              ) : (
+                                <div className="text-xs text-muted-foreground">Video no disponible.</div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-sm">{note.comment}</div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    );
+                  })}
+                </Accordion>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

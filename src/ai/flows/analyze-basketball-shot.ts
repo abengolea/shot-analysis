@@ -76,6 +76,10 @@ type PreviewFrame = {
   dataUrl: string;
 };
 
+type GenkitPart =
+  | { text: string }
+  | { media: { url: string; contentType: string } };
+
 type ShotFramesInput = {
   sourceAngle?: string;
   shots: Array<{
@@ -88,9 +92,9 @@ type ShotFramesInput = {
 
 function buildShotFramesParts(
   shotFrames?: ShotFramesInput
-): Array<{ text?: string; media?: { url: string; contentType: string } }> {
+): GenkitPart[] {
   if (!shotFrames || !Array.isArray(shotFrames.shots) || shotFrames.shots.length === 0) return [];
-  const parts: Array<{ text?: string; media?: { url: string; contentType: string } }> = [];
+  const parts: GenkitPart[] = [];
   const source = shotFrames.sourceAngle ? String(shotFrames.sourceAngle) : 'desconocido';
   const maxShots = 2;
   const maxFramesPerShot = 3;
@@ -167,7 +171,7 @@ async function detectBasketballDomain(videoUrl: string): Promise<DomainCheckResu
     };
   }
 
-  const parts: any[] = [
+  const parts: GenkitPart[] = [
     {
       text:
         'Eres un verificador de contenido MUY estricto. Solo responde isBasketball=true si se ve claramente ' +
@@ -1856,7 +1860,7 @@ const analyzeBasketballShotFlow = ai.defineFlow(
     // Construir el prompt dinámicamente
     const dynamicPrompt = await buildAnalysisPrompt(input);
 
-    const parts = [{ text: dynamicPrompt }, ...buildShotFramesParts(input.shotFrames)];
+  const parts: GenkitPart[] = [{ text: dynamicPrompt }, ...buildShotFramesParts(input.shotFrames)];
     const result = await ai.generate(parts);
     const text = (result as any)?.outputText ?? (result as any)?.text ?? '';
     const jsonText = extractJsonBlock(text) ?? text;

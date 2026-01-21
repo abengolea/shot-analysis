@@ -6,9 +6,13 @@
   "storage": {
     "rules": "storage.rules"
   },
-  "apphosting": {
-    "source": "."
-  },
+  "apphosting": [
+    {
+      "backendId": "shot-analysis-2-stagin",
+      "source": ".",
+      "alwaysDeployFromSource": true
+    }
+  ],
   "emulators": {
     "auth": {
       "port": 9099

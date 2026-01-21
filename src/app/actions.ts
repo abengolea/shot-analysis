@@ -1059,7 +1059,12 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                         shotFramesUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
                         shotFramesForPrompt = shotFrames.slice(0, 2).map((shot) => ({
                             ...shot,
-                            frames: Array.isArray(shot.frames) ? shot.frames.slice(0, 3) : [],
+                            frames: Array.isArray(shot.frames)
+                                ? shot.frames
+                                    .map((frame) => typeof frame === 'string' ? frame : frame?.dataUrl)
+                                    .filter((frame): frame is string => typeof frame === 'string' && frame.length > 0)
+                                    .slice(0, 3)
+                                : [],
                         }));
                     }
                 }

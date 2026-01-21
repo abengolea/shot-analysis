@@ -33,6 +33,18 @@ env:
     value: "https://chaaaas.com/api/payments/webhook"
   - variable: MP_ACCESS_TOKEN_AR
     value: "APP_USR-3647146488744629-091106-8aeb480b57f1bbb536c0d2b1e876db05-799155933"
+  - variable: DLOCAL_API_KEY
+    secret: DLOCAL_API_KEY
+  - variable: DLOCAL_SECRET_KEY
+    secret: DLOCAL_SECRET_KEY
+  - variable: DLOCAL_BASE_URL
+    value: "https://api.dlocalgo.com"
+  - variable: DLOCAL_WEBHOOK_URL
+    value: "https://chaaaas.com/api/payments/webhook-dlocal"
+  - variable: DLOCAL_RETURN_URL
+    value: "https://chaaaas.com/payments/return"
+  - variable: USD_EXCHANGE_RATE
+    value: "1000"
   - variable: GEMINI_API_KEY
     secret: GEMINI_API_KEY
   - variable: GOOGLE_API_KEY
