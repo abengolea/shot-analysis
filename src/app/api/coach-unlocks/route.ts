@@ -115,15 +115,6 @@ export async function POST(req: NextRequest) {
             }, { status: 409 });
           }
         }
-        const unlockCreatedAt = existingUnlock.createdAt ? new Date(existingUnlock.createdAt).getTime() : 0;
-        const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-        if (unlockCreatedAt > fiveMinutesAgo) {
-          console.log('⚠️ Unlock pendiente reciente, rechazando duplicado');
-          return NextResponse.json({
-            error: `Ya tienes un pago pendiente para que ${coachData?.name || 'este entrenador'} analice tu lanzamiento. Espera a que se complete o cancela el pago anterior.`,
-            code: 'PAYMENT_PENDING',
-          }, { status: 409 });
-        }
       }
     }
 

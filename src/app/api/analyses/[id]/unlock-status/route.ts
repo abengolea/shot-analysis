@@ -108,8 +108,16 @@ export async function GET(
     for (const unlock of unlocks) {
       if (unlock.status === 'paid') {
         paidCoachIds.push(unlock.coachId);
-      } else if (unlock.status === 'pending') {
-        pendingCoachIds.push(unlock.coachId);
+        continue;
+      }
+      if (unlock.paymentId) {
+        const paymentSnap = await adminDb.collection('payments').doc(unlock.paymentId).get();
+        if (paymentSnap.exists) {
+          const paymentData = paymentSnap.data() as any;
+          if (paymentData?.status === 'approved' || paymentData?.status === 'paid') {
+            paidCoachIds.push(unlock.coachId);
+          }
+        }
       }
     }
 
@@ -118,10 +126,6 @@ export async function GET(
       if (accessData.status === 'paid') {
         if (!paidCoachIds.includes(coachId)) {
           paidCoachIds.push(coachId);
-        }
-      } else if (accessData.status === 'pending') {
-        if (!pendingCoachIds.includes(coachId)) {
-          pendingCoachIds.push(coachId);
         }
       }
     }
@@ -142,7 +146,7 @@ export async function GET(
     }
 
     const hasPaidUnlock = paidCoachIds.length > 0;
-    const hasPendingUnlock = pendingCoachIds.length > 0;
+    const hasPendingUnlock = false;
     const status: 'none' | 'pending_payment' | 'paid_pending_review' | 'reviewed' =
       hasCoachFeedback
         ? 'reviewed'
