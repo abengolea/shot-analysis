@@ -14,7 +14,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { CheckCircle, AlertCircle, XCircle, ListChecks, Loader2, Save } from "lucide-react";
+import { CheckCircle, AlertCircle, XCircle, ListChecks, Loader2, Save, Star } from "lucide-react";
 // import { updateAnalysisScore } from "@/app/actions";
 import { useFormStatus } from "react-dom";
 import { Input } from "./ui/input";
@@ -129,33 +129,54 @@ function ChecklistItem({
     return <XCircle className="text-red-500" />;
   };
 
+  const renderRatingStars = (r: number | undefined) => {
+    if (!r || r < 1) return null;
+    return (
+      <div className="flex items-center gap-1">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <Star
+            key={`rating-star-${item.id}-${star}`}
+            className={`h-4 w-4 ${star <= r ? "text-yellow-400 fill-current" : "text-gray-300"}`}
+          />
+        ))}
+      </div>
+    );
+  };
+
   return (
-    <div className={`space-y-3 sm:space-y-4 rounded-lg border p-3 sm:p-4 ${coachInline && typeof coachValue?.rating === 'number' ? 'bg-emerald-50 border-emerald-300' : ''}`}>
-      <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-1">
-        <h4 className="font-semibold text-sm sm:text-base flex items-center gap-2">
-          {item.name}
-          {coachInline && typeof coachValue?.rating === 'number' && (
-            <Badge variant="secondary" className="text-[11px]">Visto</Badge>
-          )}
-        </h4>
-        <div className="flex items-center gap-2">
-          {isNA ? (
-            <>
-              <AlertCircle className="text-muted-foreground" />
-              <span className="font-medium text-sm sm:text-base">No calificable por falta de datos (N/A)</span>
-            </>
-          ) : (
-            <>
-              {ratingIcon(rating)}
-              <span className="font-medium text-sm sm:text-base">{ratingLabel(rating)}</span>
-            </>
-          )}
+    <div className={`space-y-3 sm:space-y-4 rounded-xl border bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm transition-shadow hover:shadow-md ${coachInline && typeof coachValue?.rating === 'number' ? 'bg-emerald-50 border-emerald-300' : ''}`}>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-2">
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {coachInline && typeof coachValue?.rating === 'number' && (
+              <Badge variant="secondary" className="text-[11px]">Visto</Badge>
+            )}
+          </div>
+          <h4 className="font-semibold text-sm sm:text-base flex items-center gap-2">
+            {item.name}
+          </h4>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-2">
+            {isNA ? (
+              <>
+                <AlertCircle className="text-muted-foreground" />
+                <span className="font-medium text-sm sm:text-base">No calificable por falta de datos (N/A)</span>
+              </>
+            ) : (
+              <>
+                {ratingIcon(rating)}
+                <span className="font-medium text-sm sm:text-base">{ratingLabel(rating)}</span>
+              </>
+            )}
+          </div>
+          {!isNA && renderRatingStars(rating)}
         </div>
       </div>
       
       {/* Visualización del score de la IA (si existe) */}
       {(item as any).score !== undefined && getScoreColor && getStatusColor && renderStars && (
-        <div className="mb-3 p-3 border rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="mb-3 rounded-lg border bg-gradient-to-r from-blue-50 to-indigo-50 p-4 shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <span className={`text-2xl font-bold ${getScoreColor((item as any).score)}`}>
               {(item as any).score}/100

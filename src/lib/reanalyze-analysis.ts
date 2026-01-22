@@ -1,6 +1,8 @@
 import { adminDb } from '@/lib/firebase-admin';
 import { analyzeBasketballShot, detectShots } from '@/ai/flows/analyze-basketball-shot';
 import { buildEconomyEvidenceFromVideoUrl } from '@/lib/economy-evidence';
+import { getVideoDurationSecondsFromBuffer } from '@/lib/ffmpeg';
+import { detectShotsFromPoseService } from '@/lib/pose-shot-detection';
 import { buildScoreMetadata, loadWeightsFromFirestore } from '@/lib/scoring';
 import { generateAnalysisSummary } from '@/lib/ai-summary';
 import type { ChecklistCategory, DetailedChecklistItem } from '@/lib/types';
@@ -87,6 +89,30 @@ export async function reanalyzeAnalysis({
     const ageCategory = mapAgeGroupToCategory(player?.ageGroup);
     const playerLevel = player?.playerLevel || 'Principiante';
 
+    const durationCacheByUrl = new Map<string, number>();
+    const getDurationForUrl = async (url: string): Promise<number> => {
+      if (!url) return 0;
+      if (durationCacheByUrl.has(url)) return durationCacheByUrl.get(url) || 0;
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) return 0;
+        const ab = await resp.arrayBuffer();
+        const buf = Buffer.from(ab);
+        const durationSec = await getVideoDurationSecondsFromBuffer(buf);
+        durationCacheByUrl.set(url, durationSec);
+        return durationSec;
+      } catch {
+        return 0;
+      }
+    };
+    const chooseTargetFrames = (durationSec: number): number => {
+      if (!durationSec || durationSec <= 0) return 48;
+      if (durationSec <= 4.5) return 60;
+      if (durationSec <= 8) return 48;
+      if (durationSec <= 12) return 40;
+      return 32;
+    };
+
     const videoUrl: string | undefined =
       analysis.videoBackUrl || analysis.videoUrl || analysis.videoFrontUrl || analysis.videoLeftUrl || analysis.videoRightUrl;
     if (!videoUrl) return { ok: false, error: 'Este análisis no tiene URL de video' };
@@ -103,13 +129,17 @@ export async function reanalyzeAnalysis({
     let skipDomainCheck = false;
     let detectedShotsCount: number | undefined = undefined;
     try {
-      const primaryDetection = await detectShots({
-        videoUrl,
-        shotType: String(analysis.shotType || 'tres'),
-        ageCategory: ageCategory as any,
-        playerLevel: String(playerLevel),
-        availableKeyframes: [],
-      });
+      const durationSec = await getDurationForUrl(videoUrl);
+      const targetFrames = chooseTargetFrames(durationSec);
+      const primaryDetection =
+        (await detectShotsFromPoseService(videoUrl, targetFrames)) ||
+        (await detectShots({
+          videoUrl,
+          shotType: String(analysis.shotType || 'tres'),
+          ageCategory: ageCategory as any,
+          playerLevel: String(playerLevel),
+          availableKeyframes: [],
+        }));
       const count = typeof primaryDetection?.shots_count === 'number'
         ? primaryDetection.shots_count
         : Array.isArray(primaryDetection?.shots)
@@ -168,6 +198,24 @@ export async function reanalyzeAnalysis({
     });
 
     const detectionByLabel: Array<{ label: string; url: string; result: any }> = [];
+    const normalizeDetectionResult = (result: any, durationSec: number | null) => {
+      const shots = Array.isArray(result?.shots) ? result.shots : [];
+      if (!durationSec || durationSec <= 0) return result;
+      const maxMs = durationSec * 1000 + 250;
+      let filtered = shots.filter((shot) => {
+        const endMs = Number(shot?.end_ms ?? shot?.release_ms ?? 0);
+        const startMs = Number(shot?.start_ms ?? 0);
+        return startMs <= maxMs && endMs <= maxMs;
+      });
+      if (durationSec <= 4.5 && filtered.length > 1) {
+        filtered = [filtered[0]];
+      }
+      return {
+        ...result,
+        shots: filtered,
+        shots_count: filtered.length,
+      };
+    };
     try {
       const sources = [
         { label: 'back', url: analysis.videoBackUrl },
@@ -176,14 +224,19 @@ export async function reanalyzeAnalysis({
         { label: 'right', url: analysis.videoRightUrl },
       ].filter((s): s is { label: string; url: string } => Boolean(s.url));
       for (const source of sources) {
-        const result = await detectShots({
-          videoUrl: source.url,
-          shotType: String(analysis.shotType || 'tres'),
-          ageCategory: ageCategory as any,
-          playerLevel: String(playerLevel),
-          availableKeyframes: [],
-        });
-        detectionByLabel.push({ label: source.label, url: source.url, result });
+        const durationSec = await getDurationForUrl(source.url);
+        const targetFrames = chooseTargetFrames(durationSec);
+        const result =
+          (await detectShotsFromPoseService(source.url, targetFrames)) ||
+          (await detectShots({
+            videoUrl: source.url,
+            shotType: String(analysis.shotType || 'tres'),
+            ageCategory: ageCategory as any,
+            playerLevel: String(playerLevel),
+            availableKeyframes: [],
+          }));
+        const normalized = normalizeDetectionResult(result, durationSec);
+        detectionByLabel.push({ label: source.label, url: source.url, result: normalized });
       }
     } catch (e) {
       console.warn('reanalyzeAnalysis detectShots falló', e);
