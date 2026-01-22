@@ -81,10 +81,14 @@ export default function DashboardPage() {
   const [comparisonAnalyses, setComparisonAnalyses] = useState<Record<string, any>>({});
   const [comparisonsLoading, setComparisonsLoading] = useState(false);
   const comparisonsRef = useRef<HTMLDivElement | null>(null);
+  const [coachById, setCoachById] = useState<Record<string, { name?: string }>>({});
 
   // Controles de filtro/rango
   const [range, setRange] = useState<string>("12m"); // 3m,6m,12m,5y,all
   const [shotFilter, setShotFilter] = useState<string>("all"); // all, three, jump, free
+  const [recentRange, setRecentRange] = useState<string>("6m");
+  const [recentShotFilter, setRecentShotFilter] = useState<string>("all");
+  const [showAllRecent, setShowAllRecent] = useState(false);
 
   const toDate = (value: any) => {
     if (!value) return null;
@@ -130,6 +134,29 @@ export default function DashboardPage() {
     });
     return ids;
   })();
+
+  const filteredRecentAnalyses = (() => {
+    const now = new Date();
+    const inRange = (createdAt: string) => {
+      if (recentRange === "all") return true;
+      const months = recentRange === "3m" ? 3 : recentRange === "6m" ? 6 : 12;
+      const cutoff = new Date(now);
+      cutoff.setMonth(cutoff.getMonth() - months);
+      const date = new Date(createdAt);
+      if (Number.isNaN(date.getTime())) return false;
+      return date >= cutoff;
+    };
+    return userAnalyses.filter((analysis) => {
+      const matchesRange = inRange(analysis.createdAt);
+      const matchesShot =
+        recentShotFilter === "all" ? true : analysis.shotType === recentShotFilter;
+      return matchesRange && matchesShot;
+    });
+  })();
+
+  const recentAnalysesToShow = showAllRecent
+    ? filteredRecentAnalyses
+    : filteredRecentAnalyses.slice(0, 5);
 
   // Función para obtener análisis del usuario
   useEffect(() => {
@@ -211,6 +238,32 @@ export default function DashboardPage() {
     };
     load();
   }, [comparisonNotes, comparisonAnalyses]);
+
+  useEffect(() => {
+    const coachIds = Array.from(new Set(comparisonNotes.map((note) => note.coachId).filter(Boolean)));
+    const missing = coachIds.filter((id) => !coachById[id]);
+    if (!missing.length) return;
+    const load = async () => {
+      try {
+        const entries = await Promise.all(
+          missing.map(async (id) => {
+            const snap = await getDoc(doc(db as any, "coaches", id));
+            return [id, snap.exists() ? (snap.data() as any) : null] as const;
+          })
+        );
+        setCoachById((prev) => {
+          const next = { ...prev };
+          entries.forEach(([id, data]) => {
+            if (data) next[id] = { name: data.displayName || data.name || data.email };
+          });
+          return next;
+        });
+      } catch (e) {
+        console.error("Error cargando entrenadores de comparaciones:", e);
+      }
+    };
+    load();
+  }, [comparisonNotes, coachById]);
 
   // Cargar estado de feedback y reseñas del entrenador en batch
   useEffect(() => {
@@ -561,14 +614,44 @@ export default function DashboardPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Rango</span>
+              <Select value={recentRange} onValueChange={setRecentRange}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="Rango" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="3m">Últimos 3 meses</SelectItem>
+                  <SelectItem value="6m">Últimos 6 meses</SelectItem>
+                  <SelectItem value="12m">Último año</SelectItem>
+                  <SelectItem value="all">Todo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Tipo</span>
+              <Select value={recentShotFilter} onValueChange={setRecentShotFilter}>
+                <SelectTrigger className="w-60">
+                  <SelectValue placeholder="Tipo de tiro" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los tipos</SelectItem>
+                  <SelectItem value="Tiro Libre">Tiro Libre</SelectItem>
+                  <SelectItem value="Lanzamiento de Media Distancia (Jump Shot)">Media Distancia</SelectItem>
+                  <SelectItem value="Lanzamiento de Tres">Tres Puntos</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           {analysesLoading ? (
             <div className="py-8 text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
               <p>Cargando análisis...</p>
             </div>
-          ) : userAnalyses.length === 0 ? (
+          ) : filteredRecentAnalyses.length === 0 ? (
             <div className="py-8 text-center text-muted-foreground">
-              <p className="mb-4">Aún no tienes análisis de lanzamiento.</p>
+              <p className="mb-4">No hay análisis para los filtros seleccionados.</p>
               <Button asChild>
                 <Link href="/upload" onClick={(e) => {
                   const p: any = userProfile as any;
@@ -585,7 +668,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {userAnalyses.map((analysis) => {
+              {recentAnalysesToShow.map((analysis) => {
                 const statusMeta = coachStatusByAnalysis[analysis.id] || {};
                 const hasCoachFeedback = Boolean(statusMeta.hasCoachFeedback) || analysis.coachCompleted === true;
                 const reviewedCoachIds = statusMeta.reviewedCoachIds || [];
@@ -660,6 +743,16 @@ export default function DashboardPage() {
                   </div>
                 );
               })}
+              {filteredRecentAnalyses.length > 5 && (
+                <div className="flex items-center justify-center">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowAllRecent((prev) => !prev)}
+                  >
+                    {showAllRecent ? "Ver menos" : "Ver más"}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -668,7 +761,7 @@ export default function DashboardPage() {
       <div id="comparisons" ref={comparisonsRef}>
       <Card>
         <CardHeader>
-          <CardTitle>Comparaciones con tu entrenador</CardTitle>
+          <CardTitle>Comparaciones efectuadas por tu entrenador</CardTitle>
           <CardDescription>
             Revisá el antes y después con comentarios y videos.
           </CardDescription>
@@ -691,11 +784,12 @@ export default function DashboardPage() {
                 const shotType = (after || before)?.shotType || "Tiro";
                 const beforeDate = formatDate(before?.createdAt);
                 const afterDate = formatDate(after?.createdAt);
+                const coachName = coachById[note.coachId]?.name || "tu entrenador";
                 return (
                   <AccordionItem key={note.id} value={note.id} className="rounded-lg border px-4">
                     <AccordionTrigger className="text-left">
                       <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
-                        <span className="font-medium text-foreground">Comparación realizada</span>
+                        <span className="font-medium text-foreground">Comparación realizada por {coachName}</span>
                         <span>· {shotType}</span>
                         <span>· {beforeDate} → {afterDate}</span>
                         <span>· Tiros evaluados: 2</span>

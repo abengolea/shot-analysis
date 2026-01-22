@@ -200,6 +200,7 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
   const [savingProgressSummary, setSavingProgressSummary] = useState(false);
   const [comparisonNotes, setComparisonNotes] = useState<ComparisonNote[]>([]);
   const [comparisonAnalyses, setComparisonAnalyses] = useState<Record<string, any>>({});
+  const [coachById, setCoachById] = useState<Record<string, { name?: string }>>({});
   const role = (userProfile as any)?.role;
   const canEditProgressSummary = Boolean(
     userProfile?.id &&
@@ -329,6 +330,32 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
     };
     load();
   }, [comparisonNotes, analysisById, comparisonAnalyses]);
+
+  useEffect(() => {
+    const coachIds = Array.from(new Set(comparisonNotes.map((note) => note.coachId).filter(Boolean)));
+    const missing = coachIds.filter((id) => !coachById[id]);
+    if (!missing.length) return;
+    const load = async () => {
+      try {
+        const entries = await Promise.all(
+          missing.map(async (id) => {
+            const snap = await getDoc(doc(db as any, 'coaches', id));
+            return [id, snap.exists() ? (snap.data() as any) : null] as const;
+          })
+        );
+        setCoachById((prev) => {
+          const next = { ...prev };
+          entries.forEach(([id, data]) => {
+            if (data) next[id] = { name: data.displayName || data.name || data.email };
+          });
+          return next;
+        });
+      } catch (error) {
+        console.error('Error cargando entrenadores de comparaciones:', error);
+      }
+    };
+    load();
+  }, [comparisonNotes, coachById]);
 
   const comparisonIds = useMemo(() => {
     const ids = new Set<string>();
@@ -762,11 +789,12 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
                     const shotType = (after || before)?.shotType || "Tiro";
                     const beforeDate = before ? new Date(before.createdAt).toLocaleString('es-ES') : 'Fecha desconocida';
                     const afterDate = after ? new Date(after.createdAt).toLocaleString('es-ES') : 'Fecha desconocida';
+                    const coachName = coachById[note.coachId]?.name || "tu entrenador";
                     return (
                       <AccordionItem key={note.id} value={note.id} className="rounded-lg border px-4">
                         <AccordionTrigger className="text-left">
                           <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
-                            <span className="font-medium text-foreground">Comparación realizada</span>
+                            <span className="font-medium text-foreground">Comparación realizada por {coachName}</span>
                             <span>· {shotType}</span>
                             <span>· {beforeDate} → {afterDate}</span>
                             <span>· Tiros evaluados: 2</span>
