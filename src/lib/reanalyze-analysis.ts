@@ -3,6 +3,8 @@ import { analyzeBasketballShot, detectShots } from '@/ai/flows/analyze-basketbal
 import { buildEconomyEvidenceFromVideoUrl } from '@/lib/economy-evidence';
 import { getVideoDurationSecondsFromBuffer } from '@/lib/ffmpeg';
 import { detectShotsFromPoseService } from '@/lib/pose-shot-detection';
+import { verifyHasShotsWithLlmFromVideoUrl } from '@/lib/llm-shot-verify';
+import { buildNoShotsAnalysis, buildUnverifiedShotAnalysis } from '@/lib/analysis-fallbacks';
 import { buildScoreMetadata, loadWeightsFromFirestore } from '@/lib/scoring';
 import { generateAnalysisSummary } from '@/lib/ai-summary';
 import type { ChecklistCategory, DetailedChecklistItem } from '@/lib/types';
@@ -71,6 +73,59 @@ const normalizeDetailedChecklist = (input: any[]): ChecklistCategory[] => {
   }));
 };
 
+const scrubSummaryText = (text: string) => {
+  if (!text) return '';
+  return String(text)
+    .replace(/\b\d+(\.\d+)?\s*s\b/gi, '')
+    .replace(/\b\d+(\.\d+)?\s*segundos?\b/gi, '')
+    .replace(/\b\d+(\.\d+)?\s*s-\d+(\.\d+)?\s*s\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+};
+
+const sanitizeAiSummary = (text: string | null, totalShots: number) => {
+  if (!text) return '';
+  if (totalShots === 0) return '';
+  const cleaned = scrubSummaryText(text);
+  if (!cleaned) return '';
+  const contradictsZero =
+    totalShots === 0 && /se detect|un tiro|1 tiro|uno tiro/i.test(cleaned);
+  const contradictsPositive =
+    totalShots > 0 && /no se detectaron tiros|no se detecto tiros|no se detectaron lanzamientos/i.test(cleaned);
+  if (contradictsZero || contradictsPositive) return '';
+  return cleaned;
+};
+
+const buildDeterministicSummary = ({
+  totalShots,
+  shotsByLabel,
+  baseSummary,
+  resumen_evaluacion,
+  aiSummary,
+}: {
+  totalShots: number;
+  shotsByLabel: Array<{ label: string; count: number }>;
+  baseSummary?: string;
+  resumen_evaluacion?: { parametros_no_evaluables?: number };
+  aiSummary?: string | null;
+}) => {
+  const breakdown = shotsByLabel.map((item) => `${item.label}: ${item.count}`).join(', ');
+  const shotWord = totalShots === 1 ? 'tiro' : 'tiros';
+  const videoCount = shotsByLabel.length;
+  const videoWord = videoCount === 1 ? 'video' : 'videos';
+  const intro =
+    totalShots > 0
+      ? `Se analizaron ${totalShots} ${shotWord} en ${videoCount} ${videoWord}${breakdown ? ` (${breakdown})` : ''}.`
+      : 'No se detectaron tiros completos en los videos analizados.';
+  const noEval =
+    (resumen_evaluacion?.parametros_no_evaluables || 0) > 0
+      ? `Se dejaron ${resumen_evaluacion?.parametros_no_evaluables} parámetros sin evaluar por limitaciones del video.`
+      : '';
+  const aiClean = sanitizeAiSummary(aiSummary || null, totalShots);
+  const baseClean = sanitizeAiSummary(baseSummary || '', totalShots);
+  return [intro, noEval, aiClean || baseClean].filter(Boolean).join(' ');
+};
+
 export async function reanalyzeAnalysis({
   analysisId,
   promptConfig,
@@ -107,8 +162,8 @@ export async function reanalyzeAnalysis({
     };
     const chooseTargetFrames = (durationSec: number): number => {
       if (!durationSec || durationSec <= 0) return 48;
-      if (durationSec <= 4.5) return 60;
-      if (durationSec <= 8) return 48;
+      if (durationSec <= 4.5) return 72;
+      if (durationSec <= 8) return 56;
       if (durationSec <= 12) return 40;
       return 32;
     };
@@ -146,7 +201,7 @@ export async function reanalyzeAnalysis({
           ? primaryDetection.shots.length
           : 0;
       skipDomainCheck = count > 0;
-      detectedShotsCount = count || undefined;
+      detectedShotsCount = typeof count === 'number' ? count : undefined;
     } catch {}
 
     let shotFramesForPrompt: Array<{ idx: number; start_ms: number; release_ms: number; frames: string[] }> = [];
@@ -169,7 +224,7 @@ export async function reanalyzeAnalysis({
                     return '';
                   })
                   .filter((frame: string) => frame.startsWith('data:image'))
-                  .slice(0, 3);
+                  .slice(0, 5);
                 return {
                   idx: Number(shot?.idx || 0),
                   start_ms: Number(shot?.start_ms || 0),
@@ -183,26 +238,35 @@ export async function reanalyzeAnalysis({
       }
     } catch {}
 
-    const aiResult = await analyzeBasketballShot({
-      videoUrl,
-      shotType: String(analysis.shotType || 'tres'),
-      ageCategory: ageCategory as any,
-      playerLevel: String(playerLevel),
-      availableKeyframes,
-      promptConfig,
-      ...(skipDomainCheck ? { skipDomainCheck: true } : {}),
-      ...(typeof detectedShotsCount === 'number' ? { detectedShotsCount } : {}),
-      ...(shotFramesForPrompt.length > 0
-        ? { shotFrames: { sourceAngle: shotFramesSource, shots: shotFramesForPrompt } }
-        : {}),
-    });
+    let llmShotVerification: { has_shot_attempt: boolean; confidence?: number; reasoning?: string } | null = null;
+    if (detectedShotsCount === 0) {
+      llmShotVerification = await verifyHasShotsWithLlmFromVideoUrl(videoUrl);
+    }
+
+    const aiResult = detectedShotsCount === 0
+      ? (llmShotVerification?.has_shot_attempt
+          ? buildUnverifiedShotAnalysis(llmShotVerification.reasoning, llmShotVerification.confidence)
+          : buildNoShotsAnalysis())
+      : await analyzeBasketballShot({
+          videoUrl,
+          shotType: String(analysis.shotType || 'tres'),
+          ageCategory: ageCategory as any,
+          playerLevel: String(playerLevel),
+          availableKeyframes,
+          promptConfig,
+          ...(skipDomainCheck ? { skipDomainCheck: true } : {}),
+          ...(typeof detectedShotsCount === 'number' ? { detectedShotsCount } : {}),
+          ...(shotFramesForPrompt.length > 0
+            ? { shotFrames: { sourceAngle: shotFramesSource, shots: shotFramesForPrompt } }
+            : {}),
+        });
 
     const detectionByLabel: Array<{ label: string; url: string; result: any }> = [];
     const normalizeDetectionResult = (result: any, durationSec: number | null) => {
       const shots = Array.isArray(result?.shots) ? result.shots : [];
       if (!durationSec || durationSec <= 0) return result;
       const maxMs = durationSec * 1000 + 250;
-      let filtered = shots.filter((shot) => {
+      let filtered = shots.filter((shot: any) => {
         const endMs = Number(shot?.end_ms ?? shot?.release_ms ?? 0);
         const startMs = Number(shot?.start_ms ?? 0);
         return startMs <= maxMs && endMs <= maxMs;
@@ -280,47 +344,58 @@ export async function reanalyzeAnalysis({
         });
       }
 
-      const verif = analysisResultWithScore.verificacion_inicial;
-      const breakdown = shotsByLabel.map((item) => `${item.label}: ${item.count}`).join(', ');
-      const contexto = [
-        verif?.duracion_video ? `Duración ${verif.duracion_video}` : null,
-        verif?.mano_tiro ? `mano ${verif.mano_tiro}` : null,
-        verif?.angulo_camara ? `ángulo ${verif.angulo_camara}` : null,
-        Array.isArray(verif?.elementos_entorno) && verif.elementos_entorno.length > 0
-          ? `entorno: ${verif.elementos_entorno.join(', ')}`
-          : null,
-      ].filter(Boolean).join(', ');
-      const resumenFallback = [
-        `Se analizaron ${totalShots} tiros detectados en ${shotsByLabel.length} videos (${breakdown}).`,
-        contexto ? `Contexto observado: ${contexto}.` : null,
-        analysisResultWithScore?.analysisSummary ? `Observaciones de la IA: ${analysisResultWithScore.analysisSummary}` : null,
-      ].filter(Boolean).join(' ');
-
-      const resumenAi = await generateAnalysisSummary({
-        baseSummary: analysisResultWithScore?.analysisSummary,
-        verificacion_inicial: analysisResultWithScore?.verificacion_inicial,
-        strengths: analysisResultWithScore?.strengths,
-        weaknesses: analysisResultWithScore?.weaknesses,
-        recommendations: analysisResultWithScore?.recommendations,
-        resumen_evaluacion: analysisResultWithScore?.resumen_evaluacion,
-        shots: { total: totalShots, byLabel: shotsByLabel },
-      });
-      const resumen = resumenAi || resumenFallback;
-
-      analysisResultWithScore = {
-        ...analysisResultWithScore,
-        verificacion_inicial: {
-          ...analysisResultWithScore.verificacion_inicial,
-          tiros_detectados: totalShots,
-          deteccion_ia: {
-            angulo_detectado: detectionByLabel.length > 1 ? 'multi' : (analysisResultWithScore.verificacion_inicial?.angulo_camara || 'desconocido'),
+      const noShots = totalShots === 0;
+      if (noShots) {
+        if (!llmShotVerification) {
+          llmShotVerification = await verifyHasShotsWithLlmFromVideoUrl(videoUrl);
+        }
+        const fallback = llmShotVerification?.has_shot_attempt
+          ? buildUnverifiedShotAnalysis(llmShotVerification.reasoning, llmShotVerification.confidence)
+          : buildNoShotsAnalysis();
+        if (!llmShotVerification?.has_shot_attempt) {
+          fallback.verificacion_inicial.deteccion_ia = {
+            angulo_detectado: 'sin_tiros',
             estrategia_usada: detectionByLabel.length > 1 ? 'detectShots.multi' : 'detectShots',
-            tiros_individuales: tirosIndividuales,
-            total_tiros: totalShots,
+            tiros_individuales: [],
+            total_tiros: 0,
+          };
+        }
+        analysisResultWithScore = fallback;
+      } else {
+        const resumenAi = await generateAnalysisSummary({
+          baseSummary: analysisResultWithScore?.analysisSummary,
+          verificacion_inicial: analysisResultWithScore?.verificacion_inicial,
+          strengths: analysisResultWithScore?.strengths,
+          weaknesses: analysisResultWithScore?.weaknesses,
+          recommendations: analysisResultWithScore?.recommendations,
+          resumen_evaluacion: analysisResultWithScore?.resumen_evaluacion,
+          shots: { total: totalShots, byLabel: shotsByLabel },
+        });
+        const resumen = buildDeterministicSummary({
+          totalShots,
+          shotsByLabel,
+          baseSummary: analysisResultWithScore?.analysisSummary,
+          resumen_evaluacion: analysisResultWithScore?.resumen_evaluacion,
+          aiSummary: resumenAi,
+        });
+
+        analysisResultWithScore = {
+          ...analysisResultWithScore,
+          verificacion_inicial: {
+            ...analysisResultWithScore.verificacion_inicial,
+            tiros_detectados: totalShots,
+            deteccion_ia: {
+              angulo_detectado: detectionByLabel.length > 1
+                ? 'multi'
+                : (analysisResultWithScore.verificacion_inicial?.angulo_camara || 'desconocido'),
+              estrategia_usada: detectionByLabel.length > 1 ? 'detectShots.multi' : 'detectShots',
+              tiros_individuales: tirosIndividuales,
+              total_tiros: totalShots,
+            },
           },
-        },
-        analysisSummary: resumen,
-      };
+          analysisSummary: resumen,
+        };
+      }
     }
 
     const allRatings: number[] = (aiResult.detailedChecklist || [])

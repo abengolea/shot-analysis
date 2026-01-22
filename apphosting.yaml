@@ -35,6 +35,10 @@ env:
     secret: MP_ACCESS_TOKEN_AR
   - variable: MP_CLIENT_SECRET
     secret: MP_CLIENT_SECRET
+  - variable: MP_CLIENT_ID
+    secret: MP_CLIENT_ID
+  - variable: MP_OAUTH_REDIRECT_URI
+    value: "https://chaaaas.com/api/mp/oauth/callback"
   - variable: MP_SPONSOR_ID
     value: "5523794913220352"
   - variable: DLOCAL_API_KEY

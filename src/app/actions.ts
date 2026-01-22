@@ -5,11 +5,15 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { adminAuth, adminDb, adminStorage } from '@/lib/firebase-admin';
 import { scheduleKeyframesExtraction } from '@/lib/keyframes-backfill';
+import { getVideoDurationSecondsFromBuffer } from '@/lib/ffmpeg';
 import { buildEconomyEvidenceFromVideoUrl } from '@/lib/economy-evidence';
+import { detectShotsFromPoseService } from '@/lib/pose-shot-detection';
 import { sendCustomEmail } from '@/lib/email-service';
 import { getAppBaseUrl } from '@/lib/app-url';
 import { buildScoreMetadata, loadWeightsFromFirestore } from '@/lib/scoring';
 import { generateAnalysisSummary } from '@/lib/ai-summary';
+import { verifyHasShotsWithLlmFromVideoUrl } from '@/lib/llm-shot-verify';
+import { buildNoShotsAnalysis, buildUnverifiedShotAnalysis } from '@/lib/analysis-fallbacks';
 import type { ChecklistCategory, DetailedChecklistItem } from '@/lib/types';
 // Acción: añadir entrenador desde el formulario de registro de coaches
 const AddCoachSchema = z.object({
@@ -697,6 +701,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         if (!userId) return { message: "ID de usuario requerido.", error: true };
         const shotType = formData.get('shotType') as string;
         if (!shotType) return { message: "Tipo de lanzamiento requerido.", error: true };
+        const analysisMode = String(formData.get('analysisMode') || 'standard');
 
         // Nuevo flujo: aceptar URLs ya subidas por el cliente (Firebase Storage)
         const uploadedBackUrl = (formData.get('uploadedBackUrl') as string | null) || null;
@@ -769,58 +774,62 @@ export async function startAnalysis(prevState: any, formData: FormData) {
 
         // Nota: Antes se bloqueaba por perfil incompleto. Ahora permitimos continuar.
 
-        // Enforce créditos / gratis
+        // Enforce créditos / gratis (excepto modo BIOMECH PRO de prueba)
         const currentYear = new Date().getFullYear();
-        let billingInfo: { type: 'free' | 'credit'; year: number } | null = null;
-        try {
-            await db.runTransaction(async (tx: any) => {
-                const walletRef = db.collection('wallets').doc(userId);
-                const walletSnap = await tx.get(walletRef);
-                const nowIso = new Date().toISOString();
-                let data: any = walletSnap.exists ? walletSnap.data() : null;
-                if (!data) {
-                    data = {
-                        userId,
-                        credits: 0,
-                        freeAnalysesUsed: 0,
-                        yearInUse: currentYear,
-                        freeCoachReviews: 0,
-                        lastFreeAnalysisDate: null,
-                        historyPlusActive: false,
-                        historyPlusValidUntil: null,
-                        currency: 'ARS',
-                        createdAt: nowIso,
-                        updatedAt: nowIso,
-                    };
-                    tx.set(walletRef, data);
-                }
-                if (Number(data.yearInUse) !== currentYear) {
-                    data.freeAnalysesUsed = 0;
-                    data.yearInUse = currentYear;
-                    data.lastFreeAnalysisDate = null;
-                }
-                if ((data.freeAnalysesUsed || 0) < 2) {
-                    data.freeAnalysesUsed = (data.freeAnalysesUsed || 0) + 1;
-                    data.updatedAt = nowIso;
-                    data.lastFreeAnalysisDate = nowIso;
-                    tx.update(walletRef, {
-                        freeAnalysesUsed: data.freeAnalysesUsed,
-                        yearInUse: data.yearInUse,
-                        lastFreeAnalysisDate: data.lastFreeAnalysisDate,
-                        updatedAt: data.updatedAt
-                    });
-                    billingInfo = { type: 'free', year: currentYear };
-                } else if ((data.credits || 0) > 0) {
-                    data.credits = Number(data.credits) - 1;
-                    data.updatedAt = nowIso;
-                    tx.update(walletRef, { credits: data.credits, updatedAt: data.updatedAt });
-                    billingInfo = { type: 'credit', year: currentYear };
-                } else {
-                    billingInfo = null;
-                }
-            });
-        } catch (e) {
-            return { message: 'No se pudo verificar tu saldo. Intenta nuevamente.', error: true };
+        let billingInfo: { type: 'free' | 'credit' | 'biomech-pro'; year: number } | null = null;
+        if (analysisMode === 'biomech-pro') {
+            billingInfo = { type: 'biomech-pro', year: currentYear };
+        } else {
+            try {
+                await db.runTransaction(async (tx: any) => {
+                    const walletRef = db.collection('wallets').doc(userId);
+                    const walletSnap = await tx.get(walletRef);
+                    const nowIso = new Date().toISOString();
+                    let data: any = walletSnap.exists ? walletSnap.data() : null;
+                    if (!data) {
+                        data = {
+                            userId,
+                            credits: 0,
+                            freeAnalysesUsed: 0,
+                            yearInUse: currentYear,
+                            freeCoachReviews: 0,
+                            lastFreeAnalysisDate: null,
+                            historyPlusActive: false,
+                            historyPlusValidUntil: null,
+                            currency: 'ARS',
+                            createdAt: nowIso,
+                            updatedAt: nowIso,
+                        };
+                        tx.set(walletRef, data);
+                    }
+                    if (Number(data.yearInUse) !== currentYear) {
+                        data.freeAnalysesUsed = 0;
+                        data.yearInUse = currentYear;
+                        data.lastFreeAnalysisDate = null;
+                    }
+                    if ((data.freeAnalysesUsed || 0) < 2) {
+                        data.freeAnalysesUsed = (data.freeAnalysesUsed || 0) + 1;
+                        data.updatedAt = nowIso;
+                        data.lastFreeAnalysisDate = nowIso;
+                        tx.update(walletRef, {
+                            freeAnalysesUsed: data.freeAnalysesUsed,
+                            yearInUse: data.yearInUse,
+                            lastFreeAnalysisDate: data.lastFreeAnalysisDate,
+                            updatedAt: data.updatedAt
+                        });
+                        billingInfo = { type: 'free', year: currentYear };
+                    } else if ((data.credits || 0) > 0) {
+                        data.credits = Number(data.credits) - 1;
+                        data.updatedAt = nowIso;
+                        tx.update(walletRef, { credits: data.credits, updatedAt: data.updatedAt });
+                        billingInfo = { type: 'credit', year: currentYear };
+                    } else {
+                        billingInfo = null;
+                    }
+                });
+            } catch (e) {
+                return { message: 'No se pudo verificar tu saldo. Intenta nuevamente.', error: true };
+            }
         }
         if (!billingInfo) {
             return {
@@ -828,7 +837,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 error: true,
             };
         }
-        const billing = billingInfo as { type: 'free' | 'credit'; year: number };
+        const billing = billingInfo as { type: 'free' | 'credit' | 'biomech-pro'; year: number };
 
         // Helper para estandarizar y subir a Storage (solo cuando recibimos archivos binarios)
         const uploadVideoToStorage = async (file: File, userId: string, options: { maxSeconds?: number } = {}): Promise<string> => {
@@ -910,6 +919,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             videoLeftUrl: videoLeftUrl,
             videoRightUrl: videoRightUrl,
             videoBackUrl: videoBackUrl,
+            analysisMode,
             status: 'uploaded',
             coachCompleted: false,
             createdAt: new Date().toISOString(),
@@ -954,23 +964,51 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         const ageCategory = mapAgeGroupToCategory(currentUser.ageGroup || 'Amateur');
         const playerLevel = mapPlayerLevel(currentUser.playerLevel || 'Principiante');
 
+        const durationCache = new Map<string, number>();
+        const getDurationForUrl = async (url: string): Promise<number> => {
+            if (!url) return 0;
+            if (durationCache.has(url)) return durationCache.get(url) || 0;
+            try {
+                const resp = await fetch(url);
+                if (!resp.ok) return 0;
+                const ab = await resp.arrayBuffer();
+                const buf = Buffer.from(ab);
+                const durationSec = await getVideoDurationSecondsFromBuffer(buf);
+                durationCache.set(url, durationSec);
+                return durationSec;
+            } catch {
+                return 0;
+            }
+        };
+        const chooseTargetFrames = (durationSec: number): number => {
+            if (!durationSec || durationSec <= 0) return 48;
+            if (durationSec <= 4.5) return 72;
+            if (durationSec <= 8) return 56;
+            if (durationSec <= 12) return 40;
+            return 32;
+        };
+
         let skipDomainCheck = false;
         let detectedShotsCount: number | undefined = undefined;
         try {
-            const primaryDetection = await detectShots({
-                videoUrl: videoPath,
-                shotType,
-                ageCategory,
-                playerLevel,
-                availableKeyframes: [],
-            });
+            const durationSec = await getDurationForUrl(videoPath);
+            const targetFrames = chooseTargetFrames(durationSec);
+            const primaryDetection =
+                (await detectShotsFromPoseService(videoPath, targetFrames)) ||
+                (await detectShots({
+                    videoUrl: videoPath,
+                    shotType,
+                    ageCategory,
+                    playerLevel,
+                    availableKeyframes: [],
+                }));
             const count = typeof primaryDetection?.shots_count === 'number'
                 ? primaryDetection.shots_count
                 : Array.isArray(primaryDetection?.shots)
                     ? primaryDetection.shots.length
                     : 0;
             skipDomainCheck = count > 0;
-            detectedShotsCount = count || undefined;
+            detectedShotsCount = typeof count === 'number' ? count : undefined;
         } catch {}
 
         let availableKeyframes: Array<{ index: number; timestamp: number; description: string }> = [];
@@ -982,6 +1020,55 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         let shotFramesUrl: string | null = null;
         let shotFramesForPrompt: Array<{ idx: number; start_ms: number; release_ms: number; frames: string[] }> = [];
         const detectionByLabel: Array<{ label: string; url: string; result: any }> = [];
+        const scrubSummaryText = (text: string) => {
+            if (!text) return '';
+            return String(text)
+                .replace(/\b\d+(\.\d+)?\s*s\b/gi, '')
+                .replace(/\b\d+(\.\d+)?\s*segundos?\b/gi, '')
+                .replace(/\b\d+(\.\d+)?\s*s-\d+(\.\d+)?\s*s\b/gi, '')
+                .replace(/\s{2,}/g, ' ')
+                .trim();
+        };
+        const sanitizeAiSummary = (text: string | null, totalShots: number) => {
+            if (!text) return '';
+            if (totalShots === 0) return '';
+            const cleaned = scrubSummaryText(text);
+            if (!cleaned) return '';
+            const contradictsZero = totalShots === 0 && /se detect|un tiro|1 tiro|uno tiro/i.test(cleaned);
+            const contradictsPositive =
+                totalShots > 0 && /no se detectaron tiros|no se detecto tiros|no se detectaron lanzamientos/i.test(cleaned);
+            if (contradictsZero || contradictsPositive) return '';
+            return cleaned;
+        };
+        const buildDeterministicSummary = ({
+            totalShots,
+            byLabel,
+            baseSummary,
+            aiSummary,
+        }: {
+            totalShots: number;
+            byLabel: Array<{ label: string; count: number }>;
+            baseSummary?: string;
+            aiSummary?: string | null;
+        }) => {
+            const breakdown = byLabel
+                .filter((item) => typeof item.count === 'number')
+                .map((item) => `${item.label}: ${item.count}`)
+                .join(', ');
+            const shotWord = totalShots === 1 ? 'tiro' : 'tiros';
+            const videoCount = byLabel.length;
+            const videoWord = videoCount === 1 ? 'video' : 'videos';
+            const intro =
+                totalShots > 0
+                    ? `Se analizaron ${totalShots} ${shotWord} en ${videoCount} ${videoWord}${breakdown ? ` (${breakdown})` : ''}.`
+                    : 'No se detectaron tiros completos en los videos analizados.';
+            const noEval = (analysisResultWithScore?.resumen_evaluacion?.parametros_no_evaluables || 0) > 0
+                ? `Se dejaron ${analysisResultWithScore?.resumen_evaluacion?.parametros_no_evaluables} parámetros sin evaluar por limitaciones del video.`
+                : '';
+            const aiClean = sanitizeAiSummary(aiSummary || null, totalShots);
+            const baseClean = sanitizeAiSummary(baseSummary || '', totalShots);
+            return [intro, noEval, aiClean || baseClean].filter(Boolean).join(' ');
+        };
         const buildShotsSummary = async (original: string, totalShots: number, byLabel: Array<{ label: string; count: number }>) => {
             const aiSummary = await generateAnalysisSummary({
                 baseSummary: original,
@@ -992,13 +1079,32 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 resumen_evaluacion: analysisResultWithScore?.resumen_evaluacion,
                 shots: { total: totalShots, byLabel },
             });
-            if (aiSummary) return aiSummary;
-            const breakdown = byLabel
-                .filter((item) => typeof item.count === 'number')
-                .map((item) => `${item.label}: ${item.count}`)
-                .join(', ');
-            return `Se analizaron ${totalShots} tiros detectados en ${byLabel.length} videos (${breakdown}).`;
+            return buildDeterministicSummary({
+                totalShots,
+                byLabel,
+                baseSummary: original,
+                aiSummary,
+            });
         };
+        const normalizeDetectionResult = (result: any, durationSec: number | null) => {
+            const shots = Array.isArray(result?.shots) ? result.shots : [];
+            if (!durationSec || durationSec <= 0) return result;
+            const maxMs = durationSec * 1000 + 250;
+            let filtered = shots.filter((shot: any) => {
+                const endMs = Number(shot?.end_ms ?? shot?.release_ms ?? 0);
+                const startMs = Number(shot?.start_ms ?? 0);
+                return startMs <= maxMs && endMs <= maxMs;
+            });
+            if (durationSec <= 4.5 && filtered.length > 1) {
+                filtered = [filtered[0]];
+            }
+            return {
+                ...result,
+                shots: filtered,
+                shots_count: filtered.length,
+            };
+        };
+
         try {
             if (adminStorage) {
                 const sources = [
@@ -1009,14 +1115,19 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 ].filter((s): s is { label: string; url: string } => Boolean(s.url));
 
                 for (const source of sources) {
-                    const result = await detectShots({
-                        videoUrl: source.url,
-                        shotType,
-                        ageCategory,
-                        playerLevel,
-                        availableKeyframes: [],
-                    });
-                    detectionByLabel.push({ label: source.label, url: source.url, result });
+                    const durationSec = await getDurationForUrl(source.url);
+                    const targetFrames = chooseTargetFrames(durationSec);
+                    const result =
+                        (await detectShotsFromPoseService(source.url, targetFrames)) ||
+                        (await detectShots({
+                            videoUrl: source.url,
+                            shotType,
+                            ageCategory,
+                            playerLevel,
+                            availableKeyframes: [],
+                        }));
+                    const normalized = normalizeDetectionResult(result, durationSec);
+                    detectionByLabel.push({ label: source.label, url: source.url, result: normalized });
                 }
 
                 const primary = detectionByLabel.find((d) => d.label === (videoBackUrl ? 'back' : 'front'))
@@ -1028,17 +1139,32 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                         const { extractFramesBetweenDataUrlsFromBuffer } = await import('@/lib/ffmpeg');
                         const ab = await resp.arrayBuffer();
                         const videoBuffer = Buffer.from(ab);
-                        const framesPerShot = 5;
+                        const durationSec = await getVideoDurationSecondsFromBuffer(videoBuffer);
+                        const normalizedPrimary = normalizeDetectionResult(primary.result, durationSec);
+                        primary.result = normalizedPrimary;
+                        const preFrames = 4;
+                        const postFrames = 3;
                         const shotFrames = [];
-                        for (const shot of shots) {
+                        const normalizedShots = Array.isArray(normalizedPrimary?.shots) ? normalizedPrimary.shots : shots;
+                        for (const shot of normalizedShots) {
                             const startSec = Math.max(0, Number(shot.start_ms || 0) / 1000);
                             const releaseSec = Math.max(startSec + 0.05, Number(shot.release_ms || 0) / 1000);
-                            const frames = await extractFramesBetweenDataUrlsFromBuffer(
+                            const endMs = Number(shot.end_ms || 0);
+                            const endSecRaw = endMs > 0 ? endMs / 1000 : releaseSec + 0.45;
+                            const endSec = Math.max(releaseSec + 0.1, Math.min(endSecRaw, durationSec || endSecRaw));
+                            const pre = await extractFramesBetweenDataUrlsFromBuffer(
                                 videoBuffer,
                                 startSec,
                                 releaseSec,
-                                framesPerShot
+                                preFrames
                             );
+                            const post = await extractFramesBetweenDataUrlsFromBuffer(
+                                videoBuffer,
+                                releaseSec,
+                                endSec,
+                                postFrames
+                            );
+                            const frames = Array.from(new Set([...(pre || []), ...(post || [])])).filter(Boolean);
                             shotFrames.push({
                                 idx: shot.idx,
                                 start_ms: shot.start_ms,
@@ -1063,7 +1189,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                                 ? shot.frames
                                     .map((frame) => typeof frame === 'string' ? frame : frame?.dataUrl)
                                     .filter((frame): frame is string => typeof frame === 'string' && frame.length > 0)
-                                    .slice(0, 3)
+                                    .slice(0, 5)
                                 : [],
                         }));
                     }
@@ -1073,18 +1199,27 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             console.warn('No se pudieron extraer frames por tiro', e);
         }
 
-        const analysisResult = await analyzeBasketballShot({
-            videoUrl: videoPath,
-            shotType,
-            ageCategory,
-            playerLevel,
-            availableKeyframes,
-            ...(skipDomainCheck ? { skipDomainCheck: true } : {}),
-            ...(typeof detectedShotsCount === 'number' ? { detectedShotsCount } : {}),
-            ...(shotFramesForPrompt.length > 0
-                ? { shotFrames: { sourceAngle: videoBackUrl ? 'back' : 'front', shots: shotFramesForPrompt } }
-                : {}),
-        });
+        let llmShotVerification: { has_shot_attempt: boolean; confidence?: number; reasoning?: string } | null = null;
+        if (detectedShotsCount === 0) {
+            llmShotVerification = await verifyHasShotsWithLlmFromVideoUrl(videoPath);
+        }
+
+        const analysisResult = detectedShotsCount === 0
+            ? (llmShotVerification?.has_shot_attempt
+                ? buildUnverifiedShotAnalysis(llmShotVerification.reasoning, llmShotVerification.confidence)
+                : buildNoShotsAnalysis())
+            : await analyzeBasketballShot({
+                videoUrl: videoPath,
+                shotType,
+                ageCategory,
+                playerLevel,
+                availableKeyframes,
+                ...(skipDomainCheck ? { skipDomainCheck: true } : {}),
+                ...(typeof detectedShotsCount === 'number' ? { detectedShotsCount } : {}),
+                ...(shotFramesForPrompt.length > 0
+                    ? { shotFrames: { sourceAngle: videoBackUrl ? 'back' : 'front', shots: shotFramesForPrompt } }
+                    : {}),
+            });
 
         const detailedChecklist = Array.isArray(analysisResult?.detailedChecklist) ? analysisResult.detailedChecklist : [];
         let scoreMetadata = undefined;
@@ -1134,24 +1269,42 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 tirosPorSegundo = durationSec ? Number((totalShots / durationSec).toFixed(3)) : undefined;
             }
 
-            const verificacion = {
-                ...analysisResultWithScore.verificacion_inicial,
-                tiros_detectados: totalShots,
-                ...(typeof tirosPorSegundo === 'number' ? { tiros_por_segundo: tirosPorSegundo } : {}),
-                deteccion_ia: {
-                    angulo_detectado: detectionByLabel.length > 1 ? 'multi' : (analysisResultWithScore.verificacion_inicial?.angulo_camara || 'desconocido'),
-                    estrategia_usada: detectionByLabel.length > 1 ? 'detectShots.multi' : 'detectShots',
-                    tiros_individuales: tirosIndividuales,
-                    total_tiros: totalShots,
-                },
-            };
+            const noShots = totalShots === 0;
+            if (noShots) {
+                const fallback = llmShotVerification?.has_shot_attempt
+                    ? buildUnverifiedShotAnalysis(llmShotVerification.reasoning, llmShotVerification.confidence)
+                    : buildNoShotsAnalysis();
+                if (!llmShotVerification?.has_shot_attempt) {
+                    fallback.verificacion_inicial.deteccion_ia = {
+                        angulo_detectado: 'sin_tiros',
+                        estrategia_usada: detectionByLabel.length > 1 ? 'detectShots.multi' : 'detectShots',
+                        tiros_individuales: [],
+                        total_tiros: 0,
+                    };
+                }
+                analysisResultWithScore = fallback;
+            } else {
+                const verificacion = {
+                    ...analysisResultWithScore.verificacion_inicial,
+                    tiros_detectados: totalShots,
+                    ...(typeof tirosPorSegundo === 'number' ? { tiros_por_segundo: tirosPorSegundo } : {}),
+                    deteccion_ia: {
+                        angulo_detectado: detectionByLabel.length > 1
+                            ? 'multi'
+                            : (analysisResultWithScore.verificacion_inicial?.angulo_camara || 'desconocido'),
+                        estrategia_usada: detectionByLabel.length > 1 ? 'detectShots.multi' : 'detectShots',
+                        tiros_individuales: tirosIndividuales,
+                        total_tiros: totalShots,
+                    },
+                };
 
-            const summary = await buildShotsSummary(analysisResultWithScore.analysisSummary, totalShots, shotsByLabel);
-            analysisResultWithScore = {
-                ...analysisResultWithScore,
-                verificacion_inicial: verificacion,
-                analysisSummary: summary,
-            };
+                const summary = await buildShotsSummary(analysisResultWithScore.analysisSummary, totalShots, shotsByLabel);
+                analysisResultWithScore = {
+                    ...analysisResultWithScore,
+                    verificacion_inicial: verificacion,
+                    analysisSummary: summary,
+                };
+            }
         }
 
         await db.collection('analyses').doc(analysisRef.id).update({
@@ -1183,7 +1336,9 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             shotType,
             status: 'analyzed',
             analysisResult: analysisResultWithScore,
-            redirectTo: '/dashboard'
+            redirectTo: analysisMode === 'biomech-pro'
+                ? `/biomech-pro/analysis/${analysisRef.id}`
+                : '/dashboard'
         };
 
     } catch (error) {
