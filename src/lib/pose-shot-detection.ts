@@ -31,18 +31,51 @@ type ShotDetection = {
   };
 };
 
-const MIN_GAP_MS = 450;
-const MIN_AMPLITUDE = 0.03;
+const MIN_GAP_MS = 300;
+const MIN_AMPLITUDE = 0.02;
+const MIN_SCORE = 0.25;
+const MIN_SHOULDER_GAP = 0.02;
 
 const getKeypoint = (frame: FramePose, name: string): Keypoint | undefined =>
   frame.keypoints.find((kp) => kp.name === name);
 
-const getWristY = (frame: FramePose): number | null => {
-  const right = getKeypoint(frame, 'right_wrist');
-  if (right && (right.score ?? 0) >= 0.4) return right.y;
-  const left = getKeypoint(frame, 'left_wrist');
-  if (left && (left.score ?? 0) >= 0.4) return left.y;
-  return null;
+const getArmSample = (frame: FramePose): { wristY: number; shoulderY: number; score: number } | null => {
+  const rightWrist = getKeypoint(frame, 'right_wrist');
+  const rightElbow = getKeypoint(frame, 'right_elbow');
+  const rightShoulder = getKeypoint(frame, 'right_shoulder');
+  const leftWrist = getKeypoint(frame, 'left_wrist');
+  const leftElbow = getKeypoint(frame, 'left_elbow');
+  const leftShoulder = getKeypoint(frame, 'left_shoulder');
+
+  const rightScore = (rightWrist?.score ?? 0) + (rightElbow?.score ?? 0) + (rightShoulder?.score ?? 0);
+  const leftScore = (leftWrist?.score ?? 0) + (leftElbow?.score ?? 0) + (leftShoulder?.score ?? 0);
+
+  const rightValid =
+    rightWrist && rightElbow && rightShoulder &&
+    (rightWrist.score ?? 0) >= MIN_SCORE &&
+    (rightElbow.score ?? 0) >= MIN_SCORE &&
+    (rightShoulder.score ?? 0) >= MIN_SCORE;
+  const leftValid =
+    leftWrist && leftElbow && leftShoulder &&
+    (leftWrist.score ?? 0) >= MIN_SCORE &&
+    (leftElbow.score ?? 0) >= MIN_SCORE &&
+    (leftShoulder.score ?? 0) >= MIN_SCORE;
+
+  if (!rightValid && !leftValid) return null;
+
+  if (rightValid && (!leftValid || rightScore >= leftScore)) {
+    return {
+      wristY: rightWrist!.y,
+      shoulderY: rightShoulder!.y,
+      score: rightScore / 3,
+    };
+  }
+
+  return {
+    wristY: leftWrist!.y,
+    shoulderY: leftShoulder!.y,
+    score: leftScore / 3,
+  };
 };
 
 const smoothSeries = (values: number[]): number[] => {
@@ -55,24 +88,43 @@ const smoothSeries = (values: number[]): number[] => {
 };
 
 const findReleases = (frames: FramePose[]): Array<{ tMs: number; conf: number }> => {
-  const series: Array<{ tMs: number; y: number }> = [];
+  const series: Array<{ tMs: number; wristY: number; shoulderY: number; score: number }> = [];
   for (const frame of frames) {
-    const y = getWristY(frame);
-    if (y == null) continue;
-    series.push({ tMs: frame.tMs, y });
+    const sample = getArmSample(frame);
+    if (!sample) continue;
+    series.push({ tMs: frame.tMs, wristY: sample.wristY, shoulderY: sample.shoulderY, score: sample.score });
   }
   if (series.length < 5) return [];
-  const ys = smoothSeries(series.map((p) => p.y));
+  const ys = smoothSeries(series.map((p) => p.wristY));
+  const shoulderYs = smoothSeries(series.map((p) => p.shoulderY));
   const releases: Array<{ tMs: number; conf: number }> = [];
   for (let i = 1; i < ys.length - 1; i++) {
     if (!(ys[i] < ys[i - 1] && ys[i] < ys[i + 1])) continue;
+    const shoulderGap = shoulderYs[i] - ys[i];
+    if (shoulderGap < MIN_SHOULDER_GAP) continue;
     const prevMax = Math.max(...ys.slice(Math.max(0, i - 3), i));
     const nextMax = Math.max(...ys.slice(i + 1, Math.min(ys.length, i + 4)));
     const amplitude = Math.min(prevMax, nextMax) - ys[i];
     if (amplitude < MIN_AMPLITUDE) continue;
     const tMs = series[i].tMs;
-    const conf = Math.min(1, amplitude / 0.12);
+    const conf = Math.min(1, (amplitude / 0.12) + (shoulderGap / 0.08));
     releases.push({ tMs, conf });
+  }
+  if (releases.length === 0) {
+    let minIndex = -1;
+    let minValue = Infinity;
+    for (let i = 0; i < ys.length; i++) {
+      if (ys[i] < minValue) {
+        minValue = ys[i];
+        minIndex = i;
+      }
+    }
+    if (minIndex >= 0) {
+      const shoulderGap = shoulderYs[minIndex] - ys[minIndex];
+      if (shoulderGap >= MIN_SHOULDER_GAP) {
+        releases.push({ tMs: series[minIndex].tMs, conf: 0.35 });
+      }
+    }
   }
   const filtered: Array<{ tMs: number; conf: number }> = [];
   for (const rel of releases) {

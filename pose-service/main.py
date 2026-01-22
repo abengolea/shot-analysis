@@ -47,7 +47,7 @@ POSE_LANDMARK_NAMES = [
 
 class PoseRequest(BaseModel):
     videoUrl: str = Field(..., min_length=3)
-    targetFrames: int = Field(8, ge=6, le=10)
+    targetFrames: int = Field(8, ge=6, le=90)
 
 
 class PoseResponse(BaseModel):

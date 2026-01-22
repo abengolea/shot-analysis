@@ -102,12 +102,16 @@ const buildDeterministicSummary = ({
   baseSummary,
   resumen_evaluacion,
   aiSummary,
+  strengths,
+  weaknesses,
 }: {
   totalShots: number;
   shotsByLabel: Array<{ label: string; count: number }>;
   baseSummary?: string;
   resumen_evaluacion?: { parametros_no_evaluables?: number };
   aiSummary?: string | null;
+  strengths?: string[];
+  weaknesses?: string[];
 }) => {
   const breakdown = shotsByLabel.map((item) => `${item.label}: ${item.count}`).join(', ');
   const shotWord = totalShots === 1 ? 'tiro' : 'tiros';
@@ -121,9 +125,22 @@ const buildDeterministicSummary = ({
     (resumen_evaluacion?.parametros_no_evaluables || 0) > 0
       ? `Se dejaron ${resumen_evaluacion?.parametros_no_evaluables} parámetros sin evaluar por limitaciones del video.`
       : '';
+  const cleanCounts = (text: string) =>
+    text
+      .split(/(?<=\.)\s+/)
+      .filter((sentence) => !/se detectaron|se analizaron|total de tiros|tiros detectados/i.test(sentence))
+      .join(' ')
+      .trim();
+  const strengthText = Array.isArray(strengths) && strengths.length > 0
+    ? `Fortalezas: ${strengths.slice(0, 2).join('; ')}.`
+    : '';
+  const weaknessText = Array.isArray(weaknesses) && weaknesses.length > 0
+    ? `Debilidades: ${weaknesses.slice(0, 2).join('; ')}.`
+    : '';
   const aiClean = sanitizeAiSummary(aiSummary || null, totalShots);
   const baseClean = sanitizeAiSummary(baseSummary || '', totalShots);
-  return [intro, noEval, aiClean || baseClean].filter(Boolean).join(' ');
+  const narrative = cleanCounts(aiClean || baseClean);
+  return [intro, noEval, strengthText, weaknessText, narrative].filter(Boolean).join(' ');
 };
 
 export async function reanalyzeAnalysis({
@@ -377,6 +394,8 @@ export async function reanalyzeAnalysis({
           baseSummary: analysisResultWithScore?.analysisSummary,
           resumen_evaluacion: analysisResultWithScore?.resumen_evaluacion,
           aiSummary: resumenAi,
+          strengths: analysisResultWithScore?.strengths,
+          weaknesses: analysisResultWithScore?.weaknesses,
         });
 
         analysisResultWithScore = {

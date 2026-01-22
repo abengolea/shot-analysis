@@ -76,10 +76,10 @@ export function PoseDetection({
         // Cargar librerías dinámicamente en el cliente
         const [posedetection, tf] = await Promise.all([
           import('@tensorflow-models/pose-detection'),
-          import('@tensorflow/tfjs')
+          import('@tensorflow/tfjs-core')
         ]);
-        // Backend WebGL para performance
-        try { await tf.setBackend('webgl'); } catch {}
+        await import('@tensorflow/tfjs-backend-cpu');
+        await tf.setBackend('cpu');
         await tf.ready();
         // Crear detector MoveNet (Lightning)
         const detector = await posedetection.createDetector(

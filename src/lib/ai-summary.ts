@@ -61,10 +61,12 @@ REGLAS OBLIGATORIAS:
 1) Usa SOLO la información provista en el JSON.
 2) Menciona la cantidad real de tiros y la distribución por video.
 3) No digas "un tiro" si el conteo es mayor.
-4) Si hay parámetros no evaluables, mencioná la limitación.
-5) NO menciones puntajes, score global ni nivel de confianza.
-6) NO uses segundos, timestamps ni rangos temporales.
-7) Texto en español, 5 a 8 oraciones, claro y profesional.
+4) Si el JSON no trae un dato, di que no es verificable; NUNCA inventes.
+5) Si shots.total = 0, NO describas mano, ángulo, aro o ejecución técnica.
+6) Si hay parámetros no evaluables, mencioná la limitación.
+7) NO menciones puntajes, score global ni nivel de confianza.
+8) NO uses segundos, timestamps ni rangos temporales.
+9) Texto en español, 5 a 8 oraciones, claro y profesional.
 
 JSON:
 ${JSON.stringify(payload)}

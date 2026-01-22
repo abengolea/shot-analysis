@@ -71,7 +71,7 @@ async function fetchVideoBuffer(videoUrl: string): Promise<Buffer | null> {
   }
 }
 
-async function fetchPoseFramesFromService(
+export async function fetchPoseFramesFromService(
   videoUrl: string,
   targetFrames: number
 ): Promise<FramePose[] | null> {

@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { Suspense, useActionState, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useFormStatus } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { startAnalysis } from "@/app/actions";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -120,12 +120,14 @@ const mapShotTypeToKey = (shotType: string): 'tres' | 'media' | 'libre' | null =
   return null;
 };
 
-export default function UploadPage() {
+function UploadPageInner() {
   const [state, formAction] = useActionState<StartState, FormData>(startAnalysis as any, { message: "", error: false });
   const formRef = useRef<HTMLFormElement>(null);
   const { toast } = useToast();
   const { user, userProfile } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const analysisMode = searchParams.get('mode') === 'biomech-pro' ? 'biomech-pro' : 'standard';
   const [confirmPartialOpen, setConfirmPartialOpen] = useState(false);
   const [confirmedPartial, setConfirmedPartial] = useState(false);
   const [noBalanceOpen, setNoBalanceOpen] = useState(false);
@@ -169,7 +171,7 @@ export default function UploadPage() {
   };
 
   const handleSubmit = async (formData: FormData) => {
-    if (maintenanceConfig?.enabled) {
+    if (analysisMode !== 'biomech-pro' && maintenanceConfig?.enabled) {
       toast({
         title: maintenanceConfig.title || 'Mantenimiento activo',
         description: maintenanceConfig.message || 'El sistema está en mantenimiento. Intenta nuevamente más tarde.',
@@ -179,7 +181,7 @@ export default function UploadPage() {
     }
     const shotKey = mapShotTypeToKey(shotType);
     const normalizedShotTypes = normalizeShotTypesMaintenance(maintenanceConfig?.shotTypesMaintenance);
-    if (shotKey && normalizedShotTypes[shotKey]) {
+    if (analysisMode !== 'biomech-pro' && shotKey && normalizedShotTypes[shotKey]) {
       const available: string[] = [];
       if (!normalizedShotTypes.tres) available.push('Lanzamiento de Tres');
       if (!normalizedShotTypes.media) available.push('Lanzamiento de Media Distancia');
@@ -629,22 +631,29 @@ export default function UploadPage() {
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="text-center">
         <h1 className="font-headline text-4xl font-bold tracking-tight">
-          Analizar Nuevo Lanzamiento
+          {analysisMode === 'biomech-pro' ? 'BIOMECH PRO · Subir Video' : 'Analizar Nuevo Lanzamiento'}
         </h1>
         <p className="mt-2 text-muted-foreground">
-          Sube o graba un video y analizaremos tu técnica con IA
+          {analysisMode === 'biomech-pro'
+            ? 'Sube un video para el flujo biomecánico profesional.'
+            : 'Sube o graba un video y analizaremos tu técnica con IA'}
         </p>
+        {analysisMode === 'biomech-pro' && (
+          <div className="mt-2 text-xs text-emerald-700">
+            Este análisis quedará marcado como BIOMECH PRO y se verá en la nueva página.
+          </div>
+        )}
         <div className="mt-2 text-xs text-blue-700">
           Recomendado: subir con conexión Wi‑Fi y mantener la app en primer plano durante la subida.
         </div>
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           <Button type="button" variant="secondary" onClick={() => setTipsOpen(true)}>
             Ver recomendaciones
           </Button>
         </div>
       </div>
 
-      {!maintenanceLoading && maintenanceConfig && (maintenanceConfig.enabled || blockedTypes.length > 0) && (
+      {!maintenanceLoading && maintenanceConfig && analysisMode !== 'biomech-pro' && (maintenanceConfig.enabled || blockedTypes.length > 0) && (
         <Card className="border-amber-200 bg-amber-50">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
@@ -674,7 +683,7 @@ export default function UploadPage() {
         </Card>
       )}
 
-      {wallet && (
+      {wallet && analysisMode !== 'biomech-pro' && (
         <Card className="bg-slate-50 border-slate-200">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">📊 Tu estado de análisis gratuitos</CardTitle>
@@ -797,6 +806,7 @@ export default function UploadPage() {
               <input type="hidden" name="userId" value={user.uid} />
               {/* Tipo de lanzamiento (solo para envío) */}
               <input type="hidden" name="shotType" value={shotType} />
+              <input type="hidden" name="analysisMode" value={analysisMode} />
 
               {/* Información del video */}
               <div className="p-4 bg-blue-50 rounded-lg">
@@ -1029,5 +1039,13 @@ export default function UploadPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+export default function UploadPage() {
+  return (
+    <Suspense fallback={<div className="min-h-[40vh]" />}>
+      <UploadPageInner />
+    </Suspense>
   );
 }

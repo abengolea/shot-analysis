@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { notFound } from "next/navigation";
+import { notFound, useRouter } from "next/navigation";
 import Link from "next/link";
 import { AnalysisView } from "@/components/analysis-view";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -43,9 +43,11 @@ function CommentForm({ analysisId }: { analysisId: string }) {
 
 export function AnalysisPageClient({ id }: { id: string }) {
   const { user, userProfile, loading: authLoading } = useAuth();
+  const router = useRouter();
   const [analysis, setAnalysis] = useState<ShotAnalysis | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
   const [loading, setLoading] = useState(true);
+  const [redirecting, setRedirecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formattedDate, setFormattedDate] = useState("");
   const [viewerRole, setViewerRole] = useState<string | null>(null);
@@ -115,6 +117,12 @@ export function AnalysisPageClient({ id }: { id: string }) {
           throw new Error('Datos de análisis inválidos');
         }
         
+        if (analysisData?.analysisMode === 'biomech-pro') {
+          setRedirecting(true);
+          router.replace(`/biomech-pro/analysis/${analysisData.id}`);
+          return;
+        }
+
         // Adaptar a tipo ShotAnalysis
         let shotAnalysis: ShotAnalysis = {
           id: analysisData.id,
@@ -415,13 +423,13 @@ export function AnalysisPageClient({ id }: { id: string }) {
     tryProcessPendingMp();
   }, [id, user, resolvedRole, unlockStatus]);
 
-  if (authLoading || loading) {
+  if (authLoading || loading || redirecting) {
     console.log(`[AnalysisPageClient] ⏳ Mostrando estado de carga (authLoading: ${authLoading}, loading: ${loading})`);
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
         <Loader2 className="w-8 h-8 animate-spin mb-4" />
         <p className="text-muted-foreground">
-          {authLoading ? 'Verificando autenticación...' : 'Cargando análisis...'}
+          {authLoading ? 'Verificando autenticación...' : redirecting ? 'Redirigiendo al análisis biomecánico...' : 'Cargando análisis...'}
         </p>
       </div>
     );

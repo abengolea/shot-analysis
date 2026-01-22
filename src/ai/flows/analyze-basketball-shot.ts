@@ -315,7 +315,7 @@ function buildNonEvaluableAnalysis(reason: string): AnalyzeBasketballShotOutput 
   };
 }
 
-export function buildNoShotsAnalysis(): AnalyzeBasketballShotOutput {
+function buildNoShotsAnalysis(): AnalyzeBasketballShotOutput {
   const baseReason = 'No se detectaron tiros completos en el video.';
   const userFacingMessage = 'NO DETECTAMOS TIROS COMPLETOS EN EL VIDEO.';
   const makeItem = (id: string, name: string, description: string) => ({
@@ -410,32 +410,6 @@ export function buildNoShotsAnalysis(): AnalyzeBasketballShotOutput {
     },
     advertencia: baseReason,
     caracteristicas_unicas: [],
-  };
-}
-
-function buildUnverifiedShotAnalysis(reason?: string, confidence?: number): AnalyzeBasketballShotOutput {
-  const baseReason =
-    reason && reason.trim().length > 0
-      ? `Se detectó intención de tiro, pero no hay evidencia de pose suficiente para análisis técnico. ${reason}`
-      : 'Se detectó intención de tiro, pero no hay evidencia de pose suficiente para análisis técnico.';
-  const userFacingMessage = 'Se detectó intención de tiro, pero no hay evidencia suficiente para análisis técnico.';
-  const base = buildNoShotsAnalysis();
-  return {
-    ...base,
-    analysisSummary: userFacingMessage,
-    advertencia: baseReason,
-    caracteristicas_unicas: [],
-    verificacion_inicial: {
-      ...base.verificacion_inicial,
-      tiros_detectados: 0,
-      deteccion_ia: {
-        angulo_detectado: 'sin_tiros',
-        estrategia_usada: 'llm_fallback',
-        tiros_individuales: [],
-        total_tiros: 0,
-        confianza: typeof confidence === 'number' ? confidence : undefined,
-      },
-    },
   };
 }
 
@@ -567,7 +541,13 @@ function enforceEquilibrioEvaluable(
   output: AnalyzeBasketballShotOutput,
   detectedShotsCount?: number
 ): AnalyzeBasketballShotOutput {
-  if (!detectedShotsCount || detectedShotsCount < 1) return output;
+  const inferredShots =
+    typeof detectedShotsCount === 'number'
+      ? detectedShotsCount
+      : typeof output?.verificacion_inicial?.tiros_detectados === 'number'
+        ? output.verificacion_inicial.tiros_detectados
+        : 0;
+  if (!inferredShots || inferredShots < 1) return output;
   const categories = Array.isArray(output.detailedChecklist) ? output.detailedChecklist : [];
   let updated = false;
   for (const category of categories) {

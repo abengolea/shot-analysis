@@ -41,9 +41,6 @@ export async function GET(
       const coachData = coachDoc.exists ? (coachDoc.data() as any) : null;
       const playerData = playerDoc.exists ? (playerDoc.data() as any) : null;
       role = coachData?.role || playerData?.role || null;
-      if (!coachDoc.exists && !playerDoc.exists) {
-        return NextResponse.json({ error: 'Usuario no autorizado' }, { status: 403 });
-      }
     }
 
     console.log('🔍 Buscando análisis específico:', analysisId);
@@ -68,11 +65,14 @@ export async function GET(
     };
 
     const analysisPlayerId = (analysisData as any)?.playerId;
+    const analysisUserId = (analysisData as any)?.userId;
     if (uid) {
       const coachAccess = (analysisData as any)?.coachAccess || {};
       const coachAccessForUser = coachAccess?.[uid];
       const isAdmin = role === 'admin';
-      const isOwnerPlayer = playerSnap?.exists && analysisPlayerId && String(analysisPlayerId) === String(uid);
+      const isOwnerPlayer =
+        (analysisPlayerId && String(analysisPlayerId) === String(uid)) ||
+        (analysisUserId && String(analysisUserId) === String(uid));
       const hasPaidCoachAccess = coachSnap?.exists && coachAccessForUser?.status === 'paid';
       if (!isAdmin && !isOwnerPlayer && !hasPaidCoachAccess) {
         return NextResponse.json({ error: 'No autorizado' }, { status: 403 });

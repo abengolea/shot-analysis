@@ -1045,11 +1045,15 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             byLabel,
             baseSummary,
             aiSummary,
+            strengths,
+            weaknesses,
         }: {
             totalShots: number;
             byLabel: Array<{ label: string; count: number }>;
             baseSummary?: string;
             aiSummary?: string | null;
+            strengths?: string[];
+            weaknesses?: string[];
         }) => {
             const breakdown = byLabel
                 .filter((item) => typeof item.count === 'number')
@@ -1065,9 +1069,22 @@ export async function startAnalysis(prevState: any, formData: FormData) {
             const noEval = (analysisResultWithScore?.resumen_evaluacion?.parametros_no_evaluables || 0) > 0
                 ? `Se dejaron ${analysisResultWithScore?.resumen_evaluacion?.parametros_no_evaluables} parámetros sin evaluar por limitaciones del video.`
                 : '';
+            const cleanCounts = (text: string) =>
+                text
+                    .split(/(?<=\.)\s+/)
+                    .filter((sentence) => !/se detectaron|se analizaron|total de tiros|tiros detectados/i.test(sentence))
+                    .join(' ')
+                    .trim();
+            const strengthText = Array.isArray(strengths) && strengths.length > 0
+                ? `Fortalezas: ${strengths.slice(0, 2).join('; ')}.`
+                : '';
+            const weaknessText = Array.isArray(weaknesses) && weaknesses.length > 0
+                ? `Debilidades: ${weaknesses.slice(0, 2).join('; ')}.`
+                : '';
             const aiClean = sanitizeAiSummary(aiSummary || null, totalShots);
             const baseClean = sanitizeAiSummary(baseSummary || '', totalShots);
-            return [intro, noEval, aiClean || baseClean].filter(Boolean).join(' ');
+            const narrative = cleanCounts(aiClean || baseClean);
+            return [intro, noEval, strengthText, weaknessText, narrative].filter(Boolean).join(' ');
         };
         const buildShotsSummary = async (original: string, totalShots: number, byLabel: Array<{ label: string; count: number }>) => {
             const aiSummary = await generateAnalysisSummary({
@@ -1084,6 +1101,8 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 byLabel,
                 baseSummary: original,
                 aiSummary,
+                strengths: analysisResultWithScore?.strengths,
+                weaknesses: analysisResultWithScore?.weaknesses,
             });
         };
         const normalizeDetectionResult = (result: any, durationSec: number | null) => {
