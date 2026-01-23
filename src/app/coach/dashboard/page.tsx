@@ -248,9 +248,11 @@ export default function CoachDashboardPage() {
     }
   }, [user]);
 
+  const isAnalysisDone = (analysis: any) =>
+    String(analysis?.status) === "analyzed" && analysis?.coachCompleted === true;
   const unreadCount = useMemo(() => messages.filter(m => !m.read).length, [messages]);
-  const analyzedCount = useMemo(() => analyses.filter((a: any) => String(a.status) === 'analyzed' && a.coachCompleted === true).length, [analyses]);
-  const pendingCount = useMemo(() => analyses.filter((a: any) => String(a.status) !== 'analyzed' || a.coachCompleted !== true).length, [analyses]);
+  const analyzedCount = useMemo(() => analyses.filter(isAnalysisDone).length, [analyses]);
+  const pendingCount = useMemo(() => analyses.filter((a: any) => !isAnalysisDone(a)).length, [analyses]);
   const visibleMessages = useMemo(() => unreadOnly ? messages.filter(m => !m.read) : messages, [messages, unreadOnly]);
   const totalConversationMessages = useMemo(() => {
     return visibleMessages.filter((m) => m.fromId !== 'system' && m.toId !== 'system');
@@ -376,9 +378,15 @@ export default function CoachDashboardPage() {
   }, [mergedPlayers]);
   const filteredAnalyses = useMemo(() => {
     let arr = analyses;
-    if (selectedPlayerId !== 'all') arr = arr.filter((a: any) => a.playerId === selectedPlayerId);
-    if (statusFilter === 'analyzed') arr = arr.filter((a: any) => String(a.status) === 'analyzed');
-    if (statusFilter === 'pending') arr = arr.filter((a: any) => String(a.status) !== 'analyzed');
+    if (selectedPlayerId !== "all") {
+      arr = arr.filter((a: any) => a.playerId === selectedPlayerId);
+    }
+    if (statusFilter === "analyzed") {
+      arr = arr.filter(isAnalysisDone);
+    }
+    if (statusFilter === "pending") {
+      arr = arr.filter((a: any) => !isAnalysisDone(a));
+    }
     return arr;
   }, [analyses, selectedPlayerId, statusFilter]);
   const filteredPlayers = useMemo(() => {
@@ -1020,13 +1028,13 @@ export default function CoachDashboardPage() {
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Pendientes ({filteredAnalyses.filter((a: any) => String(a.status) !== 'analyzed').length})</CardTitle>
+                <CardTitle>Pendientes ({filteredAnalyses.filter((a: any) => !isAnalysisDone(a)).length})</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {filteredAnalyses.filter((a: any) => String(a.status) !== 'analyzed').length === 0 && (
+                {filteredAnalyses.filter((a: any) => !isAnalysisDone(a)).length === 0 && (
                   <div className="text-sm text-muted-foreground">No hay análisis pendientes.</div>
                 )}
-                {filteredAnalyses.filter((a: any) => String(a.status) !== 'analyzed').map((a: any) => {
+                {filteredAnalyses.filter((a: any) => !isAnalysisDone(a)).map((a: any) => {
                   const p = players.find((pl) => pl.id === a.playerId);
                   return (
                     <div key={a.id} className="flex items-center justify-between gap-3 border rounded-md p-3">
@@ -1042,13 +1050,13 @@ export default function CoachDashboardPage() {
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle>Realizados ({filteredAnalyses.filter((a: any) => String(a.status) === 'analyzed').length})</CardTitle>
+                <CardTitle>Realizados ({filteredAnalyses.filter((a: any) => isAnalysisDone(a)).length})</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {filteredAnalyses.filter((a: any) => String(a.status) === 'analyzed').length === 0 && (
+                {filteredAnalyses.filter((a: any) => isAnalysisDone(a)).length === 0 && (
                   <div className="text-sm text-muted-foreground">Aún no hay análisis realizados.</div>
                 )}
-                {filteredAnalyses.filter((a: any) => String(a.status) === 'analyzed').map((a: any) => {
+                {filteredAnalyses.filter((a: any) => isAnalysisDone(a)).map((a: any) => {
                   const p = players.find((pl) => pl.id === a.playerId);
                   return (
                     <div key={a.id} className="flex items-center justify-between gap-3 border rounded-md p-3">
