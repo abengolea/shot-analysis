@@ -1,6 +1,6 @@
 fastapi>=0.110.0
 uvicorn>=0.29.0
-mediapipe>=0.10.14
+mediapipe==0.10.11
 opencv-python>=4.8.0
 numpy>=1.24
 requests>=2.31.0

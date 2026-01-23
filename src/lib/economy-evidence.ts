@@ -104,7 +104,16 @@ export async function fetchPoseFramesFromService(
     }));
     return poseFrames;
   } catch (e) {
-    console.warn('[economy-evidence] Pose service falló:', e);
+    const err = e as { response?: { status?: number; data?: any } };
+    if (err?.response) {
+      console.warn(
+        '[economy-evidence] Pose service falló:',
+        `status=${err.response.status}`,
+        err.response.data
+      );
+    } else {
+      console.warn('[economy-evidence] Pose service falló:', e);
+    }
     return null;
   }
 }
