@@ -126,6 +126,36 @@ export default function CoachComparePage() {
   }, [user]);
 
   useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const loadAccessiblePlayers = async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/coach/accessible-players", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const extra = Array.isArray(data?.players) ? data.players : [];
+        if (!active || extra.length === 0) return;
+        setPlayers((prev) => {
+          const merged = [...prev, ...extra].reduce((acc: Record<string, Player>, p: any) => {
+            if (p?.id) acc[p.id] = p;
+            return acc;
+          }, {} as Record<string, Player>);
+          return Object.values(merged) as Player[];
+        });
+      } catch (e) {
+        console.error("Error cargando jugadores con acceso:", e);
+      }
+    };
+    void loadAccessiblePlayers();
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
     if (!user || !selectedPlayerId) {
       setAnalyses([]);
       return;
@@ -139,12 +169,18 @@ export default function CoachComparePage() {
       q,
       (snap) => {
         const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-        const filtered = list.filter((analysis: any) => {
+        const hasPlayerAccess = list.some((analysis: any) => {
           const access = analysis?.coachAccess?.[user.uid];
-          if (analysis?.coachId === user.uid) return true;
-          if (access?.status === "paid") return true;
-          return false;
+          return analysis?.coachId === user.uid || access?.status === "paid";
         });
+        const filtered = hasPlayerAccess
+          ? list
+          : list.filter((analysis: any) => {
+              const access = analysis?.coachAccess?.[user.uid];
+              if (analysis?.coachId === user.uid) return true;
+              if (access?.status === "paid") return true;
+              return false;
+            });
         setAnalyses(filtered);
       },
       (err) => {

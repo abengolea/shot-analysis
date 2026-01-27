@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import { getAppBaseUrl } from '@/lib/app-url';
+import { hasPaidCoachAccessToPlayer } from '@/lib/coach-access';
 import { buildConversationId, getMessageType } from '@/lib/message-utils';
 
 type KeyframeComment = {
@@ -43,6 +44,13 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     if (analysis?.coachId && String(analysis.coachId) === String(uid)) return { ok: true, uid };
     const playerId = analysis?.playerId;
     if (!playerId) return { ok: false, reason: 'Player missing' };
+
+    const hasPlayerPaidAccess = await hasPaidCoachAccessToPlayer({
+      adminDb,
+      coachId: uid,
+      playerId: String(playerId),
+    });
+    if (hasPlayerPaidAccess) return { ok: true, uid };
 
     const assignedPlayerSnap = await adminDb.collection('players').doc(playerId).get();
     const player = assignedPlayerSnap.exists ? (assignedPlayerSnap.data() as any) : null;

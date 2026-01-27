@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb, adminStorage } from '@/lib/firebase-admin';
+import { hasPaidCoachAccessToPlayer } from '@/lib/coach-access';
 
 type KeyframeAnnotation = {
   id?: string;
@@ -39,11 +40,22 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     const playerId = analysis?.playerId;
     if (!playerId) return { ok: false, reason: 'Player missing' };
 
+    const coachAccess = analysis?.coachAccess || {};
+    const access = coachAccess?.[uid];
+    if (access?.status === 'paid') return { ok: true, uid, name, role };
+    if (analysis?.coachId && String(analysis.coachId) === String(uid)) return { ok: true, uid, name, role };
+
     const assignedPlayerSnap = await adminDb.collection('players').doc(playerId).get();
     const player = assignedPlayerSnap.exists ? (assignedPlayerSnap.data() as any) : null;
     const assignedCoachId = player?.coachId || null;
 
     if (assignedCoachId && assignedCoachId === uid) return { ok: true, uid, name, role };
+    const hasPlayerPaidAccess = await hasPaidCoachAccessToPlayer({
+      adminDb,
+      coachId: uid,
+      playerId: String(playerId),
+    });
+    if (hasPlayerPaidAccess) return { ok: true, uid, name, role };
     return { ok: false, reason: 'Forbidden' };
   } catch (e) {
     console.error('verifyCoachPermission error', e);

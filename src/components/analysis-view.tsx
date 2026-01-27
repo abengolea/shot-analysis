@@ -580,11 +580,12 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
   const viewerId = authUserId || profileId;
   const hasPaidCoachAccess = userIds.some((id) => (analysis as any)?.coachAccess?.[id]?.status === 'paid');
   const isAssignedCoach = userIds.some((id) => id === (player?.coachId || ''));
+  const [hasPlayerCoachAccess, setHasPlayerCoachAccess] = useState(false);
   const canEdit = Boolean(
     isAdmin || (isCoachRole && userIds.length > 0 && (isAssignedCoach || hasPaidCoachAccess))
   );
   const canComment = Boolean(
-    isAdmin || (isCoachRole && (!player?.coachId || isAssignedCoach || hasPaidCoachAccess))
+    isAdmin || (isCoachRole && (!player?.coachId || isAssignedCoach || hasPaidCoachAccess || hasPlayerCoachAccess))
   );
   const fallbackCoachSummary = (() => {
     const raw =
@@ -597,6 +598,37 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
   })();
   const resolvedCoachSummary =
     coachSummary.trim().length > 0 ? coachSummary : fallbackCoachSummary;
+
+  useEffect(() => {
+    let active = true;
+    const checkCoachAccess = async () => {
+      if (!isCoachRole || !safeAnalysis?.id) {
+        setHasPlayerCoachAccess(false);
+        return;
+      }
+      try {
+        const auth = getAuth();
+        const cu = auth.currentUser;
+        if (!cu) return;
+        const token = await getIdToken(cu, true);
+        const res = await fetch(`/api/analyses/${safeAnalysis.id}/coach-access`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          if (active) setHasPlayerCoachAccess(false);
+          return;
+        }
+        const data = await res.json();
+        if (active) setHasPlayerCoachAccess(Boolean(data?.hasCoachAccess));
+      } catch {
+        if (active) setHasPlayerCoachAccess(false);
+      }
+    };
+    void checkCoachAccess();
+    return () => {
+      active = false;
+    };
+  }, [isCoachRole, safeAnalysis?.id]);
 
   const hasCoachFeedback = useMemo(() => {
     const hasItems = Object.values(coachFeedbackByItemId).some((entry) => {

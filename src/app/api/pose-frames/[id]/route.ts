@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { hasPaidCoachAccessToPlayer } from "@/lib/coach-access";
 import { fetchPoseFramesFromService } from "@/lib/economy-evidence";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +55,14 @@ export async function GET(
         (analysisPlayerId && String(analysisPlayerId) === String(uid)) ||
         (analysisUserId && String(analysisUserId) === String(uid));
       const hasPaidCoachAccess = coachSnap?.exists && coachAccessForUser?.status === "paid";
-      if (!isAdmin && !isOwnerPlayer && !hasPaidCoachAccess) {
+      const hasPlayerPaidAccess = !hasPaidCoachAccess && analysisPlayerId && coachSnap?.exists
+        ? await hasPaidCoachAccessToPlayer({
+            adminDb,
+            coachId: uid,
+            playerId: String(analysisPlayerId),
+          })
+        : false;
+      if (!isAdmin && !isOwnerPlayer && !hasPaidCoachAccess && !hasPlayerPaidAccess) {
         return NextResponse.json({ error: "No autorizado" }, { status: 403 });
       }
     }

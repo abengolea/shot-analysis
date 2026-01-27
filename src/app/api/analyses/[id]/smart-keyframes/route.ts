@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { hasPaidCoachAccessToPlayer } from '@/lib/coach-access';
 
 type SmartKeyframe = {
   index: number;
@@ -49,7 +50,14 @@ async function verifyAnalysisAccess(req: NextRequest, analysisId: string): Promi
     const isAdmin = role === 'admin';
     const isOwnerPlayer = playerSnap.exists && analysisPlayerId && String(analysisPlayerId) === String(uid);
     const hasPaidCoachAccess = coachSnap.exists && coachAccessForUser?.status === 'paid';
-    if (!isAdmin && !isOwnerPlayer && !hasPaidCoachAccess) {
+    const hasPlayerPaidAccess = !hasPaidCoachAccess && analysisPlayerId && coachSnap.exists
+      ? await hasPaidCoachAccessToPlayer({
+          adminDb,
+          coachId: uid,
+          playerId: String(analysisPlayerId),
+        })
+      : false;
+    if (!isAdmin && !isOwnerPlayer && !hasPaidCoachAccess && !hasPlayerPaidAccess) {
       return { ok: false, reason: 'Forbidden' };
     }
 
