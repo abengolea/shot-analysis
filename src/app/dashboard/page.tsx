@@ -104,6 +104,9 @@ export default function DashboardPage() {
     return null;
   };
 
+  const isBiomechProAnalysis = (analysis: any) =>
+    String(analysis?.analysisMode) === "biomech-pro";
+
   const formatDate = (value: any) => {
     const d = toDate(value);
     return d ? d.toLocaleString() : "Fecha desconocida";
@@ -687,8 +690,13 @@ export default function DashboardPage() {
                         <Video className={`h-5 w-5 ${hasCoachFeedback ? 'text-emerald-700' : 'text-blue-600'}`} />
                       </div>
                       <div>
-                        <h3 className="font-medium">{analysis.shotType}</h3>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
+                        <h3 className="font-medium">
+                          <span>{analysis.shotType}</span>
+                          {isBiomechProAnalysis(analysis) && (
+                            <Badge variant="secondary" className="ml-2">BIOMECH PRO</Badge>
+                          )}
+                        </h3>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
                           <Calendar className="h-4 w-4" />
                           <FormattedDate dateString={analysis.createdAt} />
                           {getStatusBadge(analysis.status, statusMeta.unlockStatus)}
@@ -708,6 +716,11 @@ export default function DashboardPage() {
             </button>
           )}
                         </div>
+                        {isBiomechProAnalysis(analysis) && (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Métrica: timing de transferencia (piernas→cadera→tronco→brazo→muñeca).
+                          </div>
+                        )}
                         {analysis.status === 'analyzed' && hasCoachFeedback && (
                           <div className="mt-1 text-xs text-emerald-700">
                             Feedback del entrenador disponible.

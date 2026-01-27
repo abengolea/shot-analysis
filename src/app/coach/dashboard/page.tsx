@@ -41,6 +41,10 @@ export default function CoachDashboardPage() {
   const [playersSearch, setPlayersSearch] = useState<string>("");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<'all'|'pending'|'analyzed'>("all");
+  const [mpStatus, setMpStatus] = useState<string | null>(null);
+  const [mpUpdatedAt, setMpUpdatedAt] = useState<string | null>(null);
+  const [mpLoading, setMpLoading] = useState<boolean>(false);
+  const [mpConnecting, setMpConnecting] = useState<boolean>(false);
   const toDate = (value: any) => {
     if (!value) return null;
     if (value instanceof Date) return value;
@@ -152,6 +156,61 @@ export default function CoachDashboardPage() {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const loadMpStatus = async () => {
+      try {
+        setMpLoading(true);
+        const snap = await getDoc(doc(db as any, 'coach_payment_accounts', user.uid));
+        if (!cancelled) {
+          if (snap.exists()) {
+            const data = snap.data() as any;
+            setMpStatus(String(data?.status || 'active'));
+            setMpUpdatedAt(String(data?.updatedAt || data?.createdAt || ''));
+          } else {
+            setMpStatus(null);
+            setMpUpdatedAt(null);
+          }
+        }
+      } catch (e) {
+        console.error('Error cargando estado MP:', e);
+        if (!cancelled) {
+          setMpStatus(null);
+          setMpUpdatedAt(null);
+        }
+      } finally {
+        if (!cancelled) setMpLoading(false);
+      }
+    };
+    loadMpStatus();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  const startMpConnect = async () => {
+    if (!user) return;
+    try {
+      setMpConnecting(true);
+      const token = await user.getIdToken();
+      const res = await fetch('/api/mp/oauth/start', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.url) {
+        throw new Error(data?.error || 'No se pudo iniciar la conexión');
+      }
+      window.location.href = data.url;
+    } catch (e: any) {
+      console.error('Error iniciando OAuth MP:', e);
+      toast({ title: 'Error', description: e?.message || 'No se pudo iniciar la conexión', variant: 'destructive' });
+    } finally {
+      setMpConnecting(false);
+    }
+  };
+
   // Cargar análisis de todos los jugadores del coach (en tiempo real, chunked por 10 ids)
   // y también análisis vinculados directamente al coach (coachId), aunque el jugador ya no esté vinculado.
   useEffect(() => {
@@ -250,6 +309,8 @@ export default function CoachDashboardPage() {
 
   const isAnalysisDone = (analysis: any) =>
     String(analysis?.status) === "analyzed" && analysis?.coachCompleted === true;
+  const isBiomechProAnalysis = (analysis: any) =>
+    String(analysis?.analysisMode) === "biomech-pro";
   const unreadCount = useMemo(() => messages.filter(m => !m.read).length, [messages]);
   const analyzedCount = useMemo(() => analyses.filter(isAnalysisDone).length, [analyses]);
   const pendingCount = useMemo(() => analyses.filter((a: any) => !isAnalysisDone(a)).length, [analyses]);
@@ -621,6 +682,34 @@ export default function CoachDashboardPage() {
           </Button>
         </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Pagos con MercadoPago</CardTitle>
+          <CardDescription>
+            Conecta tu cuenta para recibir pagos automáticamente.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {mpLoading ? (
+            <div className="text-sm text-muted-foreground">Cargando estado de conexión…</div>
+          ) : mpStatus ? (
+            <div className="text-sm">
+              <span className="font-medium">Estado:</span> {mpStatus === 'active' ? 'Conectado' : mpStatus}
+              {mpUpdatedAt ? (
+                <span className="text-muted-foreground"> · Actualizado {mpUpdatedAt}</span>
+              ) : null}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">Tu cuenta de MercadoPago aún no está conectada.</div>
+          )}
+          <div>
+            <Button onClick={startMpConnect} disabled={mpConnecting}>
+              {mpStatus ? 'Re-conectar cuenta' : 'Conectar cuenta'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="cursor-pointer hover:shadow-md" onClick={() => { window.location.href = '/coach/dashboard#players'; }}>
@@ -1040,7 +1129,12 @@ export default function CoachDashboardPage() {
                     <div key={a.id} className="flex items-center justify-between gap-3 border rounded-md p-3">
                       <div className="min-w-0">
                         <div className="font-medium truncate">{playerNameLookup[String(a.playerId || '')] || p?.name || a.playerId}</div>
-                        <div className="text-xs text-muted-foreground truncate">{new Date(a.createdAt || Date.now()).toLocaleString()}</div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span className="truncate">{new Date(a.createdAt || Date.now()).toLocaleString()}</span>
+                          {isBiomechProAnalysis(a) && (
+                            <Badge variant="secondary">BIOMECH PRO</Badge>
+                          )}
+                        </div>
                       </div>
                       <Link href={`/analysis/${a.id}`} className="text-xs text-primary shrink-0">Ver</Link>
                     </div>
@@ -1062,7 +1156,12 @@ export default function CoachDashboardPage() {
                     <div key={a.id} className="flex items-center justify-between gap-3 border rounded-md p-3">
                       <div className="min-w-0">
                         <div className="font-medium truncate">{playerNameLookup[String(a.playerId || '')] || p?.name || a.playerId}</div>
-                        <div className="text-xs text-muted-foreground truncate">{new Date(a.createdAt || Date.now()).toLocaleString()}</div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span className="truncate">{new Date(a.createdAt || Date.now()).toLocaleString()}</span>
+                          {isBiomechProAnalysis(a) && (
+                            <Badge variant="secondary">BIOMECH PRO</Badge>
+                          )}
+                        </div>
                       </div>
                       <Link href={`/analysis/${a.id}`} className="text-xs text-primary shrink-0">Abrir</Link>
                     </div>

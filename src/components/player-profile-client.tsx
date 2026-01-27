@@ -181,6 +181,8 @@ type ComparisonNote = {
 
 export function PlayerProfileClient({ player, analyses, evaluations, comments }: PlayerProfileClientProps) {
   const { userProfile } = useAuth();
+  const isBiomechProAnalysis = (analysis: any) =>
+    String(analysis?.analysisMode) === "biomech-pro";
   const visibleAnalyses = useMemo(() => {
     if (userProfile?.role !== 'coach' || !userProfile?.id) return analyses;
     if (String(player.coachId || '') === String(userProfile.id)) return analyses;
@@ -574,6 +576,7 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
                     <th className="text-left font-medium px-3 py-2">Tipo</th>
                     <th className="text-left font-medium px-3 py-2">Score</th>
                     <th className="text-left font-medium px-3 py-2">Estado</th>
+                    <th className="text-left font-medium px-3 py-2">Métrica</th>
                     <th className="text-left font-medium px-3 py-2">Comparación</th>
                     <th className="text-left font-medium px-3 py-2">Acciones</th>
                   </tr>
@@ -591,10 +594,24 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
                       return (
                         <tr key={a.id} className={isLatest ? 'bg-primary/5' : ''}>
                           <td className="px-3 py-2 whitespace-nowrap"><FormattedDate dateString={a.createdAt} /></td>
-                          <td className="px-3 py-2 whitespace-nowrap">{a.shotType}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span>{a.shotType}</span>
+                              {isBiomechProAnalysis(a) && (
+                                <Badge variant="secondary">BIOMECH PRO</Badge>
+                              )}
+                            </div>
+                          </td>
                           <td className="px-3 py-2">{score}</td>
                           <td className="px-3 py-2">
                             <Badge variant={coachStatus.variant}>{coachStatus.label}</Badge>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="text-xs text-muted-foreground">
+                              {isBiomechProAnalysis(a)
+                                ? "Timing de transferencia (piernas→cadera→tronco→brazo→muñeca)"
+                                : "Checklist técnico del tiro"}
+                            </span>
                           </td>
                           <td className="px-3 py-2">
                             {comparisonIds.has(a.id) ? (
