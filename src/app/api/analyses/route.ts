@@ -68,38 +68,72 @@ export async function GET(request: NextRequest) {
         ...doc.data()
       })) as any[];
     } else {
-      console.log('🔍 Buscando análisis para usuario:', userId);
-      const playerSnap = await adminDb
-        .collection('analyses')
-        .where('playerId', '==', userId)
-        .orderBy('createdAt', 'desc')
-        .get();
-      let userSnap: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData> | null = null;
-      try {
-        userSnap = await adminDb
-          .collection('analyses')
-          .where('userId', '==', userId)
-          .orderBy('createdAt', 'desc')
-          .get();
-      } catch (e) {
-        console.warn('⚠️ Query por userId falló, usando solo playerId', e);
-      }
-
-      const merged = new Map<string, any>();
-      for (const doc of playerSnap.docs) {
-        merged.set(doc.id, { id: doc.id, ...doc.data() });
-      }
-      if (userSnap) {
-        for (const doc of userSnap.docs) {
-          if (!merged.has(doc.id)) {
-            merged.set(doc.id, { id: doc.id, ...doc.data() });
+      const clubSnap = await adminDb.collection('clubs').doc(String(userId)).get();
+      if (clubSnap.exists) {
+        const clubName = String((clubSnap.data() as any)?.name || '').trim();
+        console.log('🔍 Buscando análisis para club:', clubName || userId);
+        if (clubName) {
+          const playersSnap = await adminDb
+            .collection('players')
+            .where('club', '==', clubName)
+            .limit(500)
+            .get();
+          const playerIds = playersSnap.docs.map(doc => doc.id);
+          if (playerIds.length > 0) {
+            const merged = new Map<string, any>();
+            const chunkSize = 10;
+            for (let i = 0; i < playerIds.length; i += chunkSize) {
+              const chunk = playerIds.slice(i, i + chunkSize);
+              const chunkSnap = await adminDb
+                .collection('analyses')
+                .where('playerId', 'in', chunk)
+                .orderBy('createdAt', 'desc')
+                .get();
+              for (const doc of chunkSnap.docs) {
+                if (!merged.has(doc.id)) {
+                  merged.set(doc.id, { id: doc.id, ...doc.data() });
+                }
+              }
+            }
+            analyses = Array.from(merged.values()).sort(
+              (a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt)
+            );
           }
         }
-      }
+      } else {
+        console.log('🔍 Buscando análisis para usuario:', userId);
+        const playerSnap = await adminDb
+          .collection('analyses')
+          .where('playerId', '==', userId)
+          .orderBy('createdAt', 'desc')
+          .get();
+        let userSnap: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData> | null = null;
+        try {
+          userSnap = await adminDb
+            .collection('analyses')
+            .where('userId', '==', userId)
+            .orderBy('createdAt', 'desc')
+            .get();
+        } catch (e) {
+          console.warn('⚠️ Query por userId falló, usando solo playerId', e);
+        }
 
-      analyses = Array.from(merged.values()).sort(
-        (a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt)
-      );
+        const merged = new Map<string, any>();
+        for (const doc of playerSnap.docs) {
+          merged.set(doc.id, { id: doc.id, ...doc.data() });
+        }
+        if (userSnap) {
+          for (const doc of userSnap.docs) {
+            if (!merged.has(doc.id)) {
+              merged.set(doc.id, { id: doc.id, ...doc.data() });
+            }
+          }
+        }
+
+        analyses = Array.from(merged.values()).sort(
+          (a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt)
+        );
+      }
     }
 
     // Enriquecer con datos del jugador (solo para admin)

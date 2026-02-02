@@ -1,4 +1,4 @@
-export type UserRole = 'player' | 'coach' | 'admin';
+export type UserRole = 'player' | 'coach' | 'club' | 'admin';
 
 export type BaseUser = {
   id: string;
@@ -35,6 +35,8 @@ export type Player = BaseUser & {
   publicShowCountry?: boolean;
   publicShowClub?: boolean;
   club?: string;
+  province?: string;
+  city?: string;
   // Agregados públicos para rankings
   publicCategory?: 'U11' | 'U13' | 'U15' | 'U17' | 'U21' | 'Mayores';
   publicHighestScore?: number; // mejor puntuación histórica (0..100)
@@ -194,6 +196,14 @@ export type Coach = BaseUser & {
   paymentAccountOwnerId?: string;
   paymentAccountOwnerEmail?: string | null;
   paymentAccountOwnerName?: string | null;
+};
+
+export type Club = BaseUser & {
+  role: 'club';
+  city?: string;
+  country?: string;
+  playerIds?: string[];
+  coachIds?: string[];
 };
 
 export type ConnectionRequest = {
