@@ -246,6 +246,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ...(typeof (userData as any).club === 'string' && (userData as any).club.trim()
             ? { club: (userData as any).club.trim() }
             : {}),
+          ...(typeof (userData as any).country === 'string' && (userData as any).country.trim()
+            ? { country: (userData as any).country.trim() }
+            : {}),
           ...(typeof (userData as any).province === 'string' && (userData as any).province.trim()
             ? { province: (userData as any).province.trim() }
             : {}),
