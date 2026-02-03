@@ -78,4 +78,43 @@ export async function GET(req: NextRequest) {
   }
 }
 
+export async function PATCH(req: NextRequest) {
+  try {
+    if (!adminDb) return NextResponse.json({ error: 'DB no inicializada' }, { status: 500 });
+    if (!(await isAdmin(req))) return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+
+    const body = await req.json().catch(() => ({}));
+    const id = String(body?.id || '').trim();
+    if (!id) return NextResponse.json({ error: 'id requerido' }, { status: 400 });
+
+    const update: Record<string, any> = {};
+    if (typeof body?.status !== 'undefined') {
+      const status = String(body.status || '');
+      if (!['active', 'pending', 'suspended'].includes(status)) {
+        return NextResponse.json({ error: 'status inválido' }, { status: 400 });
+      }
+      update.status = status;
+    }
+
+    if (typeof body?.ratePerAnalysis !== 'undefined') {
+      const rawRate = typeof body.ratePerAnalysis === 'number' ? body.ratePerAnalysis : Number(body.ratePerAnalysis);
+      if (Number.isNaN(rawRate) || rawRate < 0) {
+        return NextResponse.json({ error: 'ratePerAnalysis inválido' }, { status: 400 });
+      }
+      update.ratePerAnalysis = rawRate;
+    }
+
+    if (!Object.keys(update).length) {
+      return NextResponse.json({ error: 'Sin cambios' }, { status: 400 });
+    }
+
+    update.updatedAt = new Date().toISOString();
+    await adminDb.collection('coaches').doc(id).set(update, { merge: true });
+    return NextResponse.json({ ok: true, id, update });
+  } catch (e: any) {
+    console.error('admin coaches update error', e);
+    return NextResponse.json({ error: e?.message || 'Error' }, { status: 500 });
+  }
+}
+
 

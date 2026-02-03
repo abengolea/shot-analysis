@@ -35,6 +35,7 @@ export default function AdminHome() {
 	const [coaches, setCoaches] = useState<any[]>([]);
 	const [coachesNext, setCoachesNext] = useState<string | undefined>(undefined);
 	const [coachesLoading, setCoachesLoading] = useState(false);
+	const [coachUpdatingId, setCoachUpdatingId] = useState<string | null>(null);
 
 	const [payments, setPayments] = useState<any[]>([]);
 	const [paymentsNext, setPaymentsNext] = useState<string | undefined>(undefined);
@@ -148,6 +149,34 @@ export default function AdminHome() {
 			url.searchParams.set('tab', id);
 			window.history.replaceState({}, '', url.toString());
 		} catch {}
+	};
+
+	const updateCoach = async (
+		id: string,
+		payload: { status?: 'active' | 'pending' | 'suspended'; ratePerAnalysis?: number }
+	) => {
+		try {
+			setCoachUpdatingId(id);
+			const auth = getAuth();
+			const cu = auth.currentUser;
+			if (!cu) throw new Error('Usuario no autenticado');
+			const token = await getIdToken(cu, true);
+			const res = await fetch('/api/admin/coaches', {
+				method: 'PATCH',
+				headers: {
+					'Authorization': `Bearer ${token}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ id, ...payload }),
+			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+			setCoaches((prev) => prev.map((c) => (c.id === id ? { ...c, ...payload } : c)));
+		} catch (e: any) {
+			alert(e?.message || 'Error actualizando entrenador');
+		} finally {
+			setCoachUpdatingId(null);
+		}
 	};
 
 	return (
@@ -655,6 +684,7 @@ export default function AdminHome() {
 									<th className="py-2 px-3">Estado</th>
 									<th className="py-2 px-3">Tarifa</th>
 									<th className="py-2 px-3">Creado</th>
+									<th className="py-2 px-3">Acciones</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -670,11 +700,44 @@ export default function AdminHome() {
                                         <td className="py-2 px-3">{c.status || '-'}</td>
                                         <td className="py-2 px-3">{typeof c.ratePerAnalysis === 'number' ? c.ratePerAnalysis : '-'}</td>
                                         <td className="py-2 px-3">{typeof c.createdAt === 'string' ? c.createdAt : (c?.createdAt?.toDate?.() ? c.createdAt.toDate().toISOString() : (typeof c?.createdAt?._seconds === 'number' ? new Date(c.createdAt._seconds * 1000 + Math.round((c.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
+										<td className="py-2 px-3">
+											<div className="flex flex-wrap gap-2">
+												<button
+													className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+													disabled={coachUpdatingId === c.id}
+													onClick={() => {
+														const nextStatus = c.status === 'active' ? 'suspended' : 'active';
+														const label = nextStatus === 'active' ? 'activar' : 'suspender';
+														if (!confirm(`¿Seguro que querés ${label} a este entrenador?`)) return;
+														updateCoach(c.id, { status: nextStatus });
+													}}
+												>
+													{c.status === 'active' ? 'Suspender' : 'Activar'}
+												</button>
+												<button
+													className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+													disabled={coachUpdatingId === c.id}
+													onClick={() => {
+														const currentRate = typeof c.ratePerAnalysis === 'number' ? String(c.ratePerAnalysis) : '';
+														const input = prompt('Nueva tarifa por análisis (ARS):', currentRate);
+														if (input == null) return;
+														const rate = Number(String(input).trim());
+														if (Number.isNaN(rate) || rate < 0) {
+															alert('Tarifa inválida');
+															return;
+														}
+														updateCoach(c.id, { ratePerAnalysis: rate });
+													}}
+												>
+													Cambiar tarifa
+												</button>
+											</div>
+										</td>
                                     </tr>
                                 ))}
 								{!filteredCoaches.length && (
 									<tr>
-										<td className="py-6 px-3 text-gray-500" colSpan={6}>{coachesLoading ? 'Cargando…' : 'Sin datos'}</td>
+										<td className="py-6 px-3 text-gray-500" colSpan={7}>{coachesLoading ? 'Cargando…' : 'Sin datos'}</td>
 									</tr>
 								)}
 							</tbody>
