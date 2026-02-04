@@ -1338,10 +1338,13 @@ Video: {{videoUrl}}`
 });
 
 // Función helper para construir el prompt de TIRO LIBRE
+// Base: mismo "motor" que tres puntos (detección, keyframes, evidencia, reglas).
+// Capa: especificación tiro libre (5 fases, 19 ítems, rúbricas, set point por edad, infracciones).
 function buildLibrePrompt(input: AnalyzeBasketballShotInput): string {
   const config = input.promptConfig || {};
-  
-  return `Eres un sistema experto de análisis de TIRO LIBRE en baloncesto.
+  const sectionPrompts = (config as any).sectionPrompts || {};
+
+  let prompt = `Eres un sistema experto de análisis de TIRO LIBRE en baloncesto.
 
 DETECCIÓN DE TIROS (OBLIGATORIO):
 1. Observa TODA la evidencia visual disponible (keyframes/shotFrames).
@@ -1352,74 +1355,222 @@ DETECCIÓN DE TIROS (OBLIGATORIO):
 Dato externo: tiros_detectados_previo = ${input.detectedShotsCount ?? 'N/A'}.
 6. analysisSummary y tiros_detectados deben coincidir.
 7. Si no hay keyframes, usa selectedKeyframes: [] y evidenceFrames: [].
-Dato externo: tiros_detectados_previo = ${input.detectedShotsCount ?? 'N/A'}.
 
-CONSISTENCIA GENERAL:
-Si hay ≥2 tiros, evalúa la repetibilidad del gesto entre tiros.
-Compara set point, codos cerca del cuerpo, ángulo de salida y equilibrio post‑liberación.
-Si no es visible o hay <2 tiros, marca "no_evaluable" con razón específica.
-Indica qué tiros comparaste (ej: tiro 1 vs tiro 2, con timestamps de liberación).
-Si tiros_detectados_previo ≥ 2, NO uses "no_evaluable" para consistencia_general.
+`;
 
-INFORMACIÓN DEL JUGADOR
-${input.ageCategory ? `- Categoría de edad: ${input.ageCategory}` : '- Presumir edad basándose en tamaño corporal, proporciones, altura relativa al aro y contexto'}
+  if (input.availableKeyframes && input.availableKeyframes.length > 0) {
+    prompt += `KEYFRAMES DISPONIBLES PARA ANÁLISIS:
+${input.availableKeyframes.map(kf => `- Frame ${kf.index}: ${kf.timestamp.toFixed(1)}s - ${kf.description}`).join('\n')}
 
-SISTEMA DE PESOS PARA TIRO LIBRE:
+INSTRUCCIONES PARA KEYFRAMES:
+1. Usa SOLO los keyframes listados arriba (no inventes índices).
+2. Selecciona HASTA 6 keyframes más importantes técnicamente (preparación, set point, liberación, follow-through).
+3. Si NO hay keyframes suficientes, devuelve los disponibles.
+4. Si NO hay keyframes, usa "selectedKeyframes": [] y deja evidenceFrames como [] sin inventar frameId.
 
-🎯 PREPARACIÓN: 28%
-├─ Rutina pre-tiro (8.4%): Secuencia repetible antes del tiro (botes, respiraciones, tiempo)
-├─ Alineación pies/cuerpo (7.0%): Posición del cuerpo para tiro recto
-├─ Muñeca cargada (5.6%): Flexión dorsal AL TOMAR el balón (ANTES del movimiento)
-├─ Flexión rodillas (4.2%): Flexión 90-110° para generar potencia
-└─ Posición inicial balón (2.8%): Ubicación correcta al inicio
+`;
+  }
 
-🎯 ASCENSO: 23%
-├─ Set point altura según edad (9.2%): CRÍTICO - Altura varía por edad
-│  • 6-8 años: Pecho/Hombros | • 9-11 años: Hombros/Mentón
-│  • 12-14 años: Frente/Ojos | • 15-17 años: Sobre cabeza | • 18+: Extensión completa
-│  TAMBIÉN: Trayectoria VERTICAL (no va atrás)
-├─ Codos cerca del cuerpo (6.9%): No abiertos durante ascenso
-├─ Trayectoria vertical (4.6%): Línea recta, sin desviaciones
-└─ Mano guía (2.3%): Solo guía/estabiliza, no empuja
+  prompt += `INFORMACIÓN DEL JUGADOR (CRÍTICO para set point):
+${input.ageCategory ? `- Categoría de edad: ${input.ageCategory}. Usar para evaluar altura de set point.` : `- NO hay edad. PRESUMIR edad basándose en: tamaño corporal, proporciones, altura relativa al aro, contexto (escuela/liga). Indica en comentarios la edad presumida y por qué.`}
 
-🎯 FLUIDEZ: 12%
-├─ Tiro en un tiempo (7.2%): Continuo sin pausas. NOTA: Menos crítico que tres puntos
-└─ Sincronía con piernas (4.8%): Balón sube coordinado con extensión de piernas
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SISTEMA DE EVALUACIÓN TIRO LIBRE (100% total)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🎯 LIBERACIÓN: 22%
-├─ Extensión completa (8.8%): Brazo Y cuerpo elongados en liberación
-├─ Ángulo de salida (7.7%): 45-52° óptimo
-├─ Flexión muñeca final (3.3%): "Gooseneck" - muñeca caída después de liberar
-└─ Rotación balón (2.2%): Backspin (puede ser no_evaluable)
+1. PREPARACIÓN: 28%
+2. ASCENSO: 23%
+3. FLUIDEZ: 12%
+4. LIBERACIÓN: 22%
+5. SEGUIMIENTO: 15%
 
-🎯 SEGUIMIENTO: 15%
-├─ Equilibrio y Estabilidad (9.75%):
-│  ├─ SIN SALTO (3.9%): Pies NO despegan ANTES del toque del aro
-│  │  ⚠️ INFRACCIÓN GRAVE si salta antes del toque
-│  ├─ Pies dentro zona (2.93%): No pisar línea antes del toque
-│  │  ⚠️ INFRACCIÓN si pisa línea
-│  └─ Balance vertical (2.93%): Sin movimientos laterales significativos
-└─ Follow-through completo (5.25%): Brazo extendido post-liberación (0.5-1s)
+Cada parámetro se evalúa del 1 al 100; luego se convierte a rating 1-5 para el JSON:
+90-100 → rating 5 (Correcto) | 70-89 → rating 4 (Correcto) | 50-69 → rating 3 (Mejorable) | 30-49 → rating 2 (Incorrecto) | 1-29 → rating 1 (Incorrecto).
+Si no_evaluable: na: true, rating: 0, status: "no_evaluable", razon: explicación.
 
-✅ CRITERIO DE EVALUABILIDAD (SEGUIMIENTO):
-- Si se ve el cuerpo completo o el aterrizaje, ES evaluable.
-- Si solo se ve torso/brazos, evalúa el balance superior y aclara la limitación.
-- Solo usa "no_evaluable" si el jugador o el aterrizaje están fuera de cuadro.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DETALLE POR FASE Y PARÁMETROS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-⚠️ DIFERENCIACIÓN CRÍTICA:
-1. Muñeca CARGADA (Preparación): Flexión DORSAL al tomar el balón
-2. Muñeca FINAL (Liberación): Flexión hacia ABAJO (gooseneck) después de soltar
+1️⃣ PREPARACIÓN (28%)
+├─ rutina_pre_tiro (8.4%): Rutina repetible antes del tiro (botes definidos, respiraciones, tiempo consistente). Sin rutina = bajo puntaje.
+├─ alineacion_pies_cuerpo (7.0%): Pies alineados al aro, ancho hombros, hombros perpendiculares, cuerpo balanceado.
+├─ muneca_cargada_libre (5.6%): MUÑECA CARGADA = flexión DORSAL (hacia atrás) AL TOMAR el balón, ANTES de iniciar el tiro. NO es el gooseneck (eso es en Liberación).
+├─ flexion_rodillas_libre (4.2%): Flexión 90-110°, suficiente para impulso, rodillas sobre los pies.
+└─ posicion_inicial_balon (2.8%): Balón a altura correcta (cintura/pecho según edad), centrado, agarre correcto.
+
+2️⃣ ASCENSO (23%)
+├─ set_point_altura_edad (9.2%): CRÍTICO. Altura del set point VARÍA POR EDAD. Trayectoria VERTICAL (no hacia atrás).
+│  TABLA POR EDAD:
+│  • 6-8 años: Óptimo pecho/hombros. Frente forzado = penalizar.
+│  • 9-11 años: Óptimo hombros/mentón. Sobre cabeza forzado = penalizar.
+│  • 12-14 años: Óptimo frente/ojos. Muy alto forzado = penalizar.
+│  • 15-17 años: Óptimo sobre cabeza.
+│  • 18+ años: Óptimo frente/sobre cabeza (medio-alto). Set point MUY ALTO (extensión máxima) NO es mejor: 75-90 pts si es funcional. NO premiar altura excesiva.
+│  Trayectoria: balón sube en línea RECTA vertical. Si va HACIA ATRÁS (detrás de la cabeza) = penalización fuerte.
+├─ codos_cerca_cuerpo_libre (6.9%): Codos cerca del cuerpo, no abiertos ("chicken wing" = bajo puntaje).
+├─ trayectoria_vertical_libre (4.6%): Balón sube en línea vertical, sin desviaciones laterales.
+└─ mano_guia_libre (2.3%): Mano no dominante al LADO, solo guía/estabiliza, no empuja. Se separa antes/durante liberación.
+
+3️⃣ FLUIDEZ (12%) — Menos crítico que en tres puntos; se tolera micro-pausa en set point.
+├─ tiro_un_solo_tiempo_libre (7.2%): Movimiento continuo sin pausas pronunciadas. Micro-pausa breve en set point = aceptable.
+└─ sincronia_piernas_libre (4.8%): Balón sube coordinado con extensión de piernas (~60-70% extendidas al set point).
+
+4️⃣ LIBERACIÓN (22%)
+├─ extension_completa_liberacion (8.8%): Brazo completamente extendido, cuerpo elongado, liberación en punto más alto.
+├─ angulo_salida_libre (7.7%): Ángulo óptimo 45-52°. Arco alto y suave.
+├─ flexion_muneca_final (3.3%): FLEXIÓN MUÑECA FINAL = "Gooseneck". Muñeca RELAJADA y flexionada HACIA ABAJO después de soltar. Dedos hacia abajo. DIFERENTE de muñeca cargada (que es al tomar el balón).
+└─ rotacion_balon (2.2%): Backspin. Si el video no permite ver rotación, marca no_evaluable con razón "calidad/velocidad insuficiente para ver rotación".
+
+5️⃣ SEGUIMIENTO (15%)
+├─ sin_salto_reglamentario (3.9%): Pies NO despegan ANTES de que el balón toque el aro. Solo elevación de talones permitida. Si salta antes = INFRACCIÓN GRAVE. Marcar claramente y bajar puntaje (0-29). Opcional: advertencia "TIRO REGLAMENTARIAMENTE INVÁLIDO - Salto detectado".
+├─ pies_dentro_zona (2.93%): No pisar ni cruzar la línea de tiro libre antes del toque del aro. Si pisa = INFRACCIÓN.
+├─ balance_vertical (2.93%): Balance vertical, sin desplazamiento lateral significativo. Aterrizaje en misma posición.
+└─ follow_through_completo_libre (5.25%): Brazo permanece extendido 0.5-1 s después de liberar, apuntando al aro.
+
+✅ CRITERIO DE EVALUABILIDAD (Seguimiento):
+- Si se ve cuerpo completo o aterrizaje, ES evaluable.
+- Si solo torso/brazos, evalúa balance superior y aclara limitación.
+- Solo "no_evaluable" si jugador o aterrizaje fuera de cuadro.
+
+⚠️ DIFERENCIACIÓN CRÍTICA (dos momentos distintos):
+- Muñeca CARGADA (Preparación, id: muneca_cargada_libre): Flexión DORSAL al TOMAR el balón.
+- Flexión muñeca FINAL (Liberación, id: flexion_muneca_final): Gooseneck DESPUÉS de soltar, muñeca caída.
 
 FRAMES POR TIRO (SI DISPONIBLES):
-Si se incluyen frames alrededor de la liberación, úsalos especialmente para evaluar "giro_pelota" y follow-through.
-Los frames cubren pre-liberación y post-liberación: no inventes fuera de lo visible.
-Prioriza el ángulo con mejor visibilidad del balón.
-Si NO ves rotación clara, marca "giro_pelota" como no_evaluable con razón específica.
+Usa frames alrededor de la liberación para giro_pelota (rotacion_balon) y follow-through. Si no ves rotación clara, rotacion_balon = no_evaluable.
+`;
 
-RESPONDER EN FORMATO JSON:
-Evalúa TODOS los parámetros del tiro libre y responde en JSON con estructura completa.
+  // Verificación inicial (estilo tres puntos)
+  prompt += `
+VERIFICACIÓN INICIAL OBLIGATORIA:
+Antes de analizar, responde SOLO con lo que puedas ver en keyframes/shotFrames.
+Si un dato no es visible, escribe "No verificable" (NUNCA inventes).
+1. Duración del video en segundos
+2. Mano de tiro (derecha/izquierda)
+3. ¿Salta durante el tiro? (sí/no)
+4. ¿Se ve la canasta?
+5. Ángulo de cámara (frontal/lateral/diagonal)
+6. Elementos del entorno visibles
+7. Número de tiros completos que ves (debe coincidir con tiros_detectados)
+`;
+
+  if (config.intro) {
+    prompt += `\n📝 INSTRUCCIONES ADICIONALES DEL ENTRENADOR:\n${config.intro}\n`;
+  }
+
+  prompt += `
+📸 EVIDENCIA VISUAL:
+Para cada parámetro evaluado, identifica 1-3 fotogramas que respalden tu evaluación:
+- frameId: "frame_X" donde X es índice del fotograma (0-15) SOLO si existen keyframes
+- label: preparacion | ascenso | set_point | liberacion | follow_through
+- angle: frontal | lateral | diagonal
+- note: Descripción breve de lo que se ve en ese frame
+Si NO hay keyframes, evidenceFrames: [] y NO inventes frameId.
+
+🔍 REGLAS FUNDAMENTALES:
+1. Si NO puedes ver claramente un parámetro, usa "no_evaluable" (na: true, razon: explicación).
+2. Para CADA parámetro evaluable, proporciona timestamp donde lo observas.
+3. DESCRIBE LITERALMENTE lo que ves (no interpretación).
+4. NO inventes mano/ángulo/canasta si no son visibles: "No verificable".
+5. rating 1-5 según rúbrica (90-100→5, 70-89→4, 50-69→3, 30-49→2, 1-29→1).
+6. NO inventes tiros ni duración fija del video.
+
+📋 CHECKLIST OBLIGATORIO TIRO LIBRE (19 parámetros):
+Devuelve detailedChecklist con EXACTAMENTE estas categorías e ids. Respeta los ids para que el sistema calcule el score.
+
+`;
+
+  // Sección checklist detallada (ids de CANONICAL_CATEGORIES_LIBRE)
+  if (sectionPrompts.preparacion) {
+    prompt += sectionPrompts.preparacion;
+  } else {
+    prompt += `1) PREPARACIÓN (28%):
+   - id: "rutina_pre_tiro", name: "Rutina pre-tiro"
+   - id: "alineacion_pies_cuerpo", name: "Alineación pies/cuerpo"
+   - id: "muneca_cargada_libre", name: "Muñeca cargada"
+   - id: "flexion_rodillas_libre", name: "Flexión de rodillas"
+   - id: "posicion_inicial_balon", name: "Posición inicial del balón"
+
+2) ASCENSO (23%):
+   - id: "set_point_altura_edad", name: "Set point altura según edad"
+   - id: "codos_cerca_cuerpo_libre", name: "Codos cerca del cuerpo"
+   - id: "trayectoria_vertical_libre", name: "Trayectoria vertical"
+   - id: "mano_guia_libre", name: "Mano guía"
+
+3) FLUIDEZ (12%):
+   - id: "tiro_un_solo_tiempo_libre", name: "Tiro en un solo tiempo"
+   - id: "sincronia_piernas_libre", name: "Sincronía con piernas"
+
+4) LIBERACIÓN (22%):
+   - id: "extension_completa_liberacion", name: "Extensión completa"
+   - id: "angulo_salida_libre", name: "Ángulo de salida"
+   - id: "flexion_muneca_final", name: "Flexión de muñeca final (gooseneck)"
+   - id: "rotacion_balon", name: "Rotación del balón"
+
+5) SEGUIMIENTO (15%):
+   - id: "sin_salto_reglamentario", name: "Sin salto reglamentario"
+   - id: "pies_dentro_zona", name: "Pies dentro de la zona"
+   - id: "balance_vertical", name: "Balance vertical"
+   - id: "follow_through_completo_libre", name: "Follow-through completo"
+`;
+  }
+
+  prompt += `
+
+📊 CÁLCULO SCORE GLOBAL (1-100) Y CONTEO:
+- score_global: Calculado con la fórmula ponderada (cada parámetro 1-100 × su peso %). Solo incluir parámetros evaluables.
+- parametros_evaluados: Cuenta ítems con na: false Y status !== "no_evaluable"
+- parametros_no_evaluables: Cuenta ítems con na: true O status === "no_evaluable"
+- lista_no_evaluables: Lista cada uno con razón (ej: "rotacion_balon: calidad de video insuficiente")
+- VERIFICACIÓN: parametros_evaluados + parametros_no_evaluables = 19 (total tiro libre)
+
+FORMATO DE RESPUESTA OBLIGATORIO:
+{
+  "verificacion_inicial": {
+    "duracion_video": "X.Xs",
+    "mano_tiro": "derecha/izquierda",
+    "salta": true/false,
+    "canasta_visible": true/false,
+    "angulo_camara": "frontal/lateral/diagonal",
+    "elementos_entorno": ["aro", "tablero", ...],
+    "tiros_detectados": N
+  },
+  "analysisSummary": "Resumen con N tiros detectados y parámetros evaluables",
+  "strengths": ["Fortaleza 1", "Fortaleza 2"],
+  "weaknesses": ["Debilidad 1", "Debilidad 2"],
+  "recommendations": ["Recomendación con timestamp si aplica", ...],
+  "selectedKeyframes": [índices 0-15] o [],
+  "keyframeAnalysis": "Por qué estos keyframes",
+  "detailedChecklist": [
+    { "category": "Preparación (28%)", "items": [ { "id": "rutina_pre_tiro", "name": "...", "description": "...", "status": "Correcto|Mejorable|Incorrecto|no_evaluable", "rating": 1-5 o 0, "na": false|true, "comment": "...", "timestamp": "X.Xs", "evidencia": "...", "evidenceFrames": [...] }, ... ] },
+    { "category": "Ascenso (23%)", "items": [ ... ] },
+    { "category": "Fluidez (12%)", "items": [ ... ] },
+    { "category": "Liberación (22%)", "items": [ ... ] },
+    { "category": "Seguimiento (15%)", "items": [ ... ] }
+  ],
+  "resumen_evaluacion": {
+    "parametros_evaluados": X,
+    "parametros_no_evaluables": Y,
+    "lista_no_evaluables": ["id: razón", ...],
+    "score_global": XX.XX,
+    "nota": "Score con X de 19 parámetros evaluables (Y no evaluables)",
+    "confianza_analisis": "alta|media|baja"
+  },
+  "caracteristicas_unicas": ["Detalle 1", "Detalle 2", "Detalle 3"]
+}
+
+Si hay infracción grave (salto antes del toque, invasión de línea), incluye en "advertencia" si lo soporta el cliente: "TIRO REGLAMENTARIAMENTE INVÁLIDO - [motivo]."
+
+🚨 ANTES DE RESPONDER:
+1. Revisa CADA ítem de detailedChecklist (19 ítems).
+2. parametros_evaluados + parametros_no_evaluables = 19.
+3. score_global calculado solo con parámetros evaluables (ponderado 1-100).
+4. No uses valores inventados; cuenta y calcula a partir del checklist que generes.
 
 Video: {{videoUrl}}`;
+
+  return prompt;
 }
 
 // Función helper para construir el prompt de TRES PUNTOS
