@@ -599,37 +599,6 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
   const resolvedCoachSummary =
     coachSummary.trim().length > 0 ? coachSummary : fallbackCoachSummary;
 
-  useEffect(() => {
-    let active = true;
-    const checkCoachAccess = async () => {
-      if (!isCoachRole || !safeAnalysis?.id) {
-        setHasPlayerCoachAccess(false);
-        return;
-      }
-      try {
-        const auth = getAuth();
-        const cu = auth.currentUser;
-        if (!cu) return;
-        const token = await getIdToken(cu, true);
-        const res = await fetch(`/api/analyses/${safeAnalysis.id}/coach-access`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          if (active) setHasPlayerCoachAccess(false);
-          return;
-        }
-        const data = await res.json();
-        if (active) setHasPlayerCoachAccess(Boolean(data?.hasCoachAccess));
-      } catch {
-        if (active) setHasPlayerCoachAccess(false);
-      }
-    };
-    void checkCoachAccess();
-    return () => {
-      active = false;
-    };
-  }, [isCoachRole, safeAnalysis?.id]);
-
   const hasCoachFeedback = useMemo(() => {
     const hasItems = Object.values(coachFeedbackByItemId).some((entry) => {
       if (!entry) return false;
@@ -1043,6 +1012,37 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
     recommendations: derivedRecommendations,
     analysisSummary: derivedSummary,
   };
+
+  useEffect(() => {
+    let active = true;
+    const checkCoachAccess = async () => {
+      if (!isCoachRole || !safeAnalysis?.id) {
+        setHasPlayerCoachAccess(false);
+        return;
+      }
+      try {
+        const auth = getAuth();
+        const cu = auth.currentUser;
+        if (!cu) return;
+        const token = await getIdToken(cu, true);
+        const res = await fetch(`/api/analyses/${safeAnalysis.id}/coach-access`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          if (active) setHasPlayerCoachAccess(false);
+          return;
+        }
+        const data = await res.json();
+        if (active) setHasPlayerCoachAccess(Boolean(data?.hasCoachAccess));
+      } catch {
+        if (active) setHasPlayerCoachAccess(false);
+      }
+    };
+    void checkCoachAccess();
+    return () => {
+      active = false;
+    };
+  }, [isCoachRole, safeAnalysis?.id]);
 
   const attempts: Array<{ start: number; end: number }> = Array.isArray((analysis as any).attempts)
     ? ((analysis as any).attempts as Array<{ start: number; end: number }>)
