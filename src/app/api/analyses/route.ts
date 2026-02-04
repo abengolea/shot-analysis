@@ -55,6 +55,20 @@ export async function GET(request: NextRequest) {
       return 0;
     };
 
+    /** Puntaje en escala 0..100 para listados (score puede estar en score, analysisResult o scoreMetadata) */
+    const toDisplayScore = (a: any): number | null => {
+      const raw =
+        a?.score ??
+        a?.analysisResult?.score ??
+        a?.analysisResult?.overallScore ??
+        a?.analysisResult?.scoreMetadata?.weightedScore ??
+        a?.scoreMetadata?.weightedScore;
+      if (typeof raw !== 'number') return null;
+      if (raw <= 10) return Math.round(raw * 10);
+      if (raw <= 5) return Math.round((raw / 5) * 100);
+      return Math.round(raw);
+    };
+
     let analyses: any[] = [];
     if (requestIsAdmin) {
       console.log('🔍 Listando TODOS los análisis (admin)');
@@ -180,9 +194,14 @@ export async function GET(request: NextRequest) {
 
     console.log(`✅ Encontrados ${analyses.length} análisis para usuario ${userId}`);
 
+    const analysesWithDisplayScore = analyses.map((a: any) => {
+      const displayScore = toDisplayScore(a);
+      return { ...a, displayScore: displayScore ?? undefined };
+    });
+
     return NextResponse.json({
-      analyses,
-      count: analyses.length
+      analyses: analysesWithDisplayScore,
+      count: analysesWithDisplayScore.length
     });
 
   } catch (error) {
