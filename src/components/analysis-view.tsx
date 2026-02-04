@@ -4108,7 +4108,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                         Contactar Entrenador
                       </Button>
                       <Button asChild className="bg-green-600 hover:bg-green-700">
-                        <a href="/player/dashboard">
+                        <a href="/dashboard">
                           <Users className="mr-2 h-4 w-4" />
                           Ir a Mi Panel
                         </a>

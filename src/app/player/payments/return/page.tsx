@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, MessageSquare, Gift, ArrowRight, Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -14,7 +14,7 @@ function getParam(params: SearchParams, key: string): string | undefined {
   return v || undefined;
 }
 
-export default function PaymentsReturnPage({ searchParams }: { searchParams: SearchParams }) {
+function PaymentsReturnInner({ searchParams }: { searchParams: SearchParams }) {
   const [isFromDlocal, setIsFromDlocal] = useState(false);
   const [verifyingPayment, setVerifyingPayment] = useState(false);
   const [paymentVerified, setPaymentVerified] = useState<boolean | null>(null);
@@ -27,20 +27,26 @@ export default function PaymentsReturnPage({ searchParams }: { searchParams: Sea
   const [redirecting, setRedirecting] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
+  const clientSearchParams = useSearchParams();
+
+  const getParamSafe = (key: string): string | undefined => {
+    const clientValue = clientSearchParams?.get(key) || undefined;
+    return clientValue ?? getParam(searchParams, key);
+  };
 
   // Parámetros de MercadoPago
-  const status = (getParam(searchParams, 'status') || '').toLowerCase();
-  const collectionStatus = (getParam(searchParams, 'collection_status') || '').toLowerCase();
-  const preferenceId = getParam(searchParams, 'preference_id') || getParam(searchParams, 'preferenceId');
-  const paymentId = getParam(searchParams, 'payment_id');
-  const merchantOrderId = getParam(searchParams, 'merchant_order_id');
+  const status = (getParamSafe('status') || '').toLowerCase();
+  const collectionStatus = (getParamSafe('collection_status') || '').toLowerCase();
+  const preferenceId = getParamSafe('preference_id') || getParamSafe('preferenceId');
+  const paymentId = getParamSafe('payment_id');
+  const merchantOrderId = getParamSafe('merchant_order_id');
 
   // Parámetros de dLocal Go
-  const dlocalStatus = getParam(searchParams, 'status') || getParam(searchParams, 'payment_status');
-  const dlocalPaymentId = getParam(searchParams, 'payment_id') || getParam(searchParams, 'id');
-  const dlocalOrderId = getParam(searchParams, 'order_id');
-  const provider = getParam(searchParams, 'provider');
-  const isDlocal = !!dlocalPaymentId || !!dlocalOrderId || provider === 'dlocal';
+  const dlocalStatus = getParamSafe('payment_status') || (getParamSafe('status') || undefined);
+  const dlocalPaymentId = getParamSafe('id');
+  const dlocalOrderId = getParamSafe('order_id');
+  const provider = getParamSafe('provider');
+  const isDlocal = provider === 'dlocal' || !!dlocalOrderId || !!getParamSafe('payment_status');
   const isMercadoPago = provider === 'mercadopago' || (!isDlocal && (preferenceId || paymentId));
 
   // Si viene de dLocal Go y no hay parámetros de estado, asumir que el pago fue exitoso
@@ -68,9 +74,9 @@ export default function PaymentsReturnPage({ searchParams }: { searchParams: Sea
   // Verificar si es un pago de coach_review
   // Si viene de dLocal Go y no hay parámetros específicos, asumir que puede ser coach_review
   // (porque la mayoría de los pagos con dLocal son coach_review)
-  const productId = getParam(searchParams, 'productId');
-  const coachId = getParam(searchParams, 'coachId');
-  const analysisId = getParam(searchParams, 'analysisId');
+  const productId = getParamSafe('productId');
+  const coachId = getParamSafe('coachId');
+  const analysisId = getParamSafe('analysisId');
   const isCoachReview = productId === 'coach_review' || 
                          getParam(searchParams, 'type') === 'coach_review' ||
                          !!coachId || 
@@ -409,7 +415,7 @@ export default function PaymentsReturnPage({ searchParams }: { searchParams: Sea
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
         <Link 
           className="inline-flex items-center justify-center rounded-md bg-primary px-6 py-3 text-white text-sm font-medium hover:bg-primary/90 transition-colors" 
-          href="/player/dashboard"
+          href="/dashboard"
         >
           Volver al panel
           <ArrowRight className="ml-2 h-4 w-4" />
@@ -431,6 +437,14 @@ export default function PaymentsReturnPage({ searchParams }: { searchParams: Sea
         )}
       </div>
     </div>
+  );
+}
+
+export default function PaymentsReturnPage({ searchParams }: { searchParams: SearchParams }) {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-2xl px-4 py-10" />}>
+      <PaymentsReturnInner searchParams={searchParams} />
+    </Suspense>
   );
 }
 

@@ -446,7 +446,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
           <CardContent>
             <p className="text-red-700 mb-4">{error || 'Análisis no encontrado'}</p>
             <div className="flex flex-col gap-2">
-              <Link href={isCoach ? "/coach/dashboard" : "/player/dashboard"}>
+              <Link href={isCoach ? "/coach/dashboard" : "/dashboard"}>
                 <Button variant="default" className="w-full sm:w-auto">
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Volver al Dashboard
@@ -477,7 +477,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
     <div className="container mx-auto px-4 py-8">
       {/* Header con info del jugador */}
       <div className="mb-6">
-        <Link href={isCoach ? "/coach/dashboard" : "/player/dashboard"}>
+        <Link href={isCoach ? "/coach/dashboard" : "/dashboard"}>
           <Button variant="ghost" size="sm" className="mb-4">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Volver al Dashboard
