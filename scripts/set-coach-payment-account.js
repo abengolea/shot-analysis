@@ -58,6 +58,8 @@ async function main() {
   const mpUserId = parseNumberEnv('MP_USER_ID');
   const mpRefreshToken = process.env.MP_REFRESH_TOKEN;
   const platformFeePercent = parseNumberEnv('MP_PLATFORM_FEE_PERCENT');
+  const disableSplitRaw = process.env.MP_DISABLE_SPLIT;
+  const disableMarketplaceSplit = disableSplitRaw === '1' || disableSplitRaw === 'true';
   const status = process.env.MP_STATUS || 'active';
   const dryRun = process.env.DRY_RUN === '1';
 
@@ -99,6 +101,7 @@ async function main() {
     ...(typeof mpUserId === 'number' ? { mpUserId } : {}),
     ...(mpRefreshToken ? { mpRefreshToken } : {}),
     ...(typeof platformFeePercent === 'number' ? { platformFeePercent } : {}),
+    ...(typeof disableSplitRaw !== 'undefined' ? { disableMarketplaceSplit } : {}),
     status,
     updatedAt: nowIso,
     ...(snap.exists ? {} : { createdAt: nowIso }),

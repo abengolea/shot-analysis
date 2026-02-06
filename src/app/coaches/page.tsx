@@ -59,6 +59,8 @@ export default function CoachesPage() {
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [creatingUnlock, setCreatingUnlock] = useState(false);
   const [usingFreeReview, setUsingFreeReview] = useState(false);
+  const [isAlreadyPaid, setIsAlreadyPaid] = useState(false);
+  const [isPaymentPending, setIsPaymentPending] = useState(false);
   const [paymentProvider, setPaymentProvider] = useState<'mercadopago' | 'dlocal'>('mercadopago');
   const [freeCoachReviews, setFreeCoachReviews] = useState<number>(0);
 
@@ -182,11 +184,45 @@ export default function CoachesPage() {
     ));
   };
 
-  const openPaymentDialog = (coach: Coach) => {
+  const openPaymentDialog = async (coach: Coach) => {
     setUnlockError(null);
+    setIsAlreadyPaid(false);
+    setIsPaymentPending(false);
     setUnlockCoach(coach);
     setPaymentProvider("mercadopago");
-    setUnlockDialogOpen(true);
+    if (!analysisIdFromQuery || !user) {
+      setUnlockDialogOpen(true);
+      return;
+    }
+    try {
+      const token = await user.getIdToken();
+      const unlockCheckRes = await fetch(`/api/analyses/${analysisIdFromQuery}/unlock-status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (unlockCheckRes.ok) {
+        const unlockData = await unlockCheckRes.json();
+        const paidCoachIds = unlockData.paidCoachIds || [];
+        const pendingCoachIds = unlockData.pendingCoachIds || [];
+        const hasCoachFeedback = unlockData.hasCoachFeedback || false;
+        const isPaid = paidCoachIds.some((c: any) => c.coachId === coach.id);
+        const isPending = pendingCoachIds.some((c: any) => c.coachId === coach.id);
+        if (isPaid) {
+          setIsAlreadyPaid(true);
+          if (hasCoachFeedback) {
+            setUnlockError(`Este entrenador ya respondió la revisión para este análisis.`);
+          } else {
+            setUnlockError(`Ya pagaste para que ${coach.name || 'este entrenador'} analice tu lanzamiento.`);
+          }
+        } else if (isPending) {
+          setIsPaymentPending(true);
+          setUnlockError('Ya tenés un pago pendiente para este entrenador. Esperá a que se confirme o contactá soporte si necesitás ayuda.');
+        }
+      }
+    } catch (error) {
+      console.error('Error verificando estado de unlock:', error);
+    } finally {
+      setUnlockDialogOpen(true);
+    }
   };
 
   const handleCreateUnlock = async () => {
@@ -224,6 +260,16 @@ export default function CoachesPage() {
             description: data?.error || "El monto es demasiado bajo para tarjeta. Usá MercadoPago.",
             variant: "destructive",
           });
+          return;
+        }
+        if (res.status === 409) {
+          if (data?.code === 'PAYMENT_PENDING') {
+            setIsPaymentPending(true);
+            setUnlockError(data?.error || 'Ya tenés un pago pendiente para este entrenador.');
+            return;
+          }
+          setIsAlreadyPaid(true);
+          setUnlockError(data?.error || `Ya pagaste para que ${unlockCoach.name || 'este entrenador'} analice tu lanzamiento.`);
           return;
         }
         throw new Error(data?.error || "No se pudo iniciar el pago.");
@@ -544,7 +590,7 @@ export default function CoachesPage() {
                 <Button
                   className="flex-1"
                   onClick={() => {
-                    openPaymentDialog(coach);
+                    void openPaymentDialog(coach);
                   }}
                 >
                   <Users className="mr-2 h-4 w-4" /> 
@@ -574,6 +620,8 @@ export default function CoachesPage() {
           if (!open) {
             setUnlockCoach(null);
             setUnlockError(null);
+            setIsAlreadyPaid(false);
+            setIsPaymentPending(false);
             setPaymentProvider("mercadopago");
           }
         }}
@@ -661,7 +709,22 @@ export default function CoachesPage() {
               </p>
             </div>
 
-            {unlockError && (
+            {(isAlreadyPaid || isPaymentPending) && (
+              <div className={`rounded-md border p-3 text-sm ${isAlreadyPaid ? 'border-green-200 bg-green-50 text-green-800' : 'border-yellow-200 bg-yellow-50 text-yellow-800'}`}>
+                <p className="font-medium break-words">
+                  {isAlreadyPaid
+                    ? '✅ Este análisis ya fue abonado para este entrenador.'
+                    : '⏳ Ya existe un pago pendiente para este entrenador.'}
+                </p>
+                {unlockError && (
+                  <p className="mt-1 text-xs break-words">
+                    {unlockError}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {unlockError && !isAlreadyPaid && !isPaymentPending && (
               <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive break-words">
                 {unlockError}
               </div>
@@ -682,6 +745,8 @@ export default function CoachesPage() {
                 disabled={
                   usingFreeReview ||
                   creatingUnlock ||
+                  isAlreadyPaid ||
+                  isPaymentPending ||
                   !analysisIdFromQuery ||
                   !unlockCoach
                 }
@@ -696,7 +761,9 @@ export default function CoachesPage() {
                 usingFreeReview ||
                 !analysisIdFromQuery ||
                 !unlockCoach ||
-                typeof unlockCoach?.ratePerAnalysis !== "number"
+                typeof unlockCoach?.ratePerAnalysis !== "number" ||
+                isAlreadyPaid ||
+                isPaymentPending
               }
             >
               {creatingUnlock ? "Abriendo pago..." : "Pagar y solicitar revisión"}

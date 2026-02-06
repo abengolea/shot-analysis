@@ -40,7 +40,6 @@ const registerSchema = z.object({
   name: z.string().min(3, "El nombre debe tener al menos 3 caracteres."),
   email: z.string().email("Por favor, introduce un email válido."),
   password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
-  role: z.enum(['player', 'club']),
   countrySelection: z.enum(['argentina', 'other']),
   countryOther: z.string().trim().max(80, "El país no puede superar 80 caracteres.").optional(),
   club: z.string().trim().max(80, "El club no puede superar 80 caracteres.").optional(),
@@ -70,7 +69,6 @@ export function RegisterForm() {
             name: "",
             email: "",
             password: "",
-            role: "player" as const,
             countrySelection: "argentina" as const,
             countryOther: "",
             club: "",
@@ -79,24 +77,11 @@ export function RegisterForm() {
             publicRankingOptIn: false,
         },
     });
-    const selectedRole = form.watch("role");
     const countrySelection = form.watch("countrySelection");
     const selectedProvinceName = form.watch("province");
-    const isArgentina = selectedRole === "player" && countrySelection === "argentina";
+    const isArgentina = countrySelection === "argentina";
     const provinceField = form.register("province");
     const cityField = form.register("city");
-
-    useEffect(() => {
-        if (selectedRole !== "player") {
-            setProvinceQuery("");
-            setCityQuery("");
-            setSelectedProvinceId(null);
-            form.setValue("province", "");
-            form.setValue("city", "");
-            form.setValue("countrySelection", "argentina");
-            form.setValue("countryOther", "");
-        }
-    }, [selectedRole, form]);
 
     useEffect(() => {
         if (countrySelection === "argentina") {
@@ -213,18 +198,12 @@ export function RegisterForm() {
                 : (data.countryOther?.trim() || "");
             const userData = {
                 name: data.name,
-                role: data.role,
-                ...(data.role === 'player'
-                  ? {
-                      publicRankingOptIn: !!data.publicRankingOptIn,
-                      ...(countryValue ? { country: countryValue } : {}),
-                      ...(data.countrySelection === "argentina" && clubValue ? { club: clubValue } : {}),
-                      ...(data.countrySelection === "argentina" && provinceValue ? { province: provinceValue } : {}),
-                      ...(data.countrySelection === "argentina" && cityValue ? { city: cityValue } : {}),
-                    }
-                  : {
-                      ...(cityValue ? { city: cityValue } : {}),
-                    }),
+                role: 'player' as const,
+                publicRankingOptIn: !!data.publicRankingOptIn,
+                ...(countryValue ? { country: countryValue } : {}),
+                ...(data.countrySelection === "argentina" && clubValue ? { club: clubValue } : {}),
+                ...(data.countrySelection === "argentina" && provinceValue ? { province: provinceValue } : {}),
+                ...(data.countrySelection === "argentina" && cityValue ? { city: cityValue } : {}),
             };
 
             const result = await signUp(data.email, data.password, userData);
@@ -276,7 +255,6 @@ export function RegisterForm() {
                         <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>
                     )}
                 </div>
-                {selectedRole === "player" && (
                 <div className="space-y-2">
                     <Label htmlFor="countrySelection">¿Sos de Argentina?</Label>
                     <Select
@@ -292,8 +270,7 @@ export function RegisterForm() {
                         </SelectContent>
                     </Select>
                 </div>
-                )}
-                {selectedRole === "player" && countrySelection === "other" && (
+                {countrySelection === "other" && (
                 <div className="space-y-2">
                     <Label htmlFor="countryOther">País</Label>
                     <Input
@@ -306,21 +283,6 @@ export function RegisterForm() {
                     )}
                 </div>
                 )}
-                <div className="space-y-2">
-                    <Label htmlFor="role">Tipo de Cuenta</Label>
-                    <Select
-                        value={selectedRole}
-                        onValueChange={(value) => form.setValue("role", value as RegisterFormValues["role"])}
-                    >
-                        <SelectTrigger>
-                            <SelectValue placeholder="Seleccionar" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="player">Jugador</SelectItem>
-                            <SelectItem value="club">Club</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
                 {isArgentina && (
                 <div className="space-y-2">
                     <Label htmlFor="club">Club (opcional)</Label>

@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getAuth, getIdToken } from "firebase/auth";
+import { ClubAdminForm } from "@/components/club-admin-form";
 
 type WeeklyPoint = {
 	weekStart: string;
@@ -36,6 +37,9 @@ export default function AdminHome() {
 	const [coachesNext, setCoachesNext] = useState<string | undefined>(undefined);
 	const [coachesLoading, setCoachesLoading] = useState(false);
 	const [coachUpdatingId, setCoachUpdatingId] = useState<string | null>(null);
+
+	const [clubRequests, setClubRequests] = useState<any[]>([]);
+	const [clubRequestsLoading, setClubRequestsLoading] = useState(false);
 
 	const [payments, setPayments] = useState<any[]>([]);
 	const [paymentsNext, setPaymentsNext] = useState<string | undefined>(undefined);
@@ -137,6 +141,7 @@ export default function AdminHome() {
 		{ id: 'home', label: 'Inicio' },
 		{ id: 'players', label: 'Jugadores' },
 		{ id: 'coaches', label: 'Entrenadores' },
+		{ id: 'clubs', label: 'Clubes' },
 		{ id: 'payments', label: 'Pagos' },
 		{ id: 'subscriptions', label: 'Suscripciones' },
 		{ id: 'stats', label: 'Estadísticas' },
@@ -771,6 +776,99 @@ export default function AdminHome() {
 							Cargar más
 						</button>
 					</div>
+				</div>
+			)}
+
+			{/* Clubes */}
+			{activeTab === 'clubs' && (
+				<div className="space-y-4">
+					<div className="flex items-center justify-between gap-2 flex-wrap">
+						<h2 className="text-lg font-medium">Alta de clubes</h2>
+						<button
+							className="rounded border px-3 py-1 text-sm"
+							onClick={async () => {
+								try {
+									setClubRequestsLoading(true);
+									const auth = getAuth();
+									const cu = auth.currentUser;
+									if (!cu) throw new Error('Usuario no autenticado');
+									const token = await getIdToken(cu, true);
+									const url = new URL('/api/admin/club-requests', window.location.origin);
+									url.searchParams.set('status', 'pending');
+									url.searchParams.set('limit', '100');
+									const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+									const data = await res.json();
+									setClubRequests(Array.isArray(data.items) ? data.items : []);
+								} catch (e) {
+									// noop
+								} finally {
+									setClubRequestsLoading(false);
+								}
+							}}
+						>
+							{clubRequests.length ? 'Refrescar solicitudes' : 'Cargar solicitudes'}
+						</button>
+					</div>
+					<div className="rounded border overflow-x-auto">
+						<table className="min-w-[700px] text-sm">
+							<thead>
+								<tr className="text-left">
+									<th className="py-2 px-3">Club solicitado</th>
+									<th className="py-2 px-3">Jugador</th>
+									<th className="py-2 px-3">Email</th>
+									<th className="py-2 px-3">Creado</th>
+									<th className="py-2 px-3">Acciones</th>
+								</tr>
+							</thead>
+							<tbody>
+								{clubRequests.map((req) => (
+									<tr key={req.id} className="border-t">
+										<td className="py-2 px-3">{req.proposedName || '-'}</td>
+										<td className="py-2 px-3">{req.playerName || req.playerId || '-'}</td>
+										<td className="py-2 px-3">{req.playerEmail || '-'}</td>
+										<td className="py-2 px-3">{req.createdAt || '-'}</td>
+										<td className="py-2 px-3">
+											<button
+												className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+												disabled={clubRequestsLoading}
+												onClick={async () => {
+													try {
+														const auth = getAuth();
+														const cu = auth.currentUser;
+														if (!cu) throw new Error('Usuario no autenticado');
+														const token = await getIdToken(cu, true);
+														const res = await fetch('/api/admin/club-requests', {
+															method: 'PATCH',
+															headers: {
+																Authorization: `Bearer ${token}`,
+																'Content-Type': 'application/json',
+															},
+															body: JSON.stringify({ id: req.id, status: 'resolved' }),
+														});
+														const data = await res.json();
+														if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+														setClubRequests((prev) => prev.filter((r) => r.id !== req.id));
+													} catch (e: any) {
+														alert(e?.message || 'Error actualizando solicitud');
+													}
+												}}
+											>
+												Marcar como cargado
+											</button>
+										</td>
+									</tr>
+								))}
+								{!clubRequests.length && (
+									<tr>
+										<td className="py-6 px-3 text-gray-500" colSpan={5}>
+											{clubRequestsLoading ? 'Cargando…' : 'Sin solicitudes pendientes'}
+										</td>
+									</tr>
+								)}
+							</tbody>
+						</table>
+					</div>
+					<ClubAdminForm />
 				</div>
 			)}
 		</div>

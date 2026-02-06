@@ -60,6 +60,7 @@ import {
   Maximize2,
   Minimize2,
   UserCircle,
+  ShoppingCart,
 } from "lucide-react";
 import { DrillCard } from "./drill-card";
 import { DetailedChecklist } from "./detailed-checklist";
@@ -77,9 +78,11 @@ import { db } from "@/lib/firebase";
 import { collection, onSnapshot, addDoc, serverTimestamp, query, where, doc, getDoc } from "firebase/firestore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, Briefcase, Clock, Trophy } from "lucide-react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { buildConversationId, getMessageType } from "@/lib/message-utils";
+import { resolveMessageLinkToCurrentEnv } from "@/lib/app-url";
 
 interface AnalysisViewProps {
   analysis: ShotAnalysis;
@@ -582,7 +585,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
   const isAssignedCoach = userIds.some((id) => id === (player?.coachId || ''));
   const [hasPlayerCoachAccess, setHasPlayerCoachAccess] = useState(false);
   const canEdit = Boolean(
-    isAdmin || (isCoachRole && userIds.length > 0 && (isAssignedCoach || hasPaidCoachAccess))
+    isAdmin || (isCoachRole && userIds.length > 0 && (isAssignedCoach || hasPaidCoachAccess || hasPlayerCoachAccess))
   );
   const canComment = Boolean(
     isAdmin || (isCoachRole && (!player?.coachId || isAssignedCoach || hasPaidCoachAccess || hasPlayerCoachAccess))
@@ -660,15 +663,16 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
     }
     return segments.map((segment, idx) => {
       if (segment.type === "link") {
+        const href = resolveMessageLinkToCurrentEnv(segment.value);
         return (
           <a
             key={`link-${idx}`}
-            href={segment.value}
+            href={href}
             target="_blank"
             rel="noopener noreferrer"
             className="text-primary underline break-all"
           >
-            {segment.value}
+            {href}
           </a>
         );
       }
@@ -1189,46 +1193,40 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
 
   const sendAnalysisMessage = async () => {
     if (!user || !analysis?.id || !analysisMessageText.trim()) return;
+    const targetCoachId = (analysis as any)?.coachId || player?.coachId;
+    const toId = isCoach ? player?.id : targetCoachId;
+    if (!toId) {
+      toast({
+        title: "Falta destinatario",
+        description: "No hay entrenador asignado para este lanzamiento.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
-      const targetCoachId = (analysis as any)?.coachId || player?.coachId;
-      const toId = isCoach ? player?.id : targetCoachId;
-      if (!toId) {
-        toast({
-          title: "Falta destinatario",
-          description: "No hay entrenador asignado para este lanzamiento.",
-          variant: "destructive",
-        });
-        return;
-      }
       setSendingAnalysisMessage(true);
-      const colRef = collection(db as any, "messages");
-      const payload: any = {
-        fromId: user.uid,
-        fromName: (userProfile as any)?.name || user.displayName || (isCoach ? "Entrenador" : "Jugador"),
-        fromAvatarUrl: (userProfile as any)?.avatarUrl || "",
-        toId,
-        toName: isCoach ? (player?.name || player?.id) : "Entrenador",
-        text: analysisMessageText.trim(),
-        analysisId: analysis.id,
-        createdAt: serverTimestamp(),
-        read: false,
-        messageType: getMessageType({ fromId: user.uid, analysisId: analysis.id }),
-        conversationId: buildConversationId({
-          fromId: user.uid,
-          toId,
-          analysisId: analysis.id,
-        }),
-      };
-      if (!isCoach) {
-        payload.toCoachDocId = toId;
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/analyses/${analysis.id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ text: analysisMessageText.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || res.statusText);
       }
-      await addDoc(colRef, payload);
       setAnalysisMessageText("");
+      if (isCoach) {
+        toast({
+          title: "Mensaje enviado",
+          description: "El jugador recibirá un correo con tu mensaje.",
+        });
+      }
     } catch (e) {
       console.error("Error enviando mensaje del lanzamiento:", e);
       toast({
         title: "Error",
-        description: "No se pudo enviar el mensaje.",
+        description: e instanceof Error ? e.message : "No se pudo enviar el mensaje.",
         variant: "destructive",
       });
     } finally {
@@ -1566,6 +1564,9 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
   const [isCommentFocused, setIsCommentFocused] = useState(false);
   const isCommentFocusedRef = useRef(false);
   const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [commentAiOpen, setCommentAiOpen] = useState(false);
+  const [commentAiLoading, setCommentAiLoading] = useState(false);
+  const [commentAiSuggestion, setCommentAiSuggestion] = useState("");
 
   type KeyframeAnnotation = { id?: string; overlayUrl: string; createdAt: string };
   const [annotations, setAnnotations] = useState<KeyframeAnnotation[]>([]);
@@ -3305,12 +3306,24 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
         <TabsContent value="videos" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle className="font-headline flex items-center gap-2">
-                <Camera /> Video y Fotogramas
-              </CardTitle>
-              <CardDescription>
-                Haz clic en un fotograma para ampliarlo, dibujar y comentar.
-              </CardDescription>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <CardTitle className="font-headline flex items-center gap-2">
+                    <Camera /> Video y Fotogramas
+                  </CardTitle>
+                  <CardDescription>
+                    Haz clic en un fotograma para ampliarlo, dibujar y comentar.
+                  </CardDescription>
+                </div>
+                {viewerRole === 'coach' && (
+                  <Link href="/upload">
+                    <Button variant="outline" size="sm" className="shrink-0 border-primary/30 hover:bg-primary/5">
+                      <ShoppingCart className="mr-2 h-4 w-4" />
+                      Comprar videos
+                    </Button>
+                  </Link>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {/* Videos disponibles (frente/espalda/izquierda/derecha) */}
@@ -4324,9 +4337,26 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {keyframeComments.length === 0 ? (
-                    <div className="text-sm text-muted-foreground p-4 text-center border-2 border-dashed rounded-lg">
-                      Aún no hay comentarios para este fotograma.
-                    </div>
+                    canComment ? (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => commentInputRef.current?.focus()}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); commentInputRef.current?.focus(); } }}
+                        className="text-sm text-muted-foreground p-4 text-center border-2 border-dashed rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                        aria-label="Haz clic para añadir un comentario"
+                      >
+                        Aún no hay comentarios para este fotograma. Haz clic aquí para escribir uno.
+                      </div>
+                    ) : isCoach ? (
+                      <div className="text-sm text-muted-foreground p-4 text-center border-2 border-dashed rounded-lg bg-muted/20">
+                        Aún no hay comentarios para este fotograma. Solo el entrenador asignado o con acceso puede comentar.
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground p-4 text-center border-2 border-dashed rounded-lg">
+                        Aún no hay comentarios para este fotograma.
+                      </div>
+                    )
                   ) : (
                     <ul className="space-y-2">
                       {keyframeComments.map((c, i) => (
@@ -4356,15 +4386,130 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                         }}
                         autoFocus
                       />
-                      <Button className="w-full" onClick={() => { toolRef.current = 'move'; void saveComment(); }}>
-                        Guardar y enviar comentario
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={async () => {
+                            const text = newComment.trim();
+                            if (!text) {
+                              toast({ title: 'Escribí un borrador', description: 'Escribí tu comentario para que la IA mejore la redacción.', variant: 'destructive' });
+                              return;
+                            }
+                            setCommentAiOpen(true);
+                            setCommentAiLoading(true);
+                            setCommentAiSuggestion("");
+                            try {
+                              const auth = getAuth();
+                              const u = auth.currentUser;
+                              if (!u) {
+                                toast({ title: 'No autenticado', description: 'Iniciá sesión para usar el asistente.', variant: 'destructive' });
+                                return;
+                              }
+                              const token = await getIdToken(u, true);
+                              const res = await fetch("/api/coach/compare/rewrite", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                                body: JSON.stringify({ text }),
+                              });
+                              if (!res.ok) {
+                                const err = await res.json().catch(() => ({}));
+                                throw new Error((err as any)?.error || "Error al mejorar el comentario");
+                              }
+                              const data = await res.json();
+                              setCommentAiSuggestion(String(data?.improved || ""));
+                            } catch (e) {
+                              console.error("Asistente comentario:", e);
+                              toast({ title: "Error", description: "No se pudo mejorar la redacción. Intentá de nuevo.", variant: "destructive" });
+                            } finally {
+                              setCommentAiLoading(false);
+                            }
+                          }}
+                          disabled={commentAiLoading}
+                        >
+                          {commentAiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                          <span className="ml-2">Asistente de redacción (IA)</span>
+                        </Button>
+                        <Button className="w-full sm:w-auto flex-1 sm:flex-initial" onClick={() => { toolRef.current = 'move'; void saveComment(); }}>
+                          Guardar y enviar comentario
+                        </Button>
+                      </div>
                     </>
                   )}
                 </CardContent>
               </Card>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo asistente de redacción IA para comentario de fotograma */}
+      <Dialog open={commentAiOpen} onOpenChange={setCommentAiOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              Asistente de redacción (IA)
+            </DialogTitle>
+            <DialogDescription>
+              Revisá la propuesta y ajustala si querés antes de usarla en tu comentario.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm font-medium text-muted-foreground">Propuesta</div>
+            <Textarea
+              value={commentAiSuggestion}
+              onChange={(e) => setCommentAiSuggestion(e.target.value)}
+              placeholder={commentAiLoading ? "Generando propuesta..." : "La propuesta aparecerá aquí"}
+              rows={5}
+              disabled={commentAiLoading}
+            />
+          </div>
+          <DialogFooter className="flex flex-wrap gap-2 sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                const text = newComment.trim();
+                if (!text) return;
+                setCommentAiLoading(true);
+                setCommentAiSuggestion("");
+                try {
+                  const auth = getAuth();
+                  const u = auth.currentUser;
+                  if (!u) return;
+                  const token = await getIdToken(u, true);
+                  const res = await fetch("/api/coach/compare/rewrite", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ text }),
+                  });
+                  if (res.ok) {
+                    const data = await res.json();
+                    setCommentAiSuggestion(String(data?.improved || ""));
+                  }
+                } finally {
+                  setCommentAiLoading(false);
+                }
+              }}
+              disabled={commentAiLoading}
+            >
+              {commentAiLoading ? "Generando..." : "Reintentar"}
+            </Button>
+            <Button
+              onClick={() => {
+                if (commentAiSuggestion.trim()) {
+                  setNewComment(commentAiSuggestion.trim());
+                  setCommentAiOpen(false);
+                  toast({ title: "Redacción aplicada", description: "Podés editarla y guardar cuando quieras." });
+                } else {
+                  toast({ title: "No hay propuesta", description: "Generá una propuesta antes de aplicar.", variant: "destructive" });
+                }
+              }}
+              disabled={commentAiLoading}
+            >
+              Usar esta versión
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -89,13 +89,17 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     }
     await ticketRef.set(updates, { merge: true });
 
-    // Email notificación (placeholder)
+    // Email notificación
     try {
-      const { sendCustomEmail } = await import('@/lib/email-service');
+      const { sendAdminNotification, sendCustomEmail } = await import('@/lib/email-service');
       if (who.role === 'admin') {
         await sendCustomEmail({ to: String(ticket.userEmail || 'abengolea@hotmail.com'), subject: `Respuesta a tu ticket: ${ticket.subject}`, html: `<p>${text}</p>` });
       } else {
-        await sendCustomEmail({ to: 'abengolea@hotmail.com', subject: `Nuevo mensaje en ticket: ${ticket.subject}`, html: `<p>${text}</p>` });
+        await sendAdminNotification({
+          subject: `Nuevo mensaje en ticket: ${ticket.subject}`,
+          html: `<p>${text}</p>`,
+          fallbackTo: 'abengolea@hotmail.com',
+        });
       }
     } catch {}
 

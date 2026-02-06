@@ -8,7 +8,7 @@ import { scheduleKeyframesExtraction } from '@/lib/keyframes-backfill';
 import { getVideoDurationSecondsFromBuffer } from '@/lib/ffmpeg';
 import { buildEconomyEvidenceFromVideoUrl } from '@/lib/economy-evidence';
 import { detectShotsFromPoseService } from '@/lib/pose-shot-detection';
-import { sendCustomEmail } from '@/lib/email-service';
+import { sendAdminNotification, sendCustomEmail, sendPasswordResetEmail, sendVerificationEmail } from '@/lib/email-service';
 import { getAppBaseUrl } from '@/lib/app-url';
 import { buildScoreMetadata, loadWeightsFromFirestore } from '@/lib/scoring';
 import { generateAnalysisSummary } from '@/lib/ai-summary';
@@ -116,10 +116,10 @@ export async function addCoach(prevState: AddCoachState, formData: FormData): Pr
         const ref = await adminDb.collection('coach_applications').add(application as any);
 
         try {
-            await sendCustomEmail({
-                to: 'abengolea1@gmail.com',
+            await sendAdminNotification({
                 subject: `Nueva solicitud de entrenador (admin): ${data.name}`,
-                html: `<p>Email: ${data.email}</p><p>Nombre: ${data.name}</p><p>Bio: ${data.experience}</p><p>Foto: ${photoUrl || '-'}</p><p>ID: ${ref.id}</p>`
+                html: `<p>Email: ${data.email}</p><p>Nombre: ${data.name}</p><p>Bio: ${data.experience}</p><p>Foto: ${photoUrl || '-'}</p><p>ID: ${ref.id}</p>`,
+                fallbackTo: 'abengolea1@gmail.com',
             });
         } catch {}
 
@@ -247,6 +247,77 @@ export async function adminCreateCoach(prevState: AdminCreateCoachState, formDat
     } catch (e: any) {
         console.error('Error adminCreateCoach:', e);
         return { success: false, message: e?.message || 'No se pudo crear el entrenador.' };
+    }
+}
+
+// Crear club desde el panel admin (alta solo-admin)
+type AdminCreateClubState = {
+    success: boolean;
+    message: string;
+    errors?: Record<string, string[]>;
+    userId?: string;
+};
+
+export async function adminCreateClub(_prevState: AdminCreateClubState, formData: FormData): Promise<AdminCreateClubState> {
+    try {
+        if (!adminDb || !adminAuth) {
+            return { success: false, message: 'Servidor sin Admin SDK' };
+        }
+
+        const normalizeClubName = (value: string) =>
+            value
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/\s+/g, " ")
+                .trim();
+
+        const name = String(formData.get('name') || '').trim();
+        const email = String(formData.get('email') || '').trim().toLowerCase();
+        const city = String(formData.get('city') || '').trim();
+        const province = String(formData.get('province') || '').trim();
+        const nameLower = normalizeClubName(name);
+
+        const fieldErrors: Record<string, string[]> = {};
+        if (!name || name.length < 2) fieldErrors.name = ['Nombre demasiado corto'];
+        if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fieldErrors.email = ['Email inválido'];
+        if (!city) fieldErrors.city = ['Ciudad requerida'];
+        if (!province) fieldErrors.province = ['Provincia requerida'];
+        if (Object.keys(fieldErrors).length) {
+            return { success: false, message: 'Revisa los campos del formulario.', errors: fieldErrors };
+        }
+
+        // Crear o recuperar usuario en Auth por email
+        let userId: string;
+        try {
+            const existing = await adminAuth.getUserByEmail(email);
+            userId = existing.uid;
+        } catch {
+            const created = await adminAuth.createUser({ email, displayName: name });
+            userId = created.uid;
+        }
+
+        const nowIso = new Date().toISOString();
+        const clubData = {
+            userId,
+            name,
+            nameLower,
+            email,
+            role: 'club' as const,
+            status: 'pending' as const,
+            avatarUrl: 'https://placehold.co/100x100.png',
+            city,
+            province,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            createdByAdminId: null as string | null,
+        };
+        await adminDb.collection('clubs').doc(userId).set(clubData, { merge: true });
+
+        return { success: true, message: 'Club creado correctamente.', userId };
+    } catch (e: any) {
+        console.error('Error adminCreateClub:', e);
+        return { success: false, message: e?.message || 'No se pudo crear el club.' };
     }
 }
 // Regalar créditos (análisis) a un jugador desde el panel admin
@@ -416,7 +487,42 @@ export async function adminSetHistoryPlus(_prev: any, formData: FormData) {
     }
 }
 
-// Enviar link de reseteo de contraseña al email del jugador
+// Olvidé contraseña: envía email con link (template + continueUrl del entorno actual)
+export async function requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalized)) {
+    return { success: false, message: 'Email inválido' };
+  }
+  try {
+    const sent = await sendPasswordResetEmail(normalized);
+    if (sent) return { success: true, message: 'Si el email está registrado, recibirás un enlace para restablecer tu contraseña.' };
+    return { success: false, message: 'No se pudo enviar el email. Revisá la configuración del servidor.' };
+  } catch (e) {
+    console.error('requestPasswordReset:', e);
+    return { success: false, message: 'Error al enviar el email. Intentá más tarde.' };
+  }
+}
+
+// Reenviar verificación: envía email de verificación (template + continueUrl del entorno actual)
+export async function requestVerificationEmail(email: string): Promise<{ success: boolean; message: string }> {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalized)) {
+    return { success: false, message: 'Email inválido' };
+  }
+  if (!adminAuth) return { success: false, message: 'Servidor no disponible.' };
+  try {
+    const userRecord = await adminAuth.getUserByEmail(normalized);
+    const sent = await sendVerificationEmail(userRecord.uid, normalized);
+    if (sent) return { success: true, message: 'Te enviamos un nuevo email de verificación. Revisá tu bandeja y spam.' };
+    return { success: false, message: 'No se pudo enviar el email. Intentá más tarde.' };
+  } catch (e: any) {
+    if (e?.code === 'auth/user-not-found') return { success: false, message: 'Este email no está registrado.' };
+    console.error('requestVerificationEmail:', e);
+    return { success: false, message: 'Error al enviar el email. Intentá más tarde.' };
+  }
+}
+
+// Enviar link de reseteo de contraseña al email del jugador (admin; devuelve link, no envía email)
 export async function adminSendPasswordReset(_prev: any, formData: FormData) {
     try {
         const userId = String(formData.get('userId') || '');
@@ -433,13 +539,19 @@ export async function adminSendPasswordReset(_prev: any, formData: FormData) {
             if (coachDoc.exists) email = String(coachDoc.data()?.email || '');
         }
         if (!email) {
+            const clubDoc = await adminDb.collection('clubs').doc(userId).get();
+            if (clubDoc.exists) email = String(clubDoc.data()?.email || '');
+        }
+        if (!email) {
             try {
                 const userRecord = await adminAuth.getUser(userId);
                 email = userRecord.email || '';
             } catch {}
         }
         if (!email) return { success: false, message: 'Email no encontrado' };
-        const link = await adminAuth.generatePasswordResetLink(email);
+        const baseUrl = getAppBaseUrl();
+        const actionCodeSettings = baseUrl ? { url: baseUrl } : undefined;
+        const link = await adminAuth.generatePasswordResetLink(email, actionCodeSettings);
         console.log(`🔗 Password reset link for ${email}: ${link}`);
         return { success: true, link };
     } catch (e) {
@@ -530,8 +642,10 @@ export async function adminActivateCoachAndSendPassword(_prev: any, formData: Fo
         }
         if (!email) return { success: false, message: 'Email del coach no encontrado' };
 
-        // Generar link de restablecimiento y enviarlo por email
-        const link = await adminAuth.generatePasswordResetLink(email);
+        // Generar link de restablecimiento y enviarlo por email (redirect al entorno actual)
+        const baseUrl = getAppBaseUrl();
+        const actionCodeSettings = baseUrl ? { url: baseUrl } : undefined;
+        const link = await adminAuth.generatePasswordResetLink(email, actionCodeSettings);
         try {
             await sendCustomEmail({
                 to: email,
@@ -936,13 +1050,13 @@ export async function startAnalysis(prevState: any, formData: FormData) {
         try {
             const appBaseUrl = getAppBaseUrl();
             const link = appBaseUrl ? `${appBaseUrl}/admin/revision-ia/${analysisRef.id}` : '';
-            await sendCustomEmail({
-                to: 'abengolea@hotmail.com',
+            await sendAdminNotification({
                 subject: 'Nuevo video subido para análisis',
                 html: `<p>Se subió un nuevo video para análisis.</p>
                       <p><b>Jugador:</b> ${currentUser?.name || currentUser?.id || 'desconocido'}</p>
                       <p><b>Tipo de tiro:</b> ${shotType}</p>
                       ${link ? `<p><a href="${link}">Revisar en Revisión IA</a></p>` : ''}`,
+                fallbackTo: 'abengolea@hotmail.com',
             });
         } catch {}
 

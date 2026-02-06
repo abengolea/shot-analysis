@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { getAppBaseUrl } from '@/lib/app-url';
 import { buildConversationId, getMessageType } from '@/lib/message-utils';
+import { sendCustomEmail } from '@/lib/email-service';
+import { coachReviewCompleteTemplate } from '@/lib/email/templates/coach-review-complete';
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -29,7 +32,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const nowIso = new Date().toISOString();
     await ref.set({ coachCompleted: true, updatedAt: nowIso }, { merge: true });
 
-    // Notificar al jugador con un mensaje en su bandeja (colección messages)
+    // Notificar al jugador con un mensaje en su bandeja y por email
     try {
       if (data?.playerId) {
         const msg = {
@@ -45,6 +48,37 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           conversationId: buildConversationId({ fromId: uid, toId: data.playerId, analysisId: id }),
         } as any;
         await adminDb.collection('messages').add(msg);
+
+        let playerEmail = '';
+        try {
+          const userRecord = await adminAuth.getUser(data.playerId);
+          playerEmail = userRecord.email?.trim() || '';
+        } catch {}
+        if (!playerEmail) {
+          try {
+            const playerSnap = await adminDb.collection('players').doc(data.playerId).get();
+            if (playerSnap.exists) playerEmail = String((playerSnap.data() as any)?.email || '').trim();
+          } catch {}
+        }
+        if (playerEmail) {
+          const baseUrl = getAppBaseUrl({ requestOrigin: request.nextUrl?.origin });
+          const analysisUrl = baseUrl ? `${baseUrl}/analysis/${id}` : '';
+          try {
+            const { html, text: textPlain } = coachReviewCompleteTemplate({
+              playerName: data?.playerName ? String(data.playerName) : undefined,
+              analysisUrl,
+              siteUrl: baseUrl,
+            });
+            await sendCustomEmail({
+              to: playerEmail,
+              subject: 'Tu análisis fue revisado – ya está tu devolución',
+              html,
+              text: textPlain,
+            });
+          } catch (emailErr) {
+            console.warn('⚠️ Email al jugador (complete):', emailErr);
+          }
+        }
       }
     } catch {}
 

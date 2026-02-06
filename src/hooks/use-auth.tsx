@@ -7,11 +7,10 @@ import {
   createUserWithEmailAndPassword, 
   signOut, 
   onAuthStateChanged,
-  sendPasswordResetEmail,
-  sendEmailVerification,
   updateProfile
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { requestVerificationEmail, requestPasswordReset } from '@/app/actions';
+import { addDoc, collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import type { Player, Coach, Club } from '@/lib/types';
 
@@ -145,9 +144,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (clubSnap.exists()) role = (clubSnap.data() as any)?.role;
           }
         } catch {}
-        if (role !== 'admin') {
-          // Enviar email de verificación nuevamente si no es admin
-          await sendEmailVerification(user);
+        if (role !== 'admin' && user.email) {
+          await requestVerificationEmail(user.email);
           return {
             success: false,
             message: 'Tu email no está verificado. Revisa tu bandeja de entrada o spam. Te hemos enviado un nuevo email de verificación.'
@@ -218,8 +216,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await updateProfile(newUser, { displayName: userData.name });
       }
 
-      // Enviar email de verificación
-      await sendEmailVerification(newUser);
+      // Enviar email de verificación (template + redirect al entorno actual)
+      await requestVerificationEmail(email);
 
       // Determinar la colección basada en el rol
       const role = userData.role || 'player';
@@ -256,6 +254,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             ? { city: (userData as any).city.trim() }
             : {}),
         });
+        const clubName = typeof (userData as any).club === 'string' ? (userData as any).club.trim() : '';
+        if (clubName) {
+          const normalizedName = normalizeClubName(clubName);
+          let clubExists = false;
+          try {
+            const byNormalized = query(collection(db, 'clubs'), where('nameLower', '==', normalizedName));
+            const byNormalizedSnap = await getDocs(byNormalized);
+            clubExists = !byNormalizedSnap.empty;
+          } catch {}
+          if (!clubExists) {
+            try {
+              const byExact = query(collection(db, 'clubs'), where('name', '==', clubName));
+              const byExactSnap = await getDocs(byExact);
+              clubExists = !byExactSnap.empty;
+            } catch {}
+          }
+          if (!clubExists) {
+            try {
+              const pendingReq = query(
+                collection(db, 'club_requests'),
+                where('normalizedName', '==', normalizedName),
+                where('status', '==', 'pending')
+              );
+              const pendingSnap = await getDocs(pendingReq);
+              if (pendingSnap.empty) {
+                await addDoc(collection(db, 'club_requests'), {
+                  proposedName: clubName,
+                  normalizedName,
+                  playerId: newUser.uid,
+                  playerEmail: email,
+                  playerName: userData.name || '',
+                  status: 'pending',
+                  createdAt: new Date().toISOString(),
+                });
+              }
+            } catch {}
+          }
+        }
       } else if (role === 'club') {
         // Es un club - datos básicos
         await setDoc(doc(db, 'clubs', newUser.uid), {
@@ -310,19 +346,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
-    try {
-      await sendPasswordResetEmail(auth, email);
-      return { success: true, message: 'Email de restablecimiento enviado' };
-    } catch (error: any) {
-      console.error('Error al enviar email de restablecimiento:', error);
-      let message = 'Error al enviar email de restablecimiento';
-      
-      if (error.code === 'auth/user-not-found') {
-        message = 'Usuario no encontrado';
-      }
-      
-      return { success: false, message };
-    }
+    const res = await requestPasswordReset(email);
+    return res;
   };
 
   const updateUserProfile = async (data: Partial<Player | Coach | Club>) => {
@@ -372,6 +397,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   );
 }
+
+const normalizeClubName = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
 export function useAuth() {
   const context = useContext(AuthContext);

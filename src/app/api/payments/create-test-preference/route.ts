@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
       productId: 'analysis_1',
       amountARS: amount,
       title: 'Pago de prueba (1 crédito)',
+      returnBase: req.nextUrl.origin,
     });
 
     return NextResponse.json({

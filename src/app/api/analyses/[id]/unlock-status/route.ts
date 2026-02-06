@@ -130,6 +130,12 @@ export async function GET(
       }
     }
 
+    for (const unlock of unlocks) {
+      if (unlock.status === 'pending' && !paidCoachIds.includes(unlock.coachId)) {
+        pendingCoachIds.push(unlock.coachId);
+      }
+    }
+
     let hasCoachFeedback = false;
     const feedbackSnapshot = await adminDb.collection('analyses')
       .doc(analysisId)
@@ -146,7 +152,7 @@ export async function GET(
     }
 
     const hasPaidUnlock = paidCoachIds.length > 0;
-    const hasPendingUnlock = false;
+    const hasPendingUnlock = pendingCoachIds.length > 0;
     const status: 'none' | 'pending_payment' | 'paid_pending_review' | 'reviewed' =
       hasCoachFeedback
         ? 'reviewed'

@@ -24,13 +24,13 @@ env:
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
     value: "1:602998191800:web:dd8a758d589b12b3c5264d"
   - variable: NEXT_PUBLIC_APP_URL
-    value: "https://chaaaas.com"
+    value: "https://www.chaaaas.com"
   - variable: NEXT_PUBLIC_APP_URL_STAGING
     value: "https://shot-analysis-2-stagin--shotanalisys.us-east4.hosted.app"
   - variable: APP_ENV
     value: "staging"
   - variable: MP_WEBHOOK_URL
-    value: "https://chaaaas.com/api/payments/webhook"
+    value: "https://www.chaaaas.com/api/payments/webhook"
   - variable: MP_ACCESS_TOKEN_AR
     secret: MP_ACCESS_TOKEN_AR
   - variable: MP_CLIENT_SECRET
@@ -38,7 +38,7 @@ env:
   - variable: MP_CLIENT_ID
     secret: MP_CLIENT_ID
   - variable: MP_OAUTH_REDIRECT_URI
-    value: "https://chaaaas.com/api/mp/oauth/callback"
+    value: "https://shot-analysis-2-stagin--shotanalisys.us-east4.hosted.app/api/mp/oauth/callback"
   - variable: MP_SPONSOR_ID
     value: "5523794913220352"
   - variable: DLOCAL_API_KEY
@@ -48,9 +48,9 @@ env:
   - variable: DLOCAL_BASE_URL
     value: "https://api.dlocalgo.com"
   - variable: DLOCAL_WEBHOOK_URL
-    value: "https://chaaaas.com/api/payments/webhook-dlocal"
+    value: "https://www.chaaaas.com/api/payments/webhook-dlocal"
   - variable: DLOCAL_RETURN_URL
-    value: "https://chaaaas.com/payments/return"
+    value: "https://www.chaaaas.com/payments/return"
   - variable: USD_EXCHANGE_RATE
     value: "1000"
   - variable: GEMINI_API_KEY

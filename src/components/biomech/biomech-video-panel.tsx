@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { SkeletonOverlay, type Keypoint } from "@/components/biomech/skeleton-overlay";
+import { analyzeEnergyTransfer } from "@/lib/energy-transfer";
 
 type VideoSource = {
   label: string;
@@ -36,6 +37,21 @@ type BiomechVideoPanelProps = {
 };
 
 const fallbackFps = 30;
+const bodyKeypointNames = new Set([
+  "left_shoulder",
+  "right_shoulder",
+  "left_elbow",
+  "right_elbow",
+  "left_wrist",
+  "right_wrist",
+  "left_hip",
+  "right_hip",
+  "left_knee",
+  "right_knee",
+  "left_ankle",
+  "right_ankle",
+]);
+const defaultPlaybackRate = 0.5;
 
 const baseKeypoints: Record<string, { x: number; y: number }> = {
   left_shoulder: { x: 0.42, y: 0.28 },
@@ -82,10 +98,20 @@ export function BiomechVideoPanel({
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [showEnergy, setShowEnergy] = useState(true);
   const [showComparison, setShowComparison] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(defaultPlaybackRate);
+  const lastPoseRef = useRef<Record<string, { x: number; y: number; v: number }> | null>(null);
+  const comparisonLastPoseRef = useRef<Record<string, { x: number; y: number; v: number }> | null>(
+    null
+  );
 
   const currentSource = sources[activeIndex];
   const fps = fallbackFps;
   const currentFrame = Math.floor(currentTime * fps);
+
+  const energyAnalysis = useMemo(() => {
+    if (!poseFrames || poseFrames.length === 0) return null;
+    return analyzeEnergyTransfer(poseFrames);
+  }, [poseFrames]);
 
   const poseKeypoints = useMemo(() => {
     if (!poseFrames || poseFrames.length === 0) return null;
@@ -99,13 +125,69 @@ export function BiomechVideoPanel({
         bestDelta = delta;
       }
     }
-    return best.keypoints.map((kp) => ({
-      name: kp.name,
-      x: kp.x,
-      y: kp.y,
-      visibility: kp.score ?? 1,
-    }));
+    const filtered = best.keypoints.filter((kp) => bodyKeypointNames.has(kp.name));
+    const smoothing = 0.65;
+    const prev = lastPoseRef.current ?? {};
+    const next: Record<string, { x: number; y: number; v: number }> = {};
+    const smoothed = filtered.map((kp) => {
+      const prevPoint = prev[kp.name];
+      const x = prevPoint ? prevPoint.x * smoothing + kp.x * (1 - smoothing) : kp.x;
+      const y = prevPoint ? prevPoint.y * smoothing + kp.y * (1 - smoothing) : kp.y;
+      const v = typeof kp.score === "number" ? kp.score : 1;
+      next[kp.name] = { x, y, v };
+      return {
+        name: kp.name,
+        x,
+        y,
+        visibility: v,
+      };
+    });
+    lastPoseRef.current = next;
+    return smoothed;
   }, [poseFrames, currentTime]);
+
+  const comparisonPoseKeypoints = useMemo(() => {
+    if (!poseFrames || poseFrames.length === 0) return null;
+    if (!showComparison) return null;
+
+    const targetReleaseMs = 600;
+    const releaseOffsetMs =
+      typeof energyAnalysis?.releaseVsLegsMs === "number"
+        ? energyAnalysis.releaseVsLegsMs - targetReleaseMs
+        : 0;
+    const comparisonTime = Math.max(0, currentTime - releaseOffsetMs / 1000);
+    const targetMs = Math.round(comparisonTime * 1000);
+
+    let best = poseFrames[0];
+    let bestDelta = Math.abs(best.tMs - targetMs);
+    for (const frame of poseFrames) {
+      const delta = Math.abs(frame.tMs - targetMs);
+      if (delta < bestDelta) {
+        best = frame;
+        bestDelta = delta;
+      }
+    }
+
+    const filtered = best.keypoints.filter((kp) => bodyKeypointNames.has(kp.name));
+    const smoothing = 0.6;
+    const prev = comparisonLastPoseRef.current ?? {};
+    const next: Record<string, { x: number; y: number; v: number }> = {};
+    const smoothed = filtered.map((kp) => {
+      const prevPoint = prev[kp.name];
+      const x = prevPoint ? prevPoint.x * smoothing + kp.x * (1 - smoothing) : kp.x;
+      const y = prevPoint ? prevPoint.y * smoothing + kp.y * (1 - smoothing) : kp.y;
+      const v = typeof kp.score === "number" ? kp.score : 1;
+      next[kp.name] = { x, y, v };
+      return {
+        name: kp.name,
+        x,
+        y,
+        visibility: v,
+      };
+    });
+    comparisonLastPoseRef.current = next;
+    return smoothed;
+  }, [poseFrames, currentTime, showComparison, energyAnalysis]);
 
   const hasPose = Boolean(poseKeypoints && poseKeypoints.length > 0);
   const keypoints = useMemo(() => {
@@ -114,13 +196,15 @@ export function BiomechVideoPanel({
     return buildKeypoints(currentFrame);
   }, [poseKeypoints, requirePose, currentFrame]);
   const comparison = useMemo(() => {
+    if (comparisonPoseKeypoints) return comparisonPoseKeypoints;
     if (poseKeypoints || requirePose) return null;
     return buildKeypoints(currentFrame, 0.03);
-  }, [poseKeypoints, requirePose, currentFrame]);
+  }, [comparisonPoseKeypoints, poseKeypoints, requirePose, currentFrame]);
 
   const handleLoaded = () => {
     const video = videoRef.current;
     if (!video) return;
+    video.playbackRate = playbackRate;
     setDuration(video.duration || 0);
     setVideoSize({ width: video.videoWidth || 1280, height: video.videoHeight || 720 });
     setVideoError(null);
@@ -186,12 +270,22 @@ export function BiomechVideoPanel({
     setCurrentTime(value);
   };
 
+  const applyPlaybackRate = (rate: number) => {
+    const video = videoRef.current;
+    setPlaybackRate(rate);
+    if (video) {
+      video.playbackRate = rate;
+    }
+  };
+
   useEffect(() => {
     setVideoLoaded(false);
     setVideoError(null);
     setDuration(0);
     setCurrentTime(0);
     setIsPlaying(false);
+    lastPoseRef.current = null;
+    comparisonLastPoseRef.current = null;
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
       videoRef.current.load();
@@ -320,6 +414,23 @@ export function BiomechVideoPanel({
             <RotateCcw className="mr-2 h-4 w-4" />
             Reiniciar
           </Button>
+          <div className="flex items-center gap-2 rounded-md border px-2 py-1 text-xs text-muted-foreground">
+            <span>Velocidad</span>
+            <Button
+              size="sm"
+              variant={playbackRate === 0.5 ? "default" : "outline"}
+              onClick={() => applyPlaybackRate(0.5)}
+            >
+              0.5x
+            </Button>
+            <Button
+              size="sm"
+              variant={playbackRate === 1 ? "default" : "outline"}
+              onClick={() => applyPlaybackRate(1)}
+            >
+              1x
+            </Button>
+          </div>
           <Badge variant="secondary">
             {Math.floor(currentTime * 10) / 10}s / {Math.floor(duration * 10) / 10}s
           </Badge>
@@ -348,7 +459,7 @@ export function BiomechVideoPanel({
           </div>
           <div className="flex items-center gap-2">
             <Switch checked={showComparison} onCheckedChange={setShowComparison} id="toggle-comparison" />
-            <Label htmlFor="toggle-comparison">Comparación</Label>
+            <Label htmlFor="toggle-comparison">Comparación ideal</Label>
           </div>
           {!currentSource?.url && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -357,6 +468,11 @@ export function BiomechVideoPanel({
             </div>
           )}
         </div>
+        {showComparison && (
+          <div className="text-xs text-muted-foreground">
+            Comparación: fantasma alineado al timing ideal (liberación ~0.6s).
+          </div>
+        )}
       </CardContent>
     </Card>
   );

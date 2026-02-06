@@ -6,8 +6,8 @@ import { fetchPoseFramesFromService } from "@/lib/economy-evidence";
 export const dynamic = "force-dynamic";
 
 const clampTargetFrames = (value: number) => {
-  if (!Number.isFinite(value)) return 8;
-  return Math.max(6, Math.min(10, Math.round(value)));
+  if (!Number.isFinite(value)) return 12;
+  return Math.max(10, Math.min(30, Math.round(value)));
 };
 
 export async function GET(

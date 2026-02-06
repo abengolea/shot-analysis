@@ -102,19 +102,12 @@ export async function POST(req: NextRequest) {
           code: 'ALREADY_PAID',
         }, { status: 409 });
       }
-      if (existingUnlock.status === 'pending' && existingUnlock.paymentId) {
-        console.log('⚠️ Unlock pendiente con paymentId:', unlockId, 'paymentId:', existingUnlock.paymentId);
-        const paymentSnap = await adminDb.collection('payments').doc(existingUnlock.paymentId).get();
-        if (paymentSnap.exists) {
-          const paymentData = paymentSnap.data() as any;
-          if (paymentData.status === 'approved' || paymentData.status === 'paid') {
-            console.log('❌ Pago ya aprobado, rechazando duplicado');
-            return NextResponse.json({
-              error: `Ya pagaste para que ${coachData?.name || 'este entrenador'} analice tu lanzamiento. El entrenador ya tiene acceso al análisis.`,
-              code: 'ALREADY_PAID',
-            }, { status: 409 });
-          }
-        }
+      if (existingUnlock.status === 'pending') {
+        console.log('⚠️ Unlock pendiente:', unlockId);
+        return NextResponse.json({
+          error: `Ya tenés un pago pendiente para que ${coachData?.name || 'este entrenador'} analice tu lanzamiento. Esperá a que se confirme o contactá soporte.`,
+          code: 'PAYMENT_PENDING',
+        }, { status: 409 });
       }
     }
 
@@ -128,6 +121,7 @@ export async function POST(req: NextRequest) {
     }
 
     const paymentAccount = await getCoachPaymentAccount(paymentAccountOwnerId);
+    const disableMarketplaceSplit = Boolean(paymentAccount?.disableMarketplaceSplit);
     const platformFeePercent = resolvePlatformFeePercent(paymentAccount, 30);
     const platformFee = Math.max(1, Math.round(coachRate * (platformFeePercent / 100)));
     const totalAmount = coachRate + platformFee;
@@ -223,7 +217,8 @@ export async function POST(req: NextRequest) {
         ...(paymentAccount?.mpAccessToken
           ? {
               collectorAccessToken: paymentAccount.mpAccessToken,
-              marketplaceFeeARS: platformFee,
+              ...(disableMarketplaceSplit ? { disableMarketplaceSplit: true } : {}),
+              ...(disableMarketplaceSplit ? {} : { marketplaceFeeARS: platformFee }),
             }
           : {}),
         returnBase: getAppBaseUrl({ requestOrigin: req.nextUrl.origin }),

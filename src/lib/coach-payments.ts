@@ -8,6 +8,7 @@ export type CoachPaymentAccount = {
   mpRefreshToken?: string;
   status?: 'pending' | 'active' | 'inactive';
   platformFeePercent?: number;
+  disableMarketplaceSplit?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };

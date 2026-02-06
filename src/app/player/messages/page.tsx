@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { buildConversationId, getMessageType } from "@/lib/message-utils";
+import { resolveMessageLinkToCurrentEnv } from "@/lib/app-url";
 
 export default function PlayerMessagesPage() {
   const { user, userProfile } = useAuth();
@@ -79,15 +80,16 @@ export default function PlayerMessagesPage() {
     }
     return segments.map((segment, idx) => {
       if (segment.type === "link") {
+        const href = resolveMessageLinkToCurrentEnv(segment.value);
         return (
           <a
             key={`link-${idx}`}
-            href={segment.value}
+            href={href}
             target="_blank"
             rel="noopener noreferrer"
             className="text-primary underline break-all"
           >
-            {segment.value}
+            {href}
           </a>
         );
       }
@@ -179,28 +181,42 @@ export default function PlayerMessagesPage() {
 
   const sendReply = async () => {
     if (!user || !replyFor || !replyText.trim()) return;
+    const analysisId = replyFor.analysisId || null;
     try {
       setSendingReply(true);
-      const colRef = collection(db as any, "messages");
-      const payload = {
-        fromId: user.uid,
-        fromName: (userProfile as any)?.name || user.displayName || "Jugador",
-        fromAvatarUrl: (userProfile as any)?.avatarUrl || "",
-        toId: replyFor.fromId,
-        toCoachDocId: replyFor.fromId,
-        toName: replyFor.fromName || replyFor.fromId,
-        text: replyText.trim(),
-        analysisId: replyFor.analysisId || null,
-        createdAt: serverTimestamp(),
-        read: false,
-        messageType: getMessageType({ fromId: user.uid, analysisId: replyFor.analysisId || null }),
-        conversationId: buildConversationId({
+      if (analysisId) {
+        const token = await user.getIdToken();
+        const res = await fetch(`/api/analyses/${analysisId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ text: replyText.trim() }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err?.error || `Error ${res.status}`);
+        }
+      } else {
+        const colRef = collection(db as any, "messages");
+        const payload = {
           fromId: user.uid,
+          fromName: (userProfile as any)?.name || user.displayName || "Jugador",
+          fromAvatarUrl: (userProfile as any)?.avatarUrl || "",
           toId: replyFor.fromId,
-          analysisId: replyFor.analysisId || null,
-        }),
-      } as any;
-      await addDoc(colRef, payload);
+          toCoachDocId: replyFor.fromId,
+          toName: replyFor.fromName || replyFor.fromId,
+          text: replyText.trim(),
+          analysisId: null,
+          createdAt: serverTimestamp(),
+          read: false,
+          messageType: getMessageType({ fromId: user.uid, analysisId: null }),
+          conversationId: buildConversationId({
+            fromId: user.uid,
+            toId: replyFor.fromId,
+            analysisId: null,
+          }),
+        } as any;
+        await addDoc(colRef, payload);
+      }
       setReplyText("");
       setReplyFor(null);
       toast({ title: "Mensaje enviado", description: "Tu respuesta fue enviada al entrenador." });

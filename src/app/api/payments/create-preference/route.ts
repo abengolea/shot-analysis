@@ -14,7 +14,13 @@ export async function POST(req: NextRequest) {
       productId === 'pack_10' ? 'Pack 10 análisis' :
       'History+ anual';
 
-    const pref = await createPreference({ userId, productId, amountARS: amount, title });
+    const pref = await createPreference({
+      userId,
+      productId,
+      amountARS: amount,
+      title,
+      returnBase: req.nextUrl.origin,
+    });
     return NextResponse.json({ init_point: pref.init_point, id: pref.id, sandbox_init_point: pref.sandbox_init_point });
   } catch (err: any) {
     console.error('Error create-preference:', err);

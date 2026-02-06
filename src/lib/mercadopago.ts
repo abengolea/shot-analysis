@@ -24,6 +24,7 @@ type CreatePreferenceInput = {
   metadata?: Record<string, any>;
   marketplaceFeeARS?: number;
   sponsorId?: number | string;
+  disableMarketplaceSplit?: boolean;
   collectorAccessToken?: string;
   returnBase?: string;
 };
@@ -87,7 +88,13 @@ export async function createPreference(input: CreatePreferenceInput) {
 
   const canAutoReturn = Boolean(backUrls?.success && backUrls.success.startsWith('https://'));
 
+  const isMarketplaceFlow = !input.disableMarketplaceSplit && Boolean(
+    input.collectorAccessToken ||
+    typeof input.marketplaceFeeARS === 'number'
+  );
+
   const resolvedSponsorId = (() => {
+    if (!isMarketplaceFlow) return undefined;
     if (typeof input.sponsorId !== 'undefined' && input.sponsorId !== null) {
       const asNumber = Number(input.sponsorId);
       return Number.isFinite(asNumber) ? asNumber : undefined;
@@ -115,7 +122,9 @@ export async function createPreference(input: CreatePreferenceInput) {
       productId: input.productId,
     },
     notification_url: MP_NOTIFICATION_URL,
-    ...(typeof input.marketplaceFeeARS === 'number' ? { marketplace_fee: Math.max(0, input.marketplaceFeeARS) } : {}),
+    ...(!input.disableMarketplaceSplit && typeof input.marketplaceFeeARS === 'number'
+      ? { marketplace_fee: Math.max(0, input.marketplaceFeeARS) }
+      : {}),
     ...(typeof resolvedSponsorId === 'number' ? { sponsor_id: resolvedSponsorId } : {}),
     ...(backUrls ? { back_urls: backUrls } : {}),
     ...(canAutoReturn ? { auto_return: 'approved' as const } : {}),
@@ -127,6 +136,7 @@ export async function createPreference(input: CreatePreferenceInput) {
     canAutoReturn,
     isHttps: returnUrl?.startsWith('https://'),
     sponsorId: resolvedSponsorId,
+    isMarketplaceFlow,
   });
 
   const res = await fetch(`${MP_BASE}/checkout/preferences`, {
@@ -182,7 +192,29 @@ export async function handleWebhook(event: any) {
       const paymentRes = await fetch(`${MP_BASE}/v1/payments/${data.id}`, {
         headers: { Authorization: `Bearer ${MP_PLATFORM_ACCESS_TOKEN}` },
       });
+      if (!paymentRes.ok) {
+        const errTxt = await paymentRes.text();
+        console.error('❌ [MP Webhook] Error consultando pago en MP:', paymentRes.status, errTxt);
+        return { ok: true };
+      }
       const payment = await paymentRes.json();
+      if (!payment?.id) {
+        console.error('❌ [MP Webhook] Respuesta de MP sin payment.id:', payment);
+        return { ok: true };
+      }
+
+      const meta = (payment.metadata ||= {});
+      if (meta.user_id && !meta.userId) meta.userId = meta.user_id;
+      if (meta.product_id && !meta.productId) meta.productId = meta.product_id;
+      if (meta.analysis_id && !meta.analysisId) meta.analysisId = meta.analysis_id;
+      if (meta.coach_id && !meta.coachId) meta.coachId = meta.coach_id;
+      if (meta.unlock_id && !meta.unlockId) meta.unlockId = meta.unlock_id;
+      if (meta.player_id && !meta.playerId) meta.playerId = meta.player_id;
+      if (meta.user_email && !meta.userEmail) meta.userEmail = meta.user_email;
+      if (meta.preference_id && !meta.preferenceId) meta.preferenceId = meta.preference_id;
+      if (meta.payment_account_owner_id && !meta.paymentAccountOwnerId) {
+        meta.paymentAccountOwnerId = meta.payment_account_owner_id;
+      }
       console.log('📥 [MP Webhook] Pago obtenido:', {
         id: payment.id,
         status: payment.status,
@@ -239,7 +271,7 @@ export async function handleWebhook(event: any) {
       }
 
       if (adminDb) {
-        await adminDb.collection('payments').doc(payment.id).set(
+        await adminDb.collection('payments').doc(String(payment.id)).set(
           {
             provider: 'mercadopago',
             providerPaymentId: payment.id,

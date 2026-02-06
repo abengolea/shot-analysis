@@ -3,6 +3,8 @@ import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import { getAppBaseUrl } from '@/lib/app-url';
 import { hasPaidCoachAccessToPlayer } from '@/lib/coach-access';
 import { buildConversationId, getMessageType } from '@/lib/message-utils';
+import { sendCustomEmail } from '@/lib/email-service';
+import { coachKeyframeCommentTemplate } from '@/lib/email/templates/coach-keyframe-comment';
 
 type KeyframeComment = {
   id?: string;
@@ -133,6 +135,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const coach = coachSnap.exists ? (coachSnap.data() as any) : null;
         const targetPlayerSnap = await adminDb.collection('players').doc(playerId).get();
         const player = targetPlayerSnap.exists ? (targetPlayerSnap.data() as any) : null;
+        let playerEmail = '';
+        try {
+          const userRecord = await adminAuth.getUser(playerId);
+          playerEmail = userRecord.email?.trim() || '';
+        } catch {}
+        if (!playerEmail && player?.email) playerEmail = String(player.email).trim();
         const baseUrl = getAppBaseUrl({ requestOrigin: request.nextUrl.origin });
         const query = angle && typeof index === 'number'
           ? `?kfAngle=${encodeURIComponent(angle)}&kfIndex=${encodeURIComponent(String(index))}`
@@ -156,6 +164,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           messageType: getMessageType({ fromId: perm.uid, analysisId }),
           conversationId: buildConversationId({ fromId: perm.uid, toId: playerId, analysisId }),
         });
+
+        if (playerEmail) {
+          try {
+            const { html, text: textPlain } = coachKeyframeCommentTemplate({
+              playerName: player?.name ? String(player.name) : undefined,
+              coachName: coachName || coach?.name || 'Entrenador',
+              linkUrl: link,
+              siteUrl: baseUrl || undefined,
+            });
+            await sendCustomEmail({
+              to: playerEmail,
+              subject: 'Tu entrenador te dejó un comentario en tu análisis',
+              html,
+              text: textPlain,
+            });
+          } catch (emailErr) {
+            console.warn('⚠️ No se pudo enviar email al jugador:', emailErr);
+          }
+        }
       }
     } catch (e) {
       console.warn('⚠️ No se pudo crear mensaje de notificación:', e);

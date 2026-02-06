@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useAuth } from "@/hooks/use-auth";
 import { BiomechVideoPanel } from "@/components/biomech/biomech-video-panel";
 import { TimelinePhases } from "@/components/biomech/timeline-phases";
+import { EnergyTransferSummary } from "@/components/biomech/energy-transfer-summary";
 import { normalizeVideoUrl } from "@/lib/video-url";
 
 type Analysis = {
@@ -101,7 +102,7 @@ export default function BiomechProAnalysisPage() {
       setPoseError(null);
       try {
         const token = user ? await user.getIdToken() : null;
-        const res = await fetch(`/api/pose-frames/${analysisId}?targetFrames=10`, {
+        const res = await fetch(`/api/pose-frames/${analysisId}?targetFrames=30`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         if (!res.ok) {
@@ -226,6 +227,12 @@ export default function BiomechProAnalysisPage() {
           </CardContent>
         </Card>
       </section>
+
+      {videos.length > 0 && (
+        <section className="grid gap-6">
+          <EnergyTransferSummary poseFrames={poseFrames ?? undefined} />
+        </section>
+      )}
 
       {videos.length > 0 && (
         <section className="grid gap-6">
