@@ -1,4 +1,4 @@
-import { getResendConfig } from '@/lib/resend-secrets';
+import { getResendConfig, getResendConfigDiagnostic } from '@/lib/resend-secrets';
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
@@ -14,10 +14,24 @@ export async function GET() {
 export async function POST() {
   const config = await getResendConfig();
   if (!config?.apiKey || !config.from) {
+    const diagnostic = await getResendConfigDiagnostic();
     const msg =
-      'RESEND no configurado: usa .env.local (RESEND_API_KEY, RESEND_FROM) en local o Secret Manager (RESEND_API_KEY, RESEND_FROM) en producción.';
-    console.error('[api/email/test]', msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+      'RESEND no configurado: usa .env.local (RESEND_API_KEY, RESEND_FROM) en local o Secret Manager en staging/producción.';
+    console.error('[api/email/test]', msg, diagnostic);
+    return NextResponse.json(
+      {
+        error: msg,
+        diagnostico: diagnostic,
+        pasos:
+          diagnostic.source === 'secretmanager' && diagnostic.error
+            ? [
+                '1. Crear secretos en GCP: node scripts/setup-resend-secrets.js (con .env.local con RESEND_*)',
+                '2. Dar a la cuenta de App Hosting el rol Secret Manager Secret Accessor',
+              ]
+            : undefined,
+      },
+      { status: 500 }
+    );
   }
 
   const resend = new Resend(config.apiKey);

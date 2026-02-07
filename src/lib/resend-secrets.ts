@@ -65,3 +65,42 @@ export async function getResendConfig(): Promise<ResendConfig | null> {
     return null;
   }
 }
+
+/** Diagnóstico seguro (sin valores secretos) para saber por qué falla Resend. */
+export async function getResendConfigDiagnostic(): Promise<{
+  source: 'env' | 'secretmanager' | null;
+  projectId?: string;
+  error?: string;
+}> {
+  const fromEnv = {
+    apiKey: process.env.RESEND_API_KEY?.trim(),
+    from: process.env.RESEND_FROM?.trim(),
+  };
+  if (fromEnv.apiKey && fromEnv.from) {
+    return { source: 'env' };
+  }
+
+  const projectId =
+    process.env.GOOGLE_CLOUD_PROJECT ||
+    process.env.GCLOUD_PROJECT ||
+    process.env.FIREBASE_ADMIN_PROJECT_ID ||
+    '';
+
+  if (!projectId) {
+    return { source: null, error: 'No hay RESEND_* en env ni GOOGLE_CLOUD_PROJECT/FIREBASE_ADMIN_PROJECT_ID.' };
+  }
+
+  try {
+    const client = new SecretManagerServiceClient();
+    const name = `projects/${projectId}/secrets/RESEND_API_KEY/versions/latest`;
+    await client.accessSecretVersion({ name });
+    return { source: 'secretmanager', projectId };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const code = (err as { code?: number })?.code;
+    let error = msg;
+    if (code === 5) error = 'Secreto RESEND_API_KEY no encontrado. Ejecutá: node scripts/setup-resend-secrets.js';
+    else if (code === 7) error = 'Sin permiso para leer Secret Manager. Dale a la cuenta de App Hosting el rol Secret Manager Secret Accessor.';
+    return { source: 'secretmanager', projectId, error };
+  }
+}
