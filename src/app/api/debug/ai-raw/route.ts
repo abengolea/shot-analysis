@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ai } from '@/ai/genkit';
 import { buildAnalysisPrompt, AnalyzeBasketballShotInput } from '@/ai/flows/analyze-basketball-shot';
+import { requireAdminRequest } from '@/lib/api-admin-auth';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAdminRequest(req);
+  if (!auth.ok) return auth.response;
+  if (!checkRateLimit(`debug:${auth.uid}`)) {
+    return NextResponse.json({ error: 'Demasiadas solicitudes' }, { status: 429 });
+  }
   try {
     const input = (await req.json()) as AnalyzeBasketballShotInput;
     const prompt = await buildAnalysisPrompt(input);

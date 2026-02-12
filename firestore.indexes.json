@@ -111,6 +111,22 @@
       ]
     },
     {
+      "collectionGroup": "keyframeComments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "keyframeId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "keyframeAnnotations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "keyframeId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "players",
       "queryScope": "COLLECTION",
       "fields": [

@@ -507,7 +507,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
           setRemoteChecklist(normalized);
           setChecklistState(normalized);
         }
-      } catch {}
+      } catch (e) {}
     };
     loadChecklist();
   }, [analysis, analysisResult, remoteChecklist]);
@@ -528,7 +528,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
         if (result && typeof result === 'object') {
           setRemoteAnalysisResult(result);
         }
-      } catch {}
+      } catch (e) {}
     };
     loadAnalysis();
   }, [analysis, analysisResult, remoteAnalysisResult]);
@@ -1038,7 +1038,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
         }
         const data = await res.json();
         if (active) setHasPlayerCoachAccess(Boolean(data?.hasCoachAccess));
-      } catch {
+      } catch (e) {
         if (active) setHasPlayerCoachAccess(false);
       }
     };
@@ -1617,7 +1617,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
     if (toolRef.current === 'line' || toolRef.current === 'circle') {
       try {
         canvasSnapshotRef.current = ctx.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height);
-      } catch {}
+      } catch (e) {}
       ctx.lineWidth = 3;
       ctx.strokeStyle = drawColor;
       ctx.globalCompositeOperation = 'source-over';
@@ -1688,7 +1688,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
         const data = await res.json();
         setKeyframeComments(Array.isArray(data.comments) ? data.comments : []);
       } else { setKeyframeComments([]); }
-    } catch { setKeyframeComments([]); }
+    } catch (e) { setKeyframeComments([]); }
     try {
       // Usar POST para evitar error 431 cuando keyframeUrl es muy largo (data URL base64)
       console.log('🔄 Cargando anotaciones - usando POST (nuevo código)');
@@ -1703,7 +1703,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
         const data2 = await res2.json();
         setAnnotations(Array.isArray(data2.annotations) ? data2.annotations : []);
       } else { setAnnotations([]); }
-    } catch { setAnnotations([]); }
+    } catch (e) { setAnnotations([]); }
   }, [selectedKeyframe, safeAnalysis.id]);
 
   useEffect(() => {
@@ -1807,7 +1807,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
         } else {
           alert("JSON inválido: falta frames");
         }
-      } catch {
+      } catch (e) {
         alert("No se pudo parsear JSON");
       }
     };
@@ -2004,7 +2004,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
         try {
           await fetch(`/api/analyses/${safeAnalysis.id}/rebuild-keyframes/dev`, { method: 'POST' });
           return;
-        } catch {}
+        } catch (e) {}
       }
       toast({
         title: 'Error',
@@ -2094,7 +2094,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
       try {
         const errorData = await res.json();
         errorMessage = errorData?.error || errorMessage;
-      } catch {
+      } catch (e) {
         const errorText = await res.text().catch(() => '');
         if (errorText) errorMessage = errorText;
       }
@@ -2390,7 +2390,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
         const newArr = order.map(i => arr[i]);
         setLocalKeyframes(prev => ({ ...prev, [angle]: newArr }));
       }
-    } catch {}
+    } catch (e) {}
   };
 
   const deleteKeyframe = async (angle: 'front'|'back'|'left'|'right', index: number) => {
@@ -2401,7 +2401,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
       if (res.ok) {
         setLocalKeyframes(prev => ({ ...prev, [angle]: (prev[angle] || []).filter((_, i) => i !== index) }));
       }
-    } catch {}
+    } catch (e) {}
   };
 
   const [attemptsDirty, setAttemptsDirty] = useState(false);
@@ -3004,7 +3004,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                                   (v as HTMLVideoElement).currentTime = Math.max(0, a.start - 0.1);
                                   (v as HTMLVideoElement).play().catch(() => {});
                                 }
-                              } catch {}
+                              } catch (e) {}
                             }}
                           >
                             Ver
@@ -3881,7 +3881,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                                     setCoachSummary(fb.coachSummary || "");
                                   }
                                   setIsEditingCoachFeedback(false);
-                                } catch {}
+                                } catch (e) {}
                               };
                               void load();
                             }}

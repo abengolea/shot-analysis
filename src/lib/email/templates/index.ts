@@ -16,3 +16,7 @@ export { coachReviewCompleteTemplate } from './coach-review-complete';
 export type { CoachReviewCompleteTemplateOptions } from './coach-review-complete';
 export { playerReplyToCoachTemplate } from './player-reply-to-coach';
 export type { PlayerReplyToCoachTemplateOptions } from './player-reply-to-coach';
+export { clubBulkGiftTemplate } from './club-bulk-gift';
+export type { ClubBulkGiftTemplateOptions } from './club-bulk-gift';
+export { playerGiftTemplate } from './player-gift';
+export type { PlayerGiftTemplateOptions } from './player-gift';

@@ -1,17 +1,29 @@
 import { getResendConfig, getResendConfigDiagnostic } from '@/lib/resend-secrets';
-import { NextResponse } from 'next/server';
+import { requireAdminRequest } from '@/lib/api-admin-auth';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
 const TEST_TO = 'abengolea1@gmail.com';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAdminRequest(request);
+  if (!auth.ok) return auth.response;
+  if (!checkRateLimit(`email-test:${auth.uid}`)) {
+    return NextResponse.json({ error: 'Demasiadas solicitudes' }, { status: 429 });
+  }
   return NextResponse.json({
-    message: 'Envía un POST para mandar el email de prueba.',
-    ejemplo: 'curl -X POST http://localhost:9999/api/email/test',
+    message: 'Envía un POST con Authorization: Bearer <token_admin> para mandar el email de prueba.',
+    ejemplo: 'curl -X POST -H "Authorization: Bearer <token>" http://localhost:9999/api/email/test',
   });
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const auth = await requireAdminRequest(request);
+  if (!auth.ok) return auth.response;
+  if (!checkRateLimit(`email-test:${auth.uid}`)) {
+    return NextResponse.json({ error: 'Demasiadas solicitudes' }, { status: 429 });
+  }
   const config = await getResendConfig();
   if (!config?.apiKey || !config.from) {
     const diagnostic = await getResendConfigDiagnostic();

@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb, adminStorage } from '@/lib/firebase-admin';
 import { hasPaidCoachAccessToPlayer } from '@/lib/coach-access';
+import { keyframeIdFromUrl, isKeyframeUrlTooLong } from '@/lib/keyframe-id';
 
 type KeyframeAnnotation = {
   id?: string;
   analysisId: string;
   keyframeUrl: string;
+  keyframeId?: string;
   angle?: 'front' | 'back' | 'left' | 'right';
   index?: number;
   overlayUrl: string; // URL en storage (png con transparencia)
@@ -78,7 +80,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const ref = adminDb.collection('analyses').doc(analysisId).collection('keyframeAnnotations');
     let q = ref.orderBy('createdAt', 'desc') as FirebaseFirestore.Query<FirebaseFirestore.DocumentData>;
-    if (keyframeUrl) q = q.where('keyframeUrl', '==', keyframeUrl);
+    if (keyframeUrl) {
+      if (isKeyframeUrlTooLong(keyframeUrl)) {
+        q = q.where('keyframeId', '==', keyframeIdFromUrl(keyframeUrl));
+      } else {
+        q = q.where('keyframeUrl', '==', keyframeUrl);
+      }
+    }
     const snap = await q.get();
     const items: KeyframeAnnotation[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
     return NextResponse.json({ annotations: items });
@@ -98,7 +106,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const keyframeUrl = String(body?.keyframeUrl || '');
       const ref = adminDb.collection('analyses').doc(analysisId).collection('keyframeAnnotations');
       let q = ref.orderBy('createdAt', 'desc') as FirebaseFirestore.Query<FirebaseFirestore.DocumentData>;
-      if (keyframeUrl) q = q.where('keyframeUrl', '==', keyframeUrl);
+      if (keyframeUrl) {
+        if (isKeyframeUrlTooLong(keyframeUrl)) {
+          q = q.where('keyframeId', '==', keyframeIdFromUrl(keyframeUrl));
+        } else {
+          q = q.where('keyframeUrl', '==', keyframeUrl);
+        }
+      }
       const snap = await q.get();
       const items: KeyframeAnnotation[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
       return NextResponse.json({ annotations: items });
@@ -151,6 +165,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const payload: KeyframeAnnotation = {
       analysisId,
       keyframeUrl,
+      keyframeId: keyframeIdFromUrl(keyframeUrl),
       angle,
       index,
       overlayUrl,

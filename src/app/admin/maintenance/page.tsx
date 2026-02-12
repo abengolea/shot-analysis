@@ -146,6 +146,7 @@ export default function MaintenancePage() {
 
   useEffect(() => {
     loadConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) {
@@ -196,11 +197,11 @@ export default function MaintenancePage() {
               <div className={`rounded-lg border p-4 text-sm ${emailTestResult.ok ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
                 <p className="font-medium">{emailTestResult.ok ? '✓ Éxito' : '✗ Error'}</p>
                 <p className="mt-1">{emailTestResult.message}</p>
-                {emailTestResult.detail && (
+                {emailTestResult.detail != null ? (
                   <pre className="mt-3 overflow-auto rounded bg-black/5 p-2 text-xs">
                     {JSON.stringify(emailTestResult.detail, null, 2)}
                   </pre>
-                )}
+                ) : null}
               </div>
             )}
           </CardContent>

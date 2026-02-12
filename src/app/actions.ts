@@ -121,7 +121,7 @@ export async function addCoach(prevState: AddCoachState, formData: FormData): Pr
                 html: `<p>Email: ${data.email}</p><p>Nombre: ${data.name}</p><p>Bio: ${data.experience}</p><p>Foto: ${photoUrl || '-'}</p><p>ID: ${ref.id}</p>`,
                 fallbackTo: 'abengolea1@gmail.com',
             });
-        } catch {}
+        } catch (e) {}
 
         return { success: true, message: 'Solicitud enviada para aprobación.' };
     } catch (e) {
@@ -172,7 +172,7 @@ export async function adminCreateCoach(prevState: AdminCreateCoachState, formDat
         try {
             const existing = await adminAuth.getUserByEmail(email);
             userId = existing.uid;
-        } catch {
+        } catch (e) {
             const created = await adminAuth.createUser({ email, displayName: name });
             userId = created.uid;
         }
@@ -292,7 +292,7 @@ export async function adminCreateClub(_prevState: AdminCreateClubState, formData
         try {
             const existing = await adminAuth.getUserByEmail(email);
             userId = existing.uid;
-        } catch {
+        } catch (e) {
             const created = await adminAuth.createUser({ email, displayName: name });
             userId = created.uid;
         }
@@ -304,7 +304,7 @@ export async function adminCreateClub(_prevState: AdminCreateClubState, formData
             nameLower,
             email,
             role: 'club' as const,
-            status: 'pending' as const,
+            status: 'active' as const,
             avatarUrl: 'https://placehold.co/100x100.png',
             city,
             province,
@@ -523,9 +523,12 @@ export async function requestVerificationEmail(email: string): Promise<{ success
 }
 
 // Enviar link de reseteo de contraseña al email del jugador (admin; devuelve link, no envía email)
-export async function adminSendPasswordReset(_prev: any, formData: FormData) {
+// Usado con form action (1 arg: FormData) o wrapper (2 args: prev, FormData)
+export async function adminSendPasswordReset(_prev: any, formData?: FormData) {
     try {
-        const userId = String(formData.get('userId') || '');
+        const fd = (formData && typeof (formData as any).get === 'function') ? formData : _prev;
+        if (!fd || typeof (fd as any).get !== 'function') return { success: false };
+        const userId = String((fd as FormData).get('userId') || '');
         if (!userId) return { success: false };
         if (!adminDb || !adminAuth) return { success: false };
         let email = '';
@@ -546,7 +549,7 @@ export async function adminSendPasswordReset(_prev: any, formData: FormData) {
             try {
                 const userRecord = await adminAuth.getUser(userId);
                 email = userRecord.email || '';
-            } catch {}
+            } catch (e) {}
         }
         if (!email) return { success: false, message: 'Email no encontrado' };
         const baseUrl = getAppBaseUrl();
@@ -636,9 +639,9 @@ export async function adminActivateCoachAndSendPassword(_prev: any, formData: Fo
         try {
             const coachDoc = await adminDb.collection('coaches').doc(userId).get();
             if (coachDoc.exists) email = String(coachDoc.data()?.email || '');
-        } catch {}
+        } catch (e) {}
         if (!email) {
-            try { const userRecord = await adminAuth.getUser(userId); email = userRecord.email || ''; } catch {}
+            try { const userRecord = await adminAuth.getUser(userId); email = userRecord.email || ''; } catch (e) {}
         }
         if (!email) return { success: false, message: 'Email del coach no encontrado' };
 
@@ -714,7 +717,7 @@ import { standardizeVideoBuffer } from '@/lib/ffmpeg';
 type AgeCategory = 'Sub-10' | 'Sub-13' | 'Sub-15' | 'Sub-18' | 'Amateur adulto' | 'Profesional';
 type PlayerLevel = 'Principiante' | 'Intermedio' | 'Avanzado';
 
-function mapAgeGroupToCategory(ageGroup: string): AgeCategory {
+function _mapAgeGroupToCategory(ageGroup: string): AgeCategory {
     switch (ageGroup) {
         case 'U10': return 'Sub-10';
         case 'U13': return 'Sub-13';
@@ -727,7 +730,7 @@ function mapAgeGroupToCategory(ageGroup: string): AgeCategory {
     }
 }
 
-function mapPlayerLevel(playerLevel: string): PlayerLevel {
+function _mapPlayerLevel(playerLevel: string): PlayerLevel {
     switch (playerLevel) {
         case 'Principiante': return 'Principiante';
         case 'Intermedio': return 'Intermedio';
@@ -772,7 +775,7 @@ function mapShotTypeToKey(shotType: string): keyof ShotTypesMaintenance | null {
 }
 
 // Obtener usuario actual usando Firebase Admin SDK
-const getCurrentUser = async (userId: string) => {
+const _getCurrentUser = async (userId: string) => {
     try {
         console.log(`🔍 Obteniendo usuario actual con Admin SDK: ${userId}`);
         
@@ -1058,7 +1061,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                       ${link ? `<p><a href="${link}">Revisar en Revisión IA</a></p>` : ''}`,
                 fallbackTo: 'abengolea@hotmail.com',
             });
-        } catch {}
+        } catch (e) {}
 
         // Ejecutar análisis IA sin frames del cliente
         const { analyzeBasketballShot, detectShots } = await import('@/ai/flows/analyze-basketball-shot');
@@ -1090,7 +1093,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                 const durationSec = await getVideoDurationSecondsFromBuffer(buf);
                 durationCache.set(url, durationSec);
                 return durationSec;
-            } catch {
+            } catch (e) {
                 return 0;
             }
         };
@@ -1123,13 +1126,13 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                     : 0;
             skipDomainCheck = count > 0;
             detectedShotsCount = typeof count === 'number' ? count : undefined;
-        } catch {}
+        } catch (e) {}
 
         let availableKeyframes: Array<{ index: number; timestamp: number; description: string }> = [];
         try {
             const evidence = await buildEconomyEvidenceFromVideoUrl(videoPath, { targetFrames: 8 });
             availableKeyframes = Array.isArray(evidence?.availableKeyframes) ? evidence.availableKeyframes : [];
-        } catch {}
+        } catch (e) {}
 
         let shotFramesUrl: string | null = null;
         let shotFramesForPrompt: Array<{ idx: number; start_ms: number; release_ms: number; frames: string[] }> = [];
@@ -1378,7 +1381,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
                     : shots.length;
                 totalShots += shotsCount;
                 shotsByLabel.push({ label: det.label, count: shotsCount });
-                shots.forEach((shot: any, idx: number) => {
+                shots.forEach((shot: any, _idx: number) => {
                     const startMs = Number(shot?.start_ms || 0);
                     const releaseMs = Number(shot?.release_ms || 0);
                     const startLabel = `${(startMs / 1000).toFixed(2)}s`;
@@ -1482,7 +1485,7 @@ export async function startAnalysis(prevState: any, formData: FormData) {
 }
 
 // Acción temporal para registrar/asegurar el jugador Adrián Bengolea
-export async function registerAdrian(prevState: any, _formData: FormData) {
+export async function registerAdrian(_prevState: any, _formData: FormData) {
     try {
         if (!adminDb) {
             return { success: false, message: "Firebase Admin no está inicializado" };

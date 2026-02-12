@@ -4,9 +4,10 @@ import path from 'path';
 const nextConfig: NextConfig = {
   /* config options here */
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   eslint: {
+    // Mantener true hasta reducir warnings; el build falla si hay errores de ESLint
     ignoreDuringBuilds: true,
   },
   turbopack: {

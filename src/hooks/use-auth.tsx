@@ -106,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               if (typeof window !== 'undefined' && (selectedRole === 'coach' || selectedRole === 'player' || selectedRole === 'club')) {
                 localStorage.setItem('preferredRole', selectedRole);
               }
-            } catch {}
+            } catch (e) {}
             setUserProfile(selected);
           } else {
             setUserProfile(null);
@@ -143,7 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const clubSnap = await getDoc(doc(db, 'clubs', user.uid));
             if (clubSnap.exists()) role = (clubSnap.data() as any)?.role;
           }
-        } catch {}
+        } catch (e) {}
         if (role !== 'admin' && user.email) {
           await requestVerificationEmail(user.email);
           return {
@@ -262,13 +262,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const byNormalized = query(collection(db, 'clubs'), where('nameLower', '==', normalizedName));
             const byNormalizedSnap = await getDocs(byNormalized);
             clubExists = !byNormalizedSnap.empty;
-          } catch {}
+          } catch (e) {}
           if (!clubExists) {
             try {
               const byExact = query(collection(db, 'clubs'), where('name', '==', clubName));
               const byExactSnap = await getDocs(byExact);
               clubExists = !byExactSnap.empty;
-            } catch {}
+            } catch (e) {}
           }
           if (!clubExists) {
             try {
@@ -289,7 +289,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   createdAt: new Date().toISOString(),
                 });
               }
-            } catch {}
+            } catch (e) {}
           }
         }
       } else if (role === 'club') {

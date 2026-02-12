@@ -207,7 +207,7 @@ function UploadPageInner() {
       if (anyConn && (anyConn.saveData || anyConn.effectiveType === 'slow-2g' || anyConn.effectiveType === '2g')) {
         toast({ title: 'Conexión lenta detectada', description: 'La subida puede demorar o fallar. Te recomendamos usar Wi‑Fi.', variant: 'default' });
       }
-    } catch {}
+    } catch (e) {}
     if (!isPlayerProfileComplete(userProfile)) {
       toast({
         title: 'Perfil incompleto',
@@ -253,7 +253,7 @@ function UploadPageInner() {
             [label]: Math.min(99, Math.round((progress || 0) * 100)),
           }));
         };
-        try { ffmpeg.on('progress', onProgress); } catch {}
+        try { ffmpeg.on('progress', onProgress); } catch (e) {}
         const inName = `${label}_in.mp4`;
         const outName = `${label}_out.mp4`;
         await ffmpeg.writeFile(inName, await fileToUint8Array(file));
@@ -272,16 +272,16 @@ function UploadPageInner() {
           ]);
         } catch (e) {
           console.warn('[ffmpeg] Falla al usar libx264; devolviendo original.', e);
-          try { await ffmpeg.deleteFile(inName); } catch {}
-          try { ffmpeg.off('progress', onProgress); } catch {}
+          try { await ffmpeg.deleteFile(inName); } catch (e) {}
+          try { ffmpeg.off('progress', onProgress); } catch (e) {}
           return file;
         }
         const data = await ffmpeg.readFile(outName) as Uint8Array;
         const blob = new Blob([data as unknown as BlobPart], { type: 'video/mp4' });
         const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '') + '-compressed.mp4', { type: 'video/mp4' });
-        try { await ffmpeg.deleteFile(inName); } catch {}
-        try { await ffmpeg.deleteFile(outName); } catch {}
-        try { ffmpeg.off('progress', onProgress); } catch {}
+        try { await ffmpeg.deleteFile(inName); } catch (e) {}
+        try { await ffmpeg.deleteFile(outName); } catch (e) {}
+        try { ffmpeg.off('progress', onProgress); } catch (e) {}
         setCompressionProgress((p) => ({ ...p, [label]: 100 }));
         return compressed.size > 0 ? compressed : file;
       } catch (e) {
@@ -419,15 +419,15 @@ function UploadPageInner() {
         if (anyConn && anyConn.downlink && anyConn.downlink < 1.0) {
           toast({ title: `Subiendo ${u.label}…`, description: 'Conexión lenta, puede tardar más de lo normal.', variant: 'default' });
         }
-      } catch {}
+      } catch (e) {}
       const eff = fileByLabel[u.label] || u.file; // comprimido si existe
       console.log(`[upload:${u.label}] iniciando → ${u.path} | ${(eff.size/1024/1024).toFixed(2)} MB | tipo=${eff.type || 'video/mp4'}`);
       try {
         const url = await uploadWithRetry(u.label, eff, u.path, 2);
         urlByLabel[u.label] = url;
-      } catch (err) {
+      } catch (e) {
         const isRequired = requiredLabels.has(u.label);
-        console.warn(`[upload:${u.label}] fallo subida a Storage`, (err as any)?.message || err);
+        console.warn(`[upload:${u.label}] fallo subida a Storage`, (e as any)?.message || e);
         if (isRequired) {
           console.warn(`[upload:${u.label}] es requerido; haré fallback a subida vía servidor.`);
           fallbackToServer = true;
@@ -459,7 +459,7 @@ function UploadPageInner() {
       }
     } else {
       // Fallback: adjuntar archivos binarios para subida server-side
-      try { toast({ title: 'Subida alternativa', description: 'Usando subida desde el servidor para evitar CORS.', variant: 'default' }); } catch {}
+      try { toast({ title: 'Subida alternativa', description: 'Usando subida desde el servidor para evitar CORS.', variant: 'default' }); } catch (e) {}
       if (backVideo) formData.set('video-back', fileByLabel['back'] || backVideo);
       if (selectedVideo) formData.set('video-front', fileByLabel['front'] || selectedVideo);
       if (leftVideo) formData.set('video-left', fileByLabel['left'] || leftVideo);
@@ -497,7 +497,7 @@ function UploadPageInner() {
           freeUsed,
           lastFreeAnalysisDate,
         });
-      } catch {}
+      } catch (e) {}
     };
     fetchWallet();
   }, [user]);
@@ -510,7 +510,7 @@ function UploadPageInner() {
         if (!response.ok) return;
         const data = await response.json();
         if (!cancelled) setMaintenanceConfig(data);
-      } catch {} finally {
+      } catch (e) {} finally {
         if (!cancelled) setMaintenanceLoading(false);
       }
     };
@@ -523,7 +523,7 @@ function UploadPageInner() {
     try {
       const dismissed = localStorage.getItem('uploadTipsDismissed');
       if (!dismissed) setTipsOpen(true);
-    } catch {}
+    } catch (e) {}
   }, []);
 
   // Cargar última selección del tipo de lanzamiento
@@ -531,14 +531,14 @@ function UploadPageInner() {
     try {
       const last = localStorage.getItem('lastShotType');
       if (last) setShotType(last);
-    } catch {}
+    } catch (e) {}
   }, []);
 
   // Persistir selección del tipo de lanzamiento
   useEffect(() => {
     try {
       if (shotType) localStorage.setItem('lastShotType', shotType);
-    } catch {}
+    } catch (e) {}
   }, [shotType]);
   
   const handleFormSubmit: React.FormEventHandler<HTMLFormElement> = () => {
@@ -886,7 +886,7 @@ function UploadPageInner() {
           if (!open) {
             try {
               if (dontShowTipsAgain) localStorage.setItem('uploadTipsDismissed', '1');
-            } catch {}
+            } catch (e) {}
           }
           setTipsOpen(open);
         }}
@@ -922,7 +922,7 @@ function UploadPageInner() {
               onClick={() => {
                 try {
                   if (dontShowTipsAgain) localStorage.setItem('uploadTipsDismissed', '1');
-                } catch {}
+                } catch (e) {}
                 setTipsOpen(false);
               }}
             >

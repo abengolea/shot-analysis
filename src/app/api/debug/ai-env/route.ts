@@ -1,8 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminRequest } from '@/lib/api-admin-auth';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAdminRequest(request);
+  if (!auth.ok) return auth.response;
+  if (!checkRateLimit(`debug:${auth.uid}`)) {
+    return NextResponse.json({ error: 'Demasiadas solicitudes' }, { status: 429 });
+  }
   try {
     const env = process.env || {} as Record<string, string | undefined>;
     const keys = {

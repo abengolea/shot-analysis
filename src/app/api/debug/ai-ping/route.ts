@@ -1,9 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { ai } from '@/ai/genkit';
+import { requireAdminRequest } from '@/lib/api-admin-auth';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAdminRequest(request);
+  if (!auth.ok) return auth.response;
+  if (!checkRateLimit(`debug:${auth.uid}`)) {
+    return NextResponse.json({ error: 'Demasiadas solicitudes' }, { status: 429 });
+  }
   try {
     const result = await ai.generate([{ text: 'Responde solo con "OK".' }]);
     const text = (result as any)?.outputText ?? (result as any)?.text ?? '';

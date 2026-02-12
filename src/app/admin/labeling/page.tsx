@@ -36,7 +36,7 @@ export default function LabelingPage() {
 				const data = JSON.parse(String(reader.result || "{}"));
 				if (Array.isArray(data.frames)) setFrames(data.frames);
 				else alert("JSON inválido: falta frames");
-			} catch (err) {
+			} catch {
 				alert("No se pudo parsear JSON");
 			}
 		};

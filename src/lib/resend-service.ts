@@ -42,24 +42,23 @@ export async function sendEmailResend(options: ResendSendOptions): Promise<Resen
   const resend = new Resend(config.apiKey);
   const to = Array.isArray(options.to) ? options.to : [options.to];
 
-  const payload: Parameters<Resend['emails']['send']>[0] = {
+  const payload = {
     from: config.from,
     to,
     subject: options.subject,
     replyTo: options.replyTo ?? config.replyTo,
+    text: options.text ?? (options.html ? undefined : ''),
+    html: options.html,
+    ...(options.attachments?.length && {
+      attachments: options.attachments.map((a) => ({
+        filename: a.filename,
+        content: Buffer.from(a.content, 'base64'),
+        ...(a.contentId && { contentId: a.contentId }),
+      })),
+    }),
   };
 
-  if (options.html) payload.html = options.html;
-  if (options.text) payload.text = options.text;
-  if (options.attachments?.length) {
-    payload.attachments = options.attachments.map((a) => ({
-      filename: a.filename,
-      content: Buffer.from(a.content, 'base64'),
-      ...(a.contentId && { contentId: a.contentId }),
-    }));
-  }
-
-  const { data, error } = await resend.emails.send(payload);
+  const { data, error } = await resend.emails.send(payload as Parameters<Resend['emails']['send']>[0]);
 
   if (error) throw new Error(error.message);
   return { ok: true, id: data?.id ?? null };

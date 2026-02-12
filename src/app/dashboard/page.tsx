@@ -295,7 +295,7 @@ export default function DashboardPage() {
         const data = await res.json();
         if (cancelled) return;
         setCoachStatusByAnalysis(data?.statusByAnalysis || {});
-      } catch {}
+      } catch (e) {}
     };
     load();
     return () => { cancelled = true; };

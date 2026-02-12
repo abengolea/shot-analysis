@@ -26,18 +26,38 @@ Requisitos:
 
 La cuenta de servicio con la que corre la app en producción debe poder **leer** esos secretos.
 
+### Opción A: Por terminal
+
+**Con gcloud (un solo comando):**
+
+1. Instalá [gcloud](https://cloud.google.com/sdk/docs/install) si no lo tenés. En Windows, después de instalar, reabrí la terminal.
+2. Autenticá (solo la primera vez): `gcloud auth login` y `gcloud auth application-default login`
+3. Ejecutá:
+
+```bash
+gcloud projects add-iam-policy-binding shotanalisys --member="serviceAccount:shotanalisys@appspot.gserviceaccount.com" --role="roles/secretmanager.secretAccessor"
+```
+
+Si gcloud está instalado pero no en el PATH (Windows), usá la ruta completa, por ejemplo:
+
+```bash
+"C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd" projects add-iam-policy-binding shotanalisys --member="serviceAccount:shotanalisys@appspot.gserviceaccount.com" --role="roles/secretmanager.secretAccessor"
+```
+
+**Sin gcloud (script Node, también desde la terminal):**
+
+```bash
+node scripts/grant-resend-secret-accessor.js
+```
+
+Antes necesitás credenciales: `gcloud auth application-default login` (una vez) o `GOOGLE_APPLICATION_CREDENTIALS` con un JSON de cuenta de servicio. Ver comentarios en el script.
+
+### Opción B: Por consola web
+
 1. En [Google Cloud Console](https://console.cloud.google.com/) → tu proyecto (ej. `shotanalisys`).
 2. **IAM y administración** → **IAM**.
 3. Localizá la cuenta de servicio que usa **Firebase App Hosting** (por ejemplo `shotanalisys@appspot.gserviceaccount.com` o la que aparezca en **App Hosting** → tu backend → configuración).
 4. Editá esa cuenta y añadí el rol **Secret Manager Secret Accessor** (`roles/secretmanager.secretAccessor`).
-
-Alternativa por consola (reemplazá `PROJECT_ID` y `SERVICE_ACCOUNT_EMAIL`):
-
-```bash
-gcloud projects add-iam-policy-binding PROJECT_ID \
-  --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" \
-  --role="roles/secretmanager.secretAccessor"
-```
 
 Con eso, en runtime la app usa `getResendConfig()` en `src/lib/resend-secrets.ts`: si no hay `RESEND_*` en env, lee desde Secret Manager.
 

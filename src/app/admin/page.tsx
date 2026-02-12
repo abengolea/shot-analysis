@@ -1,8 +1,32 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getAuth, getIdToken } from "firebase/auth";
 import { ClubAdminForm } from "@/components/club-admin-form";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+
+function PlayerGiftDropdown({ onGift }: { onGift: (count: number) => Promise<void> }) {
+	return (
+		<DropdownMenu>
+			<DropdownMenuTrigger asChild>
+				<Button variant="outline" size="sm" className="h-7 text-xs">Regalar</Button>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end">
+				{[1, 3, 5, 10].map((n) => (
+					<DropdownMenuItem key={n} onSelect={() => void onGift(n)}>
+						+{n} análisis y +{n} revisiones
+					</DropdownMenuItem>
+				))}
+			</DropdownMenuContent>
+		</DropdownMenu>
+	);
+}
 
 type WeeklyPoint = {
 	weekStart: string;
@@ -40,6 +64,18 @@ export default function AdminHome() {
 
 	const [clubRequests, setClubRequests] = useState<any[]>([]);
 	const [clubRequestsLoading, setClubRequestsLoading] = useState(false);
+	const [clubsList, setClubsList] = useState<any[]>([]);
+	const [clubsListLoading, setClubsListLoading] = useState(false);
+
+	// Acceso por club + coach (La Emilia, Victor Baldo, etc.)
+	const [clubBulkName, setClubBulkName] = useState<string>("");
+	const [clubBulkCoachId, setClubBulkCoachId] = useState<string>("");
+	const [clubBulkGiftAnalyses, setClubBulkGiftAnalyses] = useState<number>(5);
+	const [clubBulkGiftReviews, setClubBulkGiftReviews] = useState<number>(5);
+	const [clubBulkPreview, setClubBulkPreview] = useState<{ count: number; players: Array<{ id: string; name: string; email: string; club: string; yaRecibioRegalo?: boolean }>; nuevos?: number } | null>(null);
+	const [clubBulkLoading, setClubBulkLoading] = useState(false);
+	const [clubBulkExecuting, setClubBulkExecuting] = useState(false);
+	const [clubBulkResult, setClubBulkResult] = useState<string | null>(null);
 
 	const [payments, setPayments] = useState<any[]>([]);
 	const [paymentsNext, setPaymentsNext] = useState<string | undefined>(undefined);
@@ -52,6 +88,7 @@ export default function AdminHome() {
 
 	// Filtros de búsqueda
 	const [playersQuery, setPlayersQuery] = useState<string>("");
+	const [playersClubFilter, setPlayersClubFilter] = useState<string>("");
 	const [coachesQuery, setCoachesQuery] = useState<string>("");
 	const [paymentsQuery, setPaymentsQuery] = useState<string>("");
 	const [subsQuery, setSubsQuery] = useState<string>("");
@@ -75,7 +112,7 @@ export default function AdminHome() {
 			document.body.appendChild(link);
 			link.click();
 			document.body.removeChild(link);
-		} catch {}
+		} catch (e) {}
 	};
 
 	// Datos filtrados (cliente) - barato
@@ -112,7 +149,7 @@ export default function AdminHome() {
 			const sp = new URLSearchParams(window.location.search);
 			const t = sp.get("tab");
 			if (t) setActiveTab(t);
-		} catch {}
+		} catch (e) {}
 	}, []);
 
 	useEffect(() => {
@@ -137,6 +174,47 @@ export default function AdminHome() {
 		run();
 	}, []);
 
+	// Cargar coaches y clubes al abrir tab de clubes o jugadores
+	useEffect(() => {
+		if (activeTab !== 'clubs' && activeTab !== 'players') return;
+		const loadCoaches = async () => {
+			if (coaches.length > 0 || coachesLoading) return;
+			try {
+				setCoachesLoading(true);
+				const auth = getAuth();
+				const cu = auth.currentUser;
+				if (!cu) return;
+				const token = await getIdToken(cu, true);
+				const res = await fetch('/api/admin/coaches?limit=200', { headers: { Authorization: `Bearer ${token}` } });
+				const data = await res.json();
+				if (Array.isArray(data.items)) setCoaches(data.items);
+			} catch (e) {
+				// noop
+			} finally {
+				setCoachesLoading(false);
+			}
+		};
+		const loadClubs = async () => {
+			if (clubsListLoading) return;
+			try {
+				setClubsListLoading(true);
+				const auth = getAuth();
+				const cu = auth.currentUser;
+				if (!cu) return;
+				const token = await getIdToken(cu, true);
+				const res = await fetch('/api/admin/clubs?limit=100', { headers: { Authorization: `Bearer ${token}` } });
+				const data = await res.json();
+				if (Array.isArray(data.items)) setClubsList(data.items);
+			} catch (e) {
+				// noop
+			} finally {
+				setClubsListLoading(false);
+			}
+		};
+		loadCoaches();
+		loadClubs();
+	}, [activeTab]);
+
 	const Tabs = useMemo(() => [
 		{ id: 'home', label: 'Inicio' },
 		{ id: 'players', label: 'Jugadores' },
@@ -153,8 +231,22 @@ export default function AdminHome() {
 			const url = new URL(window.location.href);
 			url.searchParams.set('tab', id);
 			window.history.replaceState({}, '', url.toString());
-		} catch {}
+		} catch (e) {}
 	};
+
+	const refreshClubsList = useCallback(async () => {
+		try {
+			const auth = getAuth();
+			const cu = auth.currentUser;
+			if (!cu) return;
+			const token = await getIdToken(cu, true);
+			const res = await fetch('/api/admin/clubs?limit=100', { headers: { Authorization: `Bearer ${token}` } });
+			const data = await res.json();
+			if (Array.isArray(data.items)) setClubsList(data.items);
+		} catch {
+			// noop
+		}
+	}, []);
 
 	const updateCoach = async (
 		id: string,
@@ -537,11 +629,24 @@ export default function AdminHome() {
 				<div className="space-y-3">
 					<div className="flex items-center justify-between gap-2 flex-wrap">
 						<h2 className="text-lg font-medium">Jugadores</h2>
-						<div className="flex items-center gap-2">
+						<div className="flex items-center gap-2 flex-wrap">
+							<select
+								className="rounded border px-2 py-1 text-sm"
+								value={playersClubFilter}
+								onChange={(e) => setPlayersClubFilter(e.target.value)}
+							>
+								<option value="">Todos los clubes</option>
+								{clubsList.map((c: any) => (
+									<option key={c.id} value={c.name || c.id}>
+											{c.name || c.id}
+										</option>
+								))}
+								{!clubsList.length && !clubsListLoading && <option value="" disabled>Sin clubes cargados</option>}
+							</select>
 							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Email/Nombre" value={playersQuery} onChange={(e)=>setPlayersQuery(e.target.value)} />
 							<button className="rounded border px-3 py-1 text-sm" onClick={() => {
-                                const headers = ['id','name','email','playerLevel','status','createdAt'];
-                                const rows = filteredPlayers.map((p:any) => [p.id,p.name,p.email,p.playerLevel,p.status, typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : ''))]);
+                                const headers = ['id','name','email','club','playerLevel','status','createdAt'];
+                                const rows = filteredPlayers.map((p:any) => [p.id,p.name,p.email,p.club||'',p.playerLevel,p.status, typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : ''))]);
 								toCsvAndDownload('players.csv', headers, rows);
 							}}>Exportar CSV</button>
 						</div>
@@ -556,15 +661,13 @@ export default function AdminHome() {
 									const token = await getIdToken(cu, true);
 									const search = playersQuery.trim();
 									const url = new URL('/api/admin/players', window.location.origin);
-									if (search) {
-										url.searchParams.set('q', search);
-									} else {
-										url.searchParams.set('limit', '50');
-									}
+									if (search) url.searchParams.set('q', search);
+									if (playersClubFilter) url.searchParams.set('club', playersClubFilter);
+									if (!search && !playersClubFilter) url.searchParams.set('limit', '50');
 									const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
 									const data = await res.json();
 									setPlayers(Array.isArray(data.items) ? data.items : []);
-									setPlayersNext(search ? undefined : data.nextCursor);
+									setPlayersNext(search || playersClubFilter ? undefined : data.nextCursor);
 								} catch (e) {
 									// noop
 								} finally {
@@ -572,7 +675,7 @@ export default function AdminHome() {
 								}
 							}}
 						>
-							{playersQuery.trim() ? 'Buscar' : (players.length ? 'Refrescar' : 'Cargar')}
+							{playersQuery.trim() || playersClubFilter ? 'Buscar' : (players.length ? 'Refrescar' : 'Cargar')}
 						</button>
 					</div>
 					<div className="rounded border overflow-x-auto">
@@ -582,9 +685,11 @@ export default function AdminHome() {
 									<th className="py-2 px-3">ID</th>
 									<th className="py-2 px-3">Nombre</th>
 									<th className="py-2 px-3">Email</th>
+									<th className="py-2 px-3">Club</th>
 									<th className="py-2 px-3">Nivel</th>
 									<th className="py-2 px-3">Estado</th>
 									<th className="py-2 px-3">Creado</th>
+									<th className="py-2 px-3">Regalar</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -597,14 +702,35 @@ export default function AdminHome() {
                                         </td>
                                         <td className="py-2 px-3">{p.name || '-'}</td>
                                         <td className="py-2 px-3">{p.email || '-'}</td>
+										<td className="py-2 px-3">{p.club || '-'}</td>
                                         <td className="py-2 px-3">{p.playerLevel || '-'}</td>
                                         <td className="py-2 px-3">{p.status || '-'}</td>
                                         <td className="py-2 px-3">{typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
+										<td className="py-2 px-3">
+											<PlayerGiftDropdown onGift={async (count) => {
+												try {
+													const auth = getAuth();
+													const cu = auth.currentUser;
+													if (!cu) throw new Error('No autenticado');
+													const token = await getIdToken(cu, true);
+													const res = await fetch('/api/admin/gift-player', {
+														method: 'POST',
+														headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+														body: JSON.stringify({ userId: p.id, count }),
+													});
+													const data = await res.json();
+													if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+													alert(data?.message || 'Listo');
+												} catch (e: any) {
+													alert(e?.message || 'Error');
+												}
+											}} />
+										</td>
                                     </tr>
                                 ))}
 								{!filteredPlayers.length && (
 									<tr>
-										<td className="py-6 px-3 text-gray-500" colSpan={6}>{playersLoading ? 'Cargando…' : 'Sin datos'}</td>
+										<td className="py-6 px-3 text-gray-500" colSpan={8}>{playersLoading ? 'Cargando…' : 'Sin datos'}</td>
 									</tr>
 								)}
 							</tbody>
@@ -782,6 +908,255 @@ export default function AdminHome() {
 			{/* Clubes */}
 			{activeTab === 'clubs' && (
 				<div className="space-y-4">
+					{/* Acceso gratis por club + coach (La Emilia, Victor Baldo, etc.) */}
+					<div className="rounded border p-4 bg-amber-50/50 border-amber-200 space-y-4">
+						<h2 className="text-lg font-medium">Acceso gratis por club y entrenador</h2>
+						<p className="text-sm text-muted-foreground">
+							Asignar entrenador y regalar análisis/revisiones a jugadores de un club. Cada jugador recibe el regalo solo una vez (no se suma si vuelve a aplicar).
+						</p>
+						<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+							<div>
+								<label className="text-sm font-medium block mb-1">Nombre del club</label>
+								<select
+									className="w-full rounded border px-2 py-1.5 text-sm"
+									value={clubBulkName}
+									onChange={(e) => { setClubBulkName(e.target.value); setClubBulkPreview(null); setClubBulkResult(null); }}
+								>
+									<option value="">-- Seleccionar club --</option>
+									{clubsList.map((c: any) => (
+										<option key={c.id} value={c.name || c.id}>
+											{c.name || c.id}
+										</option>
+									))}
+									{!clubsList.length && <option value="" disabled>Sin clubes — cargá abajo y refrescá</option>}
+								</select>
+								<p className="text-xs text-muted-foreground mt-0.5">Clubes creados/autorizados. Coincide con el campo club del jugador.</p>
+							</div>
+							<div>
+								<label className="text-sm font-medium block mb-1">Entrenador (ID o buscar)</label>
+								<select
+									className="w-full rounded border px-2 py-1.5 text-sm"
+									value={clubBulkCoachId}
+									onChange={(e) => { setClubBulkCoachId(e.target.value); setClubBulkResult(null); }}
+								>
+									<option value="">-- Seleccionar --</option>
+									{coaches.map((c: any) => (
+										<option key={c.id} value={c.id}>
+											{c.name || c.email || c.id} ({c.id})
+										</option>
+									))}
+									{!coaches.length && <option value="" disabled>Cargar entrenadores primero</option>}
+								</select>
+							</div>
+							<div>
+								<label className="text-sm font-medium block mb-1">Regalar análisis</label>
+								<input
+									type="number"
+									min={0}
+									className="w-full rounded border px-2 py-1.5 text-sm"
+									value={clubBulkGiftAnalyses}
+									onChange={(e) => setClubBulkGiftAnalyses(parseInt(e.target.value, 10) || 0)}
+								/>
+							</div>
+							<div>
+								<label className="text-sm font-medium block mb-1">Regalar revisiones coach</label>
+								<input
+									type="number"
+									min={0}
+									className="w-full rounded border px-2 py-1.5 text-sm"
+									value={clubBulkGiftReviews}
+									onChange={(e) => setClubBulkGiftReviews(parseInt(e.target.value, 10) || 0)}
+								/>
+							</div>
+						</div>
+						<div className="flex flex-wrap gap-2">
+							<button
+								className="rounded border px-3 py-1.5 text-sm bg-white hover:bg-gray-50 disabled:opacity-50"
+								disabled={clubBulkLoading}
+								onClick={async () => {
+									try {
+										setClubBulkLoading(true);
+										setClubBulkResult(null);
+										const auth = getAuth();
+										const cu = auth.currentUser;
+										if (!cu) throw new Error('Usuario no autenticado');
+										const token = await getIdToken(cu, true);
+										const url = new URL('/api/admin/bulk-club-coach', window.location.origin);
+										url.searchParams.set('clubName', clubBulkName.trim());
+										const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+										const data = await res.json();
+										if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+										setClubBulkPreview({
+											count: data.count,
+											players: data.players || [],
+											nuevos: data.nuevos ?? data.count,
+										});
+									} catch (e: any) {
+										alert(e?.message || 'Error al buscar');
+									} finally {
+										setClubBulkLoading(false);
+									}
+								}}
+							>
+								{clubBulkLoading ? 'Buscando…' : 'Vista previa'}
+							</button>
+							<button
+								className="rounded border px-3 py-1.5 text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+								disabled={clubBulkExecuting || !clubBulkCoachId || !clubBulkName.trim()}
+								onClick={async () => {
+									const nuevos = clubBulkPreview?.nuevos ?? clubBulkPreview?.count ?? 0;
+									const confirmMsg = `¿Aplicar a ${clubBulkPreview?.count ?? '?'} jugador(es) del club "${clubBulkName}"?\n- Coach asignado a todos\n- ${nuevos} recibirán el regalo (análisis: ${clubBulkGiftAnalyses}, revisiones: ${clubBulkGiftReviews})\n- Los que ya recibieron antes no se suman\n¿Continuar?`;
+									if (!confirm(confirmMsg)) return;
+									try {
+										setClubBulkExecuting(true);
+										setClubBulkResult(null);
+										const auth = getAuth();
+										const cu = auth.currentUser;
+										if (!cu) throw new Error('Usuario no autenticado');
+										const token = await getIdToken(cu, true);
+										const res = await fetch('/api/admin/bulk-club-coach', {
+											method: 'POST',
+											headers: {
+												Authorization: `Bearer ${token}`,
+												'Content-Type': 'application/json',
+											},
+											body: JSON.stringify({
+												clubName: clubBulkName.trim(),
+												coachId: clubBulkCoachId,
+												giftAnalyses: clubBulkGiftAnalyses,
+												giftCoachReviews: clubBulkGiftReviews,
+											}),
+										});
+										const data = await res.json();
+										if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+										setClubBulkResult(data?.message || `Listo. ${data?.updated ?? 0} actualizados.`);
+										setClubBulkPreview((prev) => prev ? { ...prev, count: data?.updated ?? prev.count } : null);
+									} catch (e: any) {
+										alert(e?.message || 'Error al aplicar');
+									} finally {
+										setClubBulkExecuting(false);
+									}
+								}}
+							>
+								{clubBulkExecuting ? 'Aplicando…' : 'Aplicar en bloque'}
+							</button>
+						</div>
+						{clubBulkPreview && (
+							<div className="text-sm">
+								<p className="font-medium text-green-700">
+									{clubBulkPreview.count} jugador(es) con club &quot;{clubBulkName}&quot;
+									{typeof clubBulkPreview.nuevos === 'number' && clubBulkPreview.nuevos < clubBulkPreview.count && (
+										<span className="text-amber-600 ml-1">
+											({clubBulkPreview.nuevos} recibirán regalo, {clubBulkPreview.count - clubBulkPreview.nuevos} ya lo tenían)
+										</span>
+									)}
+								</p>
+								<div className="mt-2 max-h-40 overflow-y-auto rounded border bg-white p-2">
+									{clubBulkPreview.players.slice(0, 20).map((p: any) => (
+										<div key={p.id} className="flex gap-2 py-0.5">
+											<span className="font-mono text-xs">{p.id}</span>
+											<span>{p.name}</span>
+											<span className="text-muted-foreground">{p.email}</span>
+										</div>
+									))}
+									{clubBulkPreview.players.length > 20 && (
+										<p className="text-muted-foreground pt-1">… y {clubBulkPreview.players.length - 20} más</p>
+									)}
+								</div>
+							</div>
+						)}
+						{clubBulkResult && (
+							<div className="rounded border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+								{clubBulkResult}
+							</div>
+						)}
+						{!coaches.length && (
+							<button
+								className="rounded border px-3 py-1 text-sm"
+								onClick={async () => {
+									try {
+										setCoachesLoading(true);
+										const auth = getAuth();
+										const cu = auth.currentUser;
+										if (!cu) throw new Error('Usuario no autenticado');
+										const token = await getIdToken(cu, true);
+										const res = await fetch('/api/admin/coaches?limit=200', { headers: { Authorization: `Bearer ${token}` } });
+										const data = await res.json();
+										setCoaches(Array.isArray(data.items) ? data.items : []);
+									} catch (e) {
+										// noop
+									} finally {
+										setCoachesLoading(false);
+									}
+								}}
+							>
+								{coachesLoading ? 'Cargando…' : 'Cargar entrenadores'}
+							</button>
+						)}
+					</div>
+
+					{/* Clubes creados */}
+					<div className="rounded border p-4 space-y-3">
+						<div className="flex items-center justify-between gap-2 flex-wrap">
+							<h2 className="text-lg font-medium">Clubes creados / autorizados</h2>
+							<button
+								className="rounded border px-3 py-1 text-sm"
+								disabled={clubsListLoading}
+								onClick={async () => {
+									try {
+										setClubsListLoading(true);
+										const auth = getAuth();
+										const cu = auth.currentUser;
+										if (!cu) throw new Error('Usuario no autenticado');
+										const token = await getIdToken(cu, true);
+										const res = await fetch('/api/admin/clubs?limit=100', { headers: { Authorization: `Bearer ${token}` } });
+										const data = await res.json();
+										setClubsList(Array.isArray(data.items) ? data.items : []);
+									} catch (e) {
+										// noop
+									} finally {
+										setClubsListLoading(false);
+									}
+								}}
+							>
+								{clubsListLoading ? 'Cargando…' : (clubsList.length ? 'Refrescar clubes' : 'Cargar clubes')}
+							</button>
+						</div>
+						<div className="rounded border overflow-x-auto">
+							<table className="min-w-[600px] text-sm">
+								<thead>
+									<tr className="text-left">
+										<th className="py-2 px-3">Nombre</th>
+										<th className="py-2 px-3">Email</th>
+										<th className="py-2 px-3">Ciudad</th>
+										<th className="py-2 px-3">Provincia</th>
+										<th className="py-2 px-3">Estado</th>
+										<th className="py-2 px-3">ID</th>
+									</tr>
+								</thead>
+								<tbody>
+									{clubsList.map((c: any) => (
+										<tr key={c.id} className="border-t">
+											<td className="py-2 px-3 font-medium">{c.name || '-'}</td>
+											<td className="py-2 px-3">{c.email || '-'}</td>
+											<td className="py-2 px-3">{c.city || '-'}</td>
+											<td className="py-2 px-3">{c.province || '-'}</td>
+											<td className="py-2 px-3">Operativo</td>
+											<td className="py-2 px-3 font-mono text-xs">{c.id}</td>
+										</tr>
+									))}
+									{!clubsList.length && (
+										<tr>
+											<td className="py-6 px-3 text-gray-500" colSpan={6}>
+												{clubsListLoading ? 'Cargando…' : 'Pulsá "Cargar clubes" para ver los clubes creados'}
+											</td>
+										</tr>
+									)}
+								</tbody>
+							</table>
+						</div>
+					</div>
+
 					<div className="flex items-center justify-between gap-2 flex-wrap">
 						<h2 className="text-lg font-medium">Alta de clubes</h2>
 						<button
@@ -868,7 +1243,7 @@ export default function AdminHome() {
 							</tbody>
 						</table>
 					</div>
-					<ClubAdminForm />
+					<ClubAdminForm onClubCreated={refreshClubsList} />
 				</div>
 			)}
 		</div>

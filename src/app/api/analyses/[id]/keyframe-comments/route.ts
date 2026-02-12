@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import { getAppBaseUrl } from '@/lib/app-url';
 import { hasPaidCoachAccessToPlayer } from '@/lib/coach-access';
+import { keyframeIdFromUrl, isKeyframeUrlTooLong } from '@/lib/keyframe-id';
 import { buildConversationId, getMessageType } from '@/lib/message-utils';
 import { sendCustomEmail } from '@/lib/email-service';
 import { coachKeyframeCommentTemplate } from '@/lib/email/templates/coach-keyframe-comment';
@@ -10,6 +11,7 @@ type KeyframeComment = {
   id?: string;
   analysisId: string;
   keyframeUrl: string;
+  keyframeId?: string;
   angle?: 'front' | 'back' | 'left' | 'right';
   index?: number;
   comment: string;
@@ -76,7 +78,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const ref = adminDb.collection('analyses').doc(analysisId).collection('keyframeComments');
     let q = ref.orderBy('createdAt', 'desc') as FirebaseFirestore.Query<FirebaseFirestore.DocumentData>;
     if (keyframeUrl) {
-      q = q.where('keyframeUrl', '==', keyframeUrl);
+      if (isKeyframeUrlTooLong(keyframeUrl)) {
+        q = q.where('keyframeId', '==', keyframeIdFromUrl(keyframeUrl));
+      } else {
+        q = q.where('keyframeUrl', '==', keyframeUrl);
+      }
     }
     const snap = await q.get();
     const items: KeyframeComment[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
@@ -98,7 +104,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const ref = adminDb.collection('analyses').doc(analysisId).collection('keyframeComments');
       let q = ref.orderBy('createdAt', 'desc') as FirebaseFirestore.Query<FirebaseFirestore.DocumentData>;
       if (keyframeUrl) {
-        q = q.where('keyframeUrl', '==', keyframeUrl);
+        if (isKeyframeUrlTooLong(keyframeUrl)) {
+          q = q.where('keyframeId', '==', keyframeIdFromUrl(keyframeUrl));
+        } else {
+          q = q.where('keyframeUrl', '==', keyframeUrl);
+        }
       }
       const snap = await q.get();
       const items: KeyframeComment[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
@@ -118,6 +128,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const payload: KeyframeComment = {
       analysisId,
       keyframeUrl,
+      keyframeId: keyframeIdFromUrl(keyframeUrl),
       angle,
       index,
       comment,

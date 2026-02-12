@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
+import { requireAdminRequest } from '@/lib/api-admin-auth';
+import { checkRateLimit } from '@/lib/rate-limit';
 import { buildScoreMetadata, loadWeightsFromFirestore } from '@/lib/scoring';
 
 export const dynamic = 'force-dynamic';
@@ -54,6 +56,11 @@ function normalizeDetailedChecklist(input: ChecklistCategory[]) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAdminRequest(req);
+  if (!auth.ok) return auth.response;
+  if (!checkRateLimit(`debug:${auth.uid}`)) {
+    return NextResponse.json({ error: 'Demasiadas solicitudes' }, { status: 429 });
+  }
   try {
     if (!adminDb) {
       return NextResponse.json({ ok: false, error: 'Admin SDK no inicializado' }, { status: 500 });

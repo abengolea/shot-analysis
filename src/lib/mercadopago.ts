@@ -1,9 +1,11 @@
+import crypto from 'crypto';
 import { adminDb } from '@/lib/firebase-admin';
 import { sendCustomEmail } from '@/lib/email-service';
 import { getAppBaseUrl } from '@/lib/app-url';
 import { buildConversationId, getMessageType } from '@/lib/message-utils';
 
 const MP_BASE = process.env.MP_BASE_URL || 'https://api.mercadopago.com';
+const MP_WEBHOOK_SECRET = process.env.MP_WEBHOOK_SECRET || '';
 const MP_PLATFORM_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN_AR || '';
 const MP_NOTIFICATION_URL = process.env.MP_WEBHOOK_URL || '';
 const MP_SPONSOR_ID_RAW = process.env.MP_SPONSOR_ID || process.env.MP_PLATFORM_USER_ID || '';
@@ -174,6 +176,35 @@ export async function createPreference(input: CreatePreferenceInput) {
   }
 
   return pref;
+}
+
+/**
+ * Valida la firma x-signature del webhook de Mercado Pago (HMAC SHA256).
+ * Si MP_WEBHOOK_SECRET no está configurado, retorna true (no fallar en dev).
+ */
+export function verifyWebhookSignature(params: {
+  xSignature: string | null;
+  xRequestId: string | null;
+  dataId: string | number | null;
+  secret: string;
+}): boolean {
+  const { xSignature, xRequestId, dataId, secret } = params;
+  if (!secret) return true;
+  if (!xSignature || !xSignature.includes('v1=')) return false;
+  const parts = xSignature.split(',');
+  let ts: string | null = null;
+  let hash: string | null = null;
+  for (const part of parts) {
+    const [key, value] = part.split('=').map((s) => s.trim());
+    if (key === 'ts') ts = value;
+    else if (key === 'v1') hash = value;
+  }
+  if (!ts || !hash) return false;
+  const idStr = dataId != null ? String(dataId).toLowerCase() : '';
+  const requestId = xRequestId || '';
+  const manifest = `id:${idStr};request-id:${requestId};ts:${ts};`;
+  const computed = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
+  return computed === hash;
 }
 
 export async function handleWebhook(event: any) {

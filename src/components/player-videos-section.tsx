@@ -552,7 +552,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                           {getShotTypeLabel(comparisonSecond.shotType)} · {formatDate(comparisonSecond.createdAt)}
                         </p>
                         <div className="aspect-video rounded-lg overflow-hidden bg-muted">
-                          <VideoPlayer src={normalizeVideoUrl(comparisonSecond.videoUrl!)} />
+                          <VideoPlayer src={normalizeVideoUrl(comparisonSecond.videoUrl ?? '') ?? ''} />
                         </div>
                       </div>
                     </div>

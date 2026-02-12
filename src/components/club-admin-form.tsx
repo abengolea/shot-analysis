@@ -33,23 +33,28 @@ function SubmitButton() {
   );
 }
 
-export function ClubAdminForm() {
+export function ClubAdminForm({ onClubCreated }: { onClubCreated?: () => void }) {
   const [state, formAction] = useActionState(adminCreateClub as any, { success: false, message: "" } as any);
   const { toast } = useToast();
   const formRef = useRef<HTMLFormElement>(null);
+  const lastHandledRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (state.message) {
-      toast({
-        title: state.success ? "Éxito" : "Error",
-        description: state.message,
-        variant: state.success ? "default" : "destructive",
-      });
-      if (state.success) {
-        formRef.current?.reset();
-      }
+    if (!state.message) return;
+    const key = `${state.success}-${state.message}-${(state as any).userId ?? ""}`;
+    if (lastHandledRef.current === key) return;
+    lastHandledRef.current = key;
+
+    toast({
+      title: state.success ? "Éxito" : "Error",
+      description: state.message,
+      variant: state.success ? "default" : "destructive",
+    });
+    if (state.success) {
+      formRef.current?.reset();
+      onClubCreated?.();
     }
-  }, [state, toast]);
+  }, [state, toast, onClubCreated]);
 
   return (
     <Card>
