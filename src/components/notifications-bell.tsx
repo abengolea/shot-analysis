@@ -81,7 +81,7 @@ export function NotificationsBell() {
   // Contador de tickets no leídos (para user o admin)
   useEffect(() => {
     let mounted = true;
-    let intervalId: any;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
     const run = async () => {
       try {
         const auth = getAuth();

@@ -7,8 +7,9 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: false,
   },
   eslint: {
-    // Mantener true hasta reducir warnings; el build falla si hay errores de ESLint
-    ignoreDuringBuilds: true,
+    // ESLint corre durante build; solo hay warnings (no errors) por lo que el build pasa
+    // ~933 warnings pendientes: mayoría son no-explicit-any (691) y no-unused-vars (193)
+    ignoreDuringBuilds: false,
   },
   turbopack: {
     resolveAlias: {

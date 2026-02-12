@@ -42,8 +42,8 @@ const features = [
 
 export default function LandingPage() {
   return (
-    <div className="flex flex-1 flex-col">
-       <header className="container mx-auto flex items-start justify-between gap-6 py-2">
+    <div className="flex flex-1 flex-col min-w-0 overflow-x-hidden">
+       <header className="container mx-auto flex flex-wrap items-start justify-between gap-4 px-4 sm:px-6 py-2">
         <div className="flex flex-col items-start gap-3">
           <Link href="/" className="flex items-center gap-2">
               <Logo size="md" />
@@ -89,7 +89,7 @@ export default function LandingPage() {
         </section>
 
         {/* Features Section */}
-        <section className="container mx-auto max-w-5xl text-center">
+        <section className="container mx-auto max-w-5xl px-4 sm:px-6 text-center">
           <h2 className="font-headline text-3xl font-bold uppercase text-primary">
             Funciones principales
           </h2>
@@ -111,7 +111,7 @@ export default function LandingPage() {
         </section>
 
         {/* How It Works Section */}
-        <section className="container mx-auto max-w-5xl text-center">
+        <section className="container mx-auto max-w-5xl px-4 sm:px-6 text-center">
           <h2 className="font-headline text-3xl font-bold uppercase text-primary">
             Cómo funciona
           </h2>
@@ -144,7 +144,7 @@ export default function LandingPage() {
         </section>
 
         {/* FAQ Section */}
-        <section className="container mx-auto max-w-3xl">
+        <section className="container mx-auto max-w-3xl px-4 sm:px-6">
           <h2 className="text-center font-headline text-3xl font-bold uppercase text-primary">Preguntas frecuentes</h2>
           <div className="mt-8 space-y-4">
             <Card>
@@ -183,7 +183,7 @@ export default function LandingPage() {
         </section>
 
         {/* Footer con botones */}
-        <footer className="container mx-auto max-w-3xl py-10 text-center">
+        <footer className="container mx-auto max-w-3xl px-4 sm:px-6 py-10 text-center">
           <div className="flex justify-center gap-4">
             <Button size="lg" asChild>
               <Link href="/register">Crear cuenta <ArrowRight className="ml-2" /></Link>

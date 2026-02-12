@@ -225,7 +225,7 @@ export default function CoachesPage() {
 
   // Búsqueda básica y ordenamiento (sin filtrar por precio/rating)
   const filteredCoaches = useMemo(() => {
-    let filtered = coaches.filter(coach => {
+    const filtered = coaches.filter(coach => {
       if (coach.status === 'suspended') return false;
       // Filtrar coaches ocultos
       if (coach.hidden === true) return false;

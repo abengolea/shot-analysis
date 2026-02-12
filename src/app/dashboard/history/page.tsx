@@ -168,7 +168,7 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-8 min-w-0">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-headline text-2xl font-bold">Historial del Jugador</h1>

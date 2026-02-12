@@ -69,7 +69,7 @@ export default function RankingsPage() {
   }
 
   return (
-    <div className="container mx-auto max-w-5xl py-8 space-y-6">
+    <div className="container mx-auto max-w-5xl py-8 px-4 sm:px-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Rankings</h1>
         <p className="text-muted-foreground">Top 50 por categoría (General y por tipo de tiro)</p>
@@ -79,7 +79,7 @@ export default function RankingsPage() {
         <div className="space-y-1">
           <span className="text-sm text-muted-foreground">Categoría</span>
           <Select value={category} onValueChange={(v) => setCategory(v as PublicCategory)}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -93,7 +93,7 @@ export default function RankingsPage() {
         <div className="space-y-1">
           <span className="text-sm text-muted-foreground">Tiro</span>
           <Select value={shotType} onValueChange={(v) => setShotType(v as any)}>
-            <SelectTrigger className="w-[220px]">
+            <SelectTrigger className="w-full sm:w-[220px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

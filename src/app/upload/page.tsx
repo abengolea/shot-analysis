@@ -628,7 +628,7 @@ function UploadPageInner() {
   const anyVideoSelected = !!(selectedVideo || backVideo || leftVideo || rightVideo);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-6 px-4 sm:px-6 py-4">
       <div className="text-center">
         <h1 className="font-headline text-4xl font-bold tracking-tight">
           {analysisMode === 'biomech-pro' ? 'BIOMECH PRO · Subir Video' : 'Analizar Nuevo Lanzamiento'}

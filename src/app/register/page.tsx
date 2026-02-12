@@ -5,7 +5,7 @@ import { RegisterForm } from "@/components/register-form";
 
 export default function RegisterPage() {
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center justify-center py-12">
+    <div className="mx-auto flex w-full max-w-md flex-col items-center justify-center py-12 px-4">
        <div className="mb-8 flex flex-col items-center text-center">
         <Link href="/" className="flex flex-col items-center gap-2">
             <Image

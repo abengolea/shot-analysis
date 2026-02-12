@@ -158,7 +158,7 @@ export default function CoachDashboardPage() {
   // y también análisis vinculados directamente al coach (coachId), aunque el jugador ya no esté vinculado.
   useEffect(() => {
     if (!user) return;
-    let unsubs: Array<() => void> = [];
+    const unsubs: Array<() => void> = [];
     const chunkMap: Record<string, any[]> = {};
     try {
       const ids = players.map((p) => p.id).filter(Boolean);
@@ -611,9 +611,9 @@ export default function CoachDashboardPage() {
   };
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-8 min-w-0">
       <div>
-        <h1 className="font-headline text-4xl font-bold tracking-tight">
+        <h1 className="font-headline text-2xl sm:text-4xl font-bold tracking-tight break-words">
           Panel de Entrenador
         </h1>
         <p className="mt-2 text-muted-foreground">

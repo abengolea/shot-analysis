@@ -578,7 +578,7 @@ export function detectRelease(
   
   // PROXY 3: Aumento de distancia mano-cabeza (si hay frames)
   let releaseHandHead: number | null = null;
-  let maxHandHeadDist = -Infinity;
+  const maxHandHeadDist = -Infinity;
   
   if (frames && frames.length > 0) {
     const relevantFrames = frames.filter(f => {

@@ -112,7 +112,7 @@ export default function AdminHome() {
 			document.body.appendChild(link);
 			link.click();
 			document.body.removeChild(link);
-		} catch (e) {}
+		} catch {}
 	};
 
 	// Datos filtrados (cliente) - barato
@@ -149,7 +149,7 @@ export default function AdminHome() {
 			const sp = new URLSearchParams(window.location.search);
 			const t = sp.get("tab");
 			if (t) setActiveTab(t);
-		} catch (e) {}
+		} catch {}
 	}, []);
 
 	useEffect(() => {
@@ -188,7 +188,7 @@ export default function AdminHome() {
 				const res = await fetch('/api/admin/coaches?limit=200', { headers: { Authorization: `Bearer ${token}` } });
 				const data = await res.json();
 				if (Array.isArray(data.items)) setCoaches(data.items);
-			} catch (e) {
+			} catch {
 				// noop
 			} finally {
 				setCoachesLoading(false);
@@ -205,7 +205,7 @@ export default function AdminHome() {
 				const res = await fetch('/api/admin/clubs?limit=100', { headers: { Authorization: `Bearer ${token}` } });
 				const data = await res.json();
 				if (Array.isArray(data.items)) setClubsList(data.items);
-			} catch (e) {
+			} catch {
 				// noop
 			} finally {
 				setClubsListLoading(false);
@@ -231,7 +231,7 @@ export default function AdminHome() {
 			const url = new URL(window.location.href);
 			url.searchParams.set('tab', id);
 			window.history.replaceState({}, '', url.toString());
-		} catch (e) {}
+		} catch {}
 	};
 
 	const refreshClubsList = useCallback(async () => {
@@ -277,11 +277,11 @@ export default function AdminHome() {
 	};
 
 	return (
-		<div className="p-6 space-y-6">
+		<div className="p-4 sm:p-6 space-y-6 min-w-0">
 			<h1 className="text-xl font-semibold">Admin</h1>
 
 			{/* Tabs */}
-			<div className="flex gap-2 border-b">
+			<div className="flex gap-2 border-b overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
 				{Tabs.map(t => (
 					<button
 						key={t.id}
@@ -438,7 +438,7 @@ export default function AdminHome() {
 									const data = await res.json();
 									setSubs(Array.isArray(data.items) ? data.items : []);
 									setSubsNext(data.nextCursor);
-								} catch (e) {
+								} catch {
 									// noop
 								} finally {
 									setSubsLoading(false);
@@ -495,7 +495,7 @@ export default function AdminHome() {
 									const data = await res.json();
 									setSubs([...subs, ...(Array.isArray(data.items) ? data.items : [])]);
 									setSubsNext(data.nextCursor);
-								} catch (e) {
+								} catch {
 									// noop
 								} finally {
 									setSubsLoading(false);
@@ -547,7 +547,7 @@ export default function AdminHome() {
 										const data = await res.json();
 										setPayments(Array.isArray(data.items) ? data.items : []);
 										setPaymentsNext(data.nextCursor);
-									} catch (e) {
+									} catch {
 										// noop
 									} finally {
 										setPaymentsLoading(false);
@@ -610,7 +610,7 @@ export default function AdminHome() {
 									const data = await res.json();
 									setPayments([...payments, ...(Array.isArray(data.items) ? data.items : [])]);
 									setPaymentsNext(data.nextCursor);
-								} catch (e) {
+								} catch {
 									// noop
 								} finally {
 									setPaymentsLoading(false);
@@ -668,7 +668,7 @@ export default function AdminHome() {
 									const data = await res.json();
 									setPlayers(Array.isArray(data.items) ? data.items : []);
 									setPlayersNext(search || playersClubFilter ? undefined : data.nextCursor);
-								} catch (e) {
+								} catch {
 									// noop
 								} finally {
 									setPlayersLoading(false);
@@ -754,7 +754,7 @@ export default function AdminHome() {
 									const data = await res.json();
 									setPlayers([...players, ...(Array.isArray(data.items) ? data.items : [])]);
 									setPlayersNext(data.nextCursor);
-								} catch (e) {
+								} catch {
 									// noop
 								} finally {
 									setPlayersLoading(false);
@@ -795,7 +795,7 @@ export default function AdminHome() {
 									const data = await res.json();
 									setCoaches(Array.isArray(data.items) ? data.items : []);
 									setCoachesNext(data.nextCursor);
-								} catch (e) {
+								} catch {
 									// noop
 								} finally {
 									setCoachesLoading(false);
@@ -892,7 +892,7 @@ export default function AdminHome() {
 									const data = await res.json();
 									setCoaches([...coaches, ...(Array.isArray(data.items) ? data.items : [])]);
 									setCoachesNext(data.nextCursor);
-								} catch (e) {
+								} catch {
 									// noop
 								} finally {
 									setCoachesLoading(false);
@@ -1083,7 +1083,7 @@ export default function AdminHome() {
 										const res = await fetch('/api/admin/coaches?limit=200', { headers: { Authorization: `Bearer ${token}` } });
 										const data = await res.json();
 										setCoaches(Array.isArray(data.items) ? data.items : []);
-									} catch (e) {
+									} catch {
 										// noop
 									} finally {
 										setCoachesLoading(false);
@@ -1112,7 +1112,7 @@ export default function AdminHome() {
 										const res = await fetch('/api/admin/clubs?limit=100', { headers: { Authorization: `Bearer ${token}` } });
 										const data = await res.json();
 										setClubsList(Array.isArray(data.items) ? data.items : []);
-									} catch (e) {
+									} catch {
 										// noop
 									} finally {
 										setClubsListLoading(false);
@@ -1174,7 +1174,7 @@ export default function AdminHome() {
 									const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
 									const data = await res.json();
 									setClubRequests(Array.isArray(data.items) ? data.items : []);
-								} catch (e) {
+								} catch {
 									// noop
 								} finally {
 									setClubRequestsLoading(false);

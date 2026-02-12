@@ -142,7 +142,7 @@ export default function CoachesPage() {
 
   // Búsqueda básica y ordenamiento (sin filtrar por precio/rating)
   const filteredCoaches = useMemo(() => {
-    let filtered = coaches.filter(coach => {
+    const filtered = coaches.filter(coach => {
       if (coach.status === 'suspended') return false;
       const matchesSearch = coach.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         coach.bio?.toLowerCase().includes(searchTerm.toLowerCase()) ||

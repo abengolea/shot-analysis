@@ -49,7 +49,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
   
   if (isPublicRoute) {
-    return <div className="flex flex-1 flex-col">{children}</div>;
+    return <div className="flex flex-1 flex-col min-w-0 overflow-x-hidden">{children}</div>;
   }
   
   return (

@@ -474,7 +474,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
   });
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-8 min-w-0 overflow-x-hidden">
       {/* Header con info del jugador */}
       <div className="mb-6">
         <Link href={isCoach ? "/coach/dashboard" : "/dashboard"}>

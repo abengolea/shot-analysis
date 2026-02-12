@@ -102,7 +102,7 @@ export default function SupportPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-4">
+    <div className="max-w-4xl mx-auto p-4 min-w-0 overflow-x-hidden">
       <h1 className="text-2xl font-semibold mb-4">Soporte</h1>
 
       <form onSubmit={onCreate} className="border rounded p-4 mb-6 space-y-3">
@@ -160,8 +160,8 @@ export default function SupportPage() {
         )}
         {tickets.map(t => (
           <Link key={t.id} href={`/support/${t.id}`} className="block p-4 hover:bg-gray-50">
-            <div className="flex items-center justify-between">
-              <div className="font-medium">{t.subject}</div>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+            <div className="font-medium break-words">{t.subject}</div>
               <div className="text-xs uppercase text-gray-500">{statusLabel[t.status] || t.status}</div>
             </div>
             <div className="text-sm text-gray-600">{t.category} · prioridad {priorityLabel[t.priority] || t.priority}</div>

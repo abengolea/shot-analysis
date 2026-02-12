@@ -577,7 +577,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                                 setComparisonSecond(other ?? null);
                               }}
                             >
-                              <SelectTrigger className="w-[220px]" aria-label="Comparar con otro video">
+                              <SelectTrigger className="w-full sm:w-[220px]" aria-label="Comparar con otro video">
                                 <SelectValue placeholder="Comparar con otro video" />
                               </SelectTrigger>
                               <SelectContent>

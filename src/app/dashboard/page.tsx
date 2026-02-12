@@ -514,22 +514,22 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex items-center justify-between">
-         <div className="flex items-center gap-4">
+    <div className="flex flex-col gap-8 min-w-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+         <div className="flex items-center gap-4 min-w-0">
             <Avatar className="h-16 w-16">
               <AvatarImage src={userProfile.avatarUrl} alt={userProfile.name || user.email || 'Usuario'} />
               <AvatarFallback>{(userProfile.name && userProfile.name.charAt(0)) || (user?.email?.[0]?.toUpperCase() ?? 'U')}</AvatarFallback>
             </Avatar>
             <div>
-              <h1 className="font-headline text-3xl font-bold tracking-tight">
+              <h1 className="font-headline text-2xl sm:text-3xl font-bold tracking-tight break-words">
                 Bienvenido, {userProfile.name || user.email || 'Usuario'}
               </h1>
               <p className="text-muted-foreground">Aquí está tu resumen de actividad.</p>
             </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
             <Button asChild variant="outline">
               <Link href="/dashboard/videos">
                 <Video className="mr-2 h-4 w-4" />
@@ -641,7 +641,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">Tipo</span>
               <Select value={recentShotFilter} onValueChange={setRecentShotFilter}>
-                <SelectTrigger className="w-60">
+                <SelectTrigger className="w-full sm:w-60">
                   <SelectValue placeholder="Tipo de tiro" />
                 </SelectTrigger>
                 <SelectContent>
@@ -689,9 +689,9 @@ export default function DashboardPage() {
                 return (
                   <div
                     key={analysis.id}
-                    className={`flex items-center justify-between p-4 border rounded-lg ${hasCoachFeedback ? 'border-emerald-200 bg-emerald-50' : ''}`}
+                    className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 border rounded-lg ${hasCoachFeedback ? 'border-emerald-200 bg-emerald-50' : ''}`}
                   >
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 min-w-0">
                       <div className={`p-2 rounded-full ${hasCoachFeedback ? 'bg-emerald-100' : 'bg-blue-100'}`}>
                         <Video className={`h-5 w-5 ${hasCoachFeedback ? 'text-emerald-700' : 'text-blue-600'}`} />
                       </div>
@@ -739,7 +739,7 @@ export default function DashboardPage() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       {analysis.status === 'analyzed' && (
                         <Button asChild size="sm">
                           <Link href={`/analysis/${analysis.id}`}>
