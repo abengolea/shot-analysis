@@ -150,7 +150,7 @@ function getLogoInlineAttachment(): ResendAttachment | null {
 }
 
 /** Reemplaza la URL/data-URI del logo en el HTML por cid: para que use el adjunto inline. */
-function useInlineLogoInHtml(html: string): string {
+function replaceLogoWithInlineCid(html: string): string {
   if (!html.includes('alt="Chaaaas.com"')) return html;
   return html.replace(
     /(<img[^>]*?)src="[^"]*"([^>]*alt="Chaaaas\.com"[^>]*>)/i,
@@ -170,7 +170,7 @@ async function sendEmailUnified(options: EmailOptions): Promise<boolean> {
   const logoAttachment = getLogoInlineAttachment();
   const attachments = [...(options.attachments || [])];
   if (logoAttachment) {
-    html = useInlineLogoInHtml(html);
+    html = replaceLogoWithInlineCid(html);
     attachments.push(logoAttachment);
   }
 
