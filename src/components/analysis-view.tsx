@@ -49,6 +49,8 @@ import {
   Dumbbell,
   Camera,
   MessageSquare,
+  Video,
+  Trash2,
   Move,
   Minus,
   Pencil,
@@ -64,6 +66,7 @@ import {
 } from "lucide-react";
 import { DrillCard } from "./drill-card";
 import { DetailedChecklist } from "./detailed-checklist";
+import { CoachFeedbackVideoRecorder } from "./coach-feedback-video-recorder";
 import { CANONICAL_CATEGORIES, CANONICAL_CATEGORIES_LIBRE } from "@/lib/canonical-checklist";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
@@ -566,6 +569,9 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
   // ===== Feedback del entrenador (privado para jugador y coach) =====
   const [coachFeedbackByItemId, setCoachFeedbackByItemId] = useState<Record<string, { rating?: number; comment?: string }>>({});
   const [coachSummary, setCoachSummary] = useState<string>("");
+  const [coachFeedbackVideoUrl, setCoachFeedbackVideoUrl] = useState<string | null>(null);
+  const [uploadingFeedbackVideo, setUploadingFeedbackVideo] = useState(false);
+  const [removingFeedbackVideo, setRemovingFeedbackVideo] = useState(false);
   const seededCoachSummaryRef = useRef(false);
   const [coachFeedbackCoachName, setCoachFeedbackCoachName] = useState<string | null>(null);
   const [coachFeedbackCoachId, setCoachFeedbackCoachId] = useState<string | null>(null);
@@ -755,6 +761,8 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
             summaryPreview: summaryValue.substring(0, 100)
           });
           setCoachSummary(summaryValue);
+          const videoUrl = typeof fb?.coachFeedbackVideoUrl === 'string' && fb.coachFeedbackVideoUrl.trim() ? fb.coachFeedbackVideoUrl.trim() : null;
+          setCoachFeedbackVideoUrl(videoUrl);
           const coachId = String(fb?.createdBy || fb?.id || "").trim();
           setCoachFeedbackCoachId(coachId || null);
           const coachNameFromFeedback = typeof fb?.coachName === "string" ? fb.coachName.trim() : "";
@@ -788,6 +796,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
           setIsEditingCoachFeedback(canEdit);
           setCoachFeedbackCoachName(null);
           setCoachFeedbackCoachId(null);
+          setCoachFeedbackVideoUrl(null);
         }
       } catch (e) {
         console.error('[CoachFeedback] ❌ Error cargando feedback:', e);
@@ -836,6 +845,76 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
       toast({ title: 'Error', description: message, variant: 'destructive' });
     } finally {
       setSavingCoachFeedback(false);
+    }
+  };
+
+  // Subir video de devolución (2-4 min, opcional)
+  const handleUploadFeedbackVideo = async (file: File) => {
+    if (!canEdit || !user) return;
+    const duration = await new Promise<number>((resolve, reject) => {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => {
+        URL.revokeObjectURL(video.src);
+        resolve(video.duration);
+      };
+      video.onerror = () => reject(new Error('No se pudo leer el video'));
+      video.src = URL.createObjectURL(file);
+    });
+    const minSec = 120;
+    const maxSec = 240;
+    if (duration < minSec || duration > maxSec) {
+      toast({
+        title: 'Duración incorrecta',
+        description: `El video debe durar entre 2 y 4 minutos (${Math.floor(duration / 60)} min actuales).`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      setUploadingFeedbackVideo(true);
+      const token = await getIdToken(getAuth().currentUser!);
+      const formData = new FormData();
+      formData.append('video', file);
+      const res = await fetch(`/api/analyses/${analysis.id}/coach-feedback-video`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || 'No se pudo subir el video.');
+      }
+      setCoachFeedbackVideoUrl(data?.url || null);
+      toast({ title: 'Video subido', description: 'El video de devolución se guardó correctamente.' });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error al subir el video.';
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
+    } finally {
+      setUploadingFeedbackVideo(false);
+    }
+  };
+
+  const handleRemoveFeedbackVideo = async () => {
+    if (!canEdit || !coachFeedbackVideoUrl) return;
+    try {
+      setRemovingFeedbackVideo(true);
+      const token = await getIdToken(getAuth().currentUser!);
+      const res = await fetch(`/api/analyses/${analysis.id}/coach-feedback-video`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || 'No se pudo eliminar el video.');
+      }
+      setCoachFeedbackVideoUrl(null);
+      toast({ title: 'Video eliminado', description: 'El video de devolución se eliminó correctamente.' });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error al eliminar el video.';
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
+    } finally {
+      setRemovingFeedbackVideo(false);
     }
   };
 
@@ -3728,6 +3807,54 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
               return <div>Error rendering checklist: {message}</div>;
             }
           })()}
+
+          {/* Video de devolución (opcional, 2-4 min) - entre calificaciones y revisión final */}
+          {isCoach && (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                  <Video className="h-5 w-5" />
+                  Video de devolución (opcional)
+                </CardTitle>
+                <CardDescription>
+                  Podés subir un video de 2 a 4 minutos con feedback personalizado para el jugador.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {coachFeedbackVideoUrl ? (
+                  <div className="space-y-3">
+                    <video
+                      src={coachFeedbackVideoUrl}
+                      controls
+                      className="w-full max-w-lg rounded-lg border bg-black aspect-video"
+                      playsInline
+                    />
+                    {isEditingCoachFeedback && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRemoveFeedbackVideo}
+                        disabled={removingFeedbackVideo}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        {removingFeedbackVideo ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                        Eliminar video
+                      </Button>
+                    )}
+                  </div>
+                ) : isEditingCoachFeedback ? (
+                  <CoachFeedbackVideoRecorder
+                    onUpload={handleUploadFeedbackVideo}
+                    uploading={uploadingFeedbackVideo}
+                    inputId="coach-feedback-video-input"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">No hay video de devolución.</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {isCoach && (
             <div className="mt-6 space-y-4">
               {hasExistingCoachFeedback && !isEditingCoachFeedback && (
@@ -3879,6 +4006,8 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                                   if (fb) {
                                     setCoachFeedbackByItemId(fb.items || {});
                                     setCoachSummary(fb.coachSummary || "");
+                                    const vUrl = typeof fb?.coachFeedbackVideoUrl === 'string' && fb.coachFeedbackVideoUrl.trim() ? fb.coachFeedbackVideoUrl.trim() : null;
+                                    setCoachFeedbackVideoUrl(vUrl);
                                   }
                                   setIsEditingCoachFeedback(false);
                                 } catch (e) {}
@@ -3917,14 +4046,8 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <div className="text-sm font-semibold">Comentario global</div>
-                    <FormattedText
-                      text={resolvedCoachSummary || 'Sin comentario global'}
-                      className="text-sm text-muted-foreground"
-                    />
-                  </div>
-                  <div className="text-sm font-semibold">Calificaciones y comentarios del entrenador</div>
-                  {(() => {
+                    <div className="text-sm font-semibold">Calificaciones y comentarios del entrenador</div>
+                    {(() => {
                     // Debug: mostrar información sobre los IDs
                     const allChecklistIds = checklistState.flatMap(cat => cat.items.map(it => it.id));
                     const allFeedbackIds = Object.keys(coachFeedbackByItemId);
@@ -4016,7 +4139,54 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                         </div>
                       </div>
                     ));
-                  })()}
+                    })()}
+                  </div>
+                  {coachFeedbackVideoUrl ? (
+                    <div className="space-y-2 pt-4 border-t">
+                      <div className="text-sm font-semibold flex items-center gap-2">
+                        <Video className="h-4 w-4" />
+                        Video de devolución del entrenador
+                      </div>
+                      <video
+                        src={coachFeedbackVideoUrl}
+                        controls
+                        className="w-full max-w-lg rounded-lg border bg-black aspect-video"
+                        playsInline
+                      />
+                      {isCoach && canEdit && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRemoveFeedbackVideo}
+                          disabled={removingFeedbackVideo}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          {removingFeedbackVideo ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                          Eliminar video
+                        </Button>
+                      )}
+                    </div>
+                  ) : isCoach && canEdit ? (
+                    <div className="space-y-2 pt-4 border-t">
+                      <div className="text-sm font-semibold flex items-center gap-2">
+                        <Video className="h-4 w-4" />
+                        Video de devolución (opcional)
+                      </div>
+                      <CoachFeedbackVideoRecorder
+                        onUpload={handleUploadFeedbackVideo}
+                        uploading={uploadingFeedbackVideo}
+                        inputId="coach-feedback-video-input-checklist"
+                        compact
+                      />
+                    </div>
+                  ) : null}
+                  <div className="space-y-2 pt-4 border-t">
+                    <div className="text-sm font-semibold">Comentario global</div>
+                    <FormattedText
+                      text={resolvedCoachSummary || 'Sin comentario global'}
+                      className="text-sm text-muted-foreground"
+                    />
+                  </div>
                 </CardContent>
               </Card>
             ) : (

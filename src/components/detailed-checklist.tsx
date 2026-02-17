@@ -252,7 +252,7 @@ function ChecklistItem({
               De acuerdo con la IA ({rating})
             </Button>
             <Button size="sm" variant="outline" disabled={!coachIsEditable} onClick={() => setShowReview((s)=>!s)}>
-              {showReview ? 'Cerrar revisión' : (isReviewed ? 'Revisado' : 'Revisar')}
+              {showReview ? 'Cerrar revisión' : (coachIsEditable ? 'Revisar' : (isReviewed ? 'Revisado' : 'Revisar'))}
             </Button>
           </div>
           {showReview && (
