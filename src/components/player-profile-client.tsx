@@ -30,7 +30,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useAuth } from "@/hooks/use-auth";
 import { db } from "@/lib/firebase";
 import { collection, doc, getDoc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
-import { normalizeVideoUrl } from "@/lib/video-url";
+import { getAnalysisVideoUrl, getAnalysisVideoAngleLabel } from "@/lib/video-url";
 
 // Normaliza cualquier escala a 0..100 con 1 decimal (prioriza 1..5, luego 1..10)
 const toPct = (score: number): number => {
@@ -266,16 +266,6 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
     const label = date && !Number.isNaN(date.getTime()) ? date.toLocaleString('es-ES') : 'Fecha desconocida';
     const shotType = analysis?.shotType ? ` · ${analysis.shotType}` : '';
     return `${label}${shotType}`;
-  };
-
-  const getAnalysisVideoUrl = (analysis: any) => {
-    const rawUrl =
-      analysis?.videoFrontUrl ||
-      analysis?.videoUrl ||
-      analysis?.videoLeftUrl ||
-      analysis?.videoRightUrl ||
-      analysis?.videoBackUrl;
-    return rawUrl ? (normalizeVideoUrl(String(rawUrl)) ?? undefined) : undefined;
   };
 
   useEffect(() => {
@@ -820,7 +810,9 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
                         <AccordionContent className="space-y-4 pb-4">
                           <div className="grid gap-4 md:grid-cols-2">
                             <div className="space-y-2">
-                              <div className="text-xs font-medium text-muted-foreground">Video Antes</div>
+                              <div className="text-xs font-medium text-muted-foreground">
+                                Video Antes · Ángulo: {getAnalysisVideoAngleLabel(before)}
+                              </div>
                               {getAnalysisVideoUrl(before) ? (
                                 <video
                                   controls
@@ -832,7 +824,9 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
                               )}
                             </div>
                             <div className="space-y-2">
-                              <div className="text-xs font-medium text-muted-foreground">Video Después</div>
+                              <div className="text-xs font-medium text-muted-foreground">
+                                Video Después · Ángulo: {getAnalysisVideoAngleLabel(after)}
+                              </div>
                               {getAnalysisVideoUrl(after) ? (
                                 <video
                                   controls

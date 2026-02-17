@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar, Target, Play, Star, TrendingUp, TrendingDown, GitCompare, X } from "lucide-react";
 import { ShotAnalysis } from "@/lib/types";
 import { VideoPlayer } from "@/components/video-player";
-import { normalizeVideoUrl } from "@/lib/video-url";
+import { normalizeVideoUrl, getAnalysisVideoUrl, getAnalysisVideoAngleLabel } from "@/lib/video-url";
 import { useAuth } from "@/hooks/use-auth";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -186,9 +186,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
       : 0;
 
   const modalAnalysis = (detailedAnalysis || selectedAnalysis) as any;
-  const selectedVideoUrl = modalAnalysis?.videoUrl
-    ? normalizeVideoUrl(modalAnalysis.videoUrl)
-    : null;
+  const selectedVideoUrl = getAnalysisVideoUrl(modalAnalysis) ?? null;
 
   const scoreTrend = sortedAnalyses.length >= 2 ? (() => {
     const newest = sortedAnalyses[0];
@@ -541,7 +539,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <p className="text-xs font-medium text-muted-foreground truncate">
-                          {getShotTypeLabel(modalAnalysis?.shotType || selectedAnalysis.shotType)} · {formatDate(modalAnalysis?.createdAt || selectedAnalysis.createdAt)}
+                          {getShotTypeLabel(modalAnalysis?.shotType || selectedAnalysis.shotType)} · {formatDate(modalAnalysis?.createdAt || selectedAnalysis.createdAt)} · Ángulo: {getAnalysisVideoAngleLabel(modalAnalysis)}
                         </p>
                         <div className="aspect-video rounded-lg overflow-hidden bg-muted">
                           <VideoPlayer src={selectedVideoUrl} />
@@ -549,10 +547,10 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                       </div>
                       <div className="space-y-2">
                         <p className="text-xs font-medium text-muted-foreground truncate">
-                          {getShotTypeLabel(comparisonSecond.shotType)} · {formatDate(comparisonSecond.createdAt)}
+                          {getShotTypeLabel(comparisonSecond.shotType)} · {formatDate(comparisonSecond.createdAt)} · Ángulo: {getAnalysisVideoAngleLabel(comparisonSecond)}
                         </p>
                         <div className="aspect-video rounded-lg overflow-hidden bg-muted">
-                          <VideoPlayer src={normalizeVideoUrl(comparisonSecond.videoUrl ?? '') ?? ''} />
+                          <VideoPlayer src={getAnalysisVideoUrl(comparisonSecond) ?? ''} />
                         </div>
                       </div>
                     </div>
@@ -567,7 +565,7 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                             Abrir video en otra pestaña
                           </a>
                         </Button>
-                        {sortedAnalyses.filter((a) => a.id !== selectedAnalysis?.id && a.videoUrl).length > 0 && (
+                        {sortedAnalyses.filter((a) => a.id !== selectedAnalysis?.id && getAnalysisVideoUrl(a)).length > 0 && (
                           <div className="flex items-center gap-2">
                             <GitCompare className="h-4 w-4 text-muted-foreground" />
                             <Select
@@ -582,10 +580,10 @@ export function PlayerVideosSection({ analyses, onVideoClick }: PlayerVideosSect
                               </SelectTrigger>
                               <SelectContent>
                                 {sortedAnalyses
-                                  .filter((a) => a.id !== selectedAnalysis?.id && a.videoUrl)
+                                  .filter((a) => a.id !== selectedAnalysis?.id && getAnalysisVideoUrl(a))
                                   .map((a) => (
                                     <SelectItem key={a.id} value={a.id}>
-                                      {getShotTypeLabel(a.shotType)} · {formatDate(a.createdAt)}
+                                      {getShotTypeLabel(a.shotType)} · {formatDate(a.createdAt)} · {getAnalysisVideoAngleLabel(a)}
                                     </SelectItem>
                                   ))}
                               </SelectContent>

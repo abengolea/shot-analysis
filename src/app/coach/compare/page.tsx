@@ -9,7 +9,7 @@ import { ArrowLeftRight, Calendar, ClipboardCheck, Mic, Sparkles, UserRound } fr
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { normalizeVideoUrl } from "@/lib/video-url";
+import { getAnalysisVideoUrl, getAnalysisVideoAngleLabel } from "@/lib/video-url";
 import type { Player } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -76,16 +76,6 @@ export default function CoachComparePage() {
     const createdAt = formatDate(analysis?.createdAt);
     const shotType = analysis?.shotType ? ` · ${analysis.shotType}` : "";
     return `${createdAt}${shotType}`;
-  };
-
-  const getAnalysisVideoUrl = (analysis: any) => {
-    const rawUrl =
-      analysis?.videoFrontUrl ||
-      analysis?.videoUrl ||
-      analysis?.videoLeftUrl ||
-      analysis?.videoRightUrl ||
-      analysis?.videoBackUrl;
-    return rawUrl ? (normalizeVideoUrl(String(rawUrl)) ?? undefined) : undefined;
   };
 
   const getShotTypeLabel = (analysis: any) => analysis?.shotType || "Tiro";
@@ -561,7 +551,7 @@ export default function CoachComparePage() {
                 )}
                 {analyses.map((analysis) => (
                   <SelectItem key={analysis.id} value={analysis.id}>
-                    {getAnalysisLabel(analysis)}
+                    {getAnalysisLabel(analysis)} · {getAnalysisVideoAngleLabel(analysis)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -581,7 +571,7 @@ export default function CoachComparePage() {
                 )}
                 {analyses.map((analysis) => (
                   <SelectItem key={analysis.id} value={analysis.id}>
-                    {getAnalysisLabel(analysis)}
+                    {getAnalysisLabel(analysis)} · {getAnalysisVideoAngleLabel(analysis)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -597,7 +587,11 @@ export default function CoachComparePage() {
               <Calendar className="h-5 w-5" />
               Video Antes
             </CardTitle>
-            <CardDescription>{beforeAnalysis ? getAnalysisLabel(beforeAnalysis) : "Sin selección"}</CardDescription>
+            <CardDescription>
+              {beforeAnalysis
+                ? `${getAnalysisLabel(beforeAnalysis)} · Ángulo: ${getAnalysisVideoAngleLabel(beforeAnalysis)}`
+                : "Sin selección"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {beforeAnalysis && getAnalysisVideoUrl(beforeAnalysis) ? (
@@ -617,7 +611,11 @@ export default function CoachComparePage() {
               <Calendar className="h-5 w-5" />
               Video Después
             </CardTitle>
-            <CardDescription>{afterAnalysis ? getAnalysisLabel(afterAnalysis) : "Sin selección"}</CardDescription>
+            <CardDescription>
+              {afterAnalysis
+                ? `${getAnalysisLabel(afterAnalysis)} · Ángulo: ${getAnalysisVideoAngleLabel(afterAnalysis)}`
+                : "Sin selección"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {afterAnalysis && getAnalysisVideoUrl(afterAnalysis) ? (
@@ -736,7 +734,9 @@ export default function CoachComparePage() {
                   <AccordionContent className="space-y-4 pb-4">
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <div className="text-xs font-medium text-muted-foreground">Video Antes</div>
+                        <div className="text-xs font-medium text-muted-foreground">
+                          Video Antes · Ángulo: {getAnalysisVideoAngleLabel(before)}
+                        </div>
                         {getAnalysisVideoUrl(before) ? (
                           <video
                             controls
@@ -748,7 +748,9 @@ export default function CoachComparePage() {
                         )}
                       </div>
                       <div className="space-y-2">
-                        <div className="text-xs font-medium text-muted-foreground">Video Después</div>
+                        <div className="text-xs font-medium text-muted-foreground">
+                          Video Después · Ángulo: {getAnalysisVideoAngleLabel(after)}
+                        </div>
                         {getAnalysisVideoUrl(after) ? (
                           <video
                             controls

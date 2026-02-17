@@ -6,48 +6,70 @@
   "storage": {
     "rules": "storage.rules"
   },
-  "apphosting": {
-    "backendId": "shot-analysis-2-stagin",
-    "source": ".",
-    "alwaysDeployFromSource": true,
-    "ignore": [
-      "**/.git/**",
-      "**/.next/**",
-      "**/.cursor/**",
-      "**/.idx/**",
-      "**/node_modules/**",
-      "**/firebase-debug.log",
-      "**/*.zip",
-      "**/*.mp4",
-      "**/*.mov",
-      "**/*.avi",
-      "**/*.mkv",
-      "**/*.csv",
-      "**/*.parquet",
-      "**/*.onnx",
-      "**/*.pt",
-      "**/*.ckpt",
-      "**/*.h5",
-      "docs/**",
-      "ml/**",
-      "pose-service/**",
-      "scripts/**",
-      "shotanalysia/**"
-    ]
-  },
-  "emulators": {
-    "auth": {
-      "port": 9099
+  "apphosting": [
+    {
+      "backendId": "shot-analysis-2-stagin",
+      "source": ".",
+      "alwaysDeployFromSource": true,
+      "ignore": [
+        "**/.git/**",
+        "**/.next/**",
+        "**/.cursor/**",
+        "**/.idx/**",
+        "**/node_modules/**",
+        "**/firebase-debug.log",
+        "**/*.zip",
+        "**/*.mp4",
+        "**/*.mov",
+        "**/*.avi",
+        "**/*.mkv",
+        "**/*.csv",
+        "**/*.parquet",
+        "**/*.onnx",
+        "**/*.pt",
+        "**/*.ckpt",
+        "**/*.h5",
+        "docs/**",
+        "ml/**",
+        "pose-service/**",
+        "scripts/**",
+        "shotanalysia/**"
+      ]
     },
-    "firestore": {
-      "port": 8080
-    },
-    "storage": {
-      "port": 9199
-    },
-    "ui": {
-      "enabled": true,
-      "port": 4000
+    {
+      "backendId": "shot-analysis",
+      "source": ".",
+      "alwaysDeployFromSource": true,
+      "ignore": [
+        "**/.git/**",
+        "**/.next/**",
+        "**/.cursor/**",
+        "**/.idx/**",
+        "**/node_modules/**",
+        "**/firebase-debug.log",
+        "**/*.zip",
+        "**/*.mp4",
+        "**/*.mov",
+        "**/*.avi",
+        "**/*.mkv",
+        "**/*.csv",
+        "**/*.parquet",
+        "**/*.onnx",
+        "**/*.pt",
+        "**/*.ckpt",
+        "**/*.h5",
+        "docs/**",
+        "ml/**",
+        "pose-service/**",
+        "scripts/**",
+        "shotanalysia/**"
+      ]
     }
+  ],
+  "emulators": {
+    "auth": {"port": 9099},
+    "firestore": {"port": 8080},
+    "storage": {"port": 9199},
+    "ui": {"enabled": true, "port": 4000}
   }
 }

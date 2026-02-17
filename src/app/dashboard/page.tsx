@@ -23,7 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { collection, onSnapshot, query, where, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { normalizeVideoUrl } from "@/lib/video-url";
+import { getAnalysisVideoUrl, getAnalysisVideoAngleLabel } from "@/lib/video-url";
 
 
 function FormattedDate({ dateString }: { dateString: string }) {
@@ -117,16 +117,6 @@ export default function DashboardPage() {
     const shotType = analysis?.shotType ? ` · ${analysis.shotType}` : "";
     const label = createdAt ? createdAt.toLocaleString() : "Fecha desconocida";
     return `${label}${shotType}`;
-  };
-
-  const getAnalysisVideoUrl = (analysis: any) => {
-    const rawUrl =
-      analysis?.videoFrontUrl ||
-      analysis?.videoUrl ||
-      analysis?.videoLeftUrl ||
-      analysis?.videoRightUrl ||
-      analysis?.videoBackUrl;
-    return rawUrl ? (normalizeVideoUrl(String(rawUrl)) ?? undefined) : undefined;
   };
 
   const comparisonIds = (() => {
@@ -817,7 +807,9 @@ export default function DashboardPage() {
                     <AccordionContent className="space-y-4 pb-4">
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
-                          <div className="text-xs font-medium text-muted-foreground">Video Antes</div>
+                          <div className="text-xs font-medium text-muted-foreground">
+                            Video Antes · Ángulo: {getAnalysisVideoAngleLabel(before)}
+                          </div>
                           {getAnalysisVideoUrl(before) ? (
                             <video
                               controls
@@ -829,7 +821,9 @@ export default function DashboardPage() {
                           )}
                         </div>
                         <div className="space-y-2">
-                          <div className="text-xs font-medium text-muted-foreground">Video Después</div>
+                          <div className="text-xs font-medium text-muted-foreground">
+                            Video Después · Ángulo: {getAnalysisVideoAngleLabel(after)}
+                          </div>
                           {getAnalysisVideoUrl(after) ? (
                             <video
                               controls
