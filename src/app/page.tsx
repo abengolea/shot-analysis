@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Video, BarChart3, BotMessageSquare, LogIn } from "lucide-react";
 import {
@@ -43,12 +42,7 @@ const features = [
 export default function LandingPage() {
   return (
     <div className="flex flex-1 flex-col min-w-0 overflow-x-hidden">
-       <header className="container mx-auto flex flex-wrap items-start justify-between gap-4 px-4 sm:px-6 py-2">
-        <div className="flex flex-col items-start gap-3">
-          <Link href="/" className="flex items-center gap-2">
-              <Logo size="md" />
-          </Link>
-        </div>
+       <header className="container mx-auto flex flex-wrap items-center justify-end gap-4 px-4 sm:px-6 py-2">
         <div className="flex items-center gap-4">
             <Button asChild variant="outline">
                 <Link href="/login">

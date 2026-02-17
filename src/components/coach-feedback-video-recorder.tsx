@@ -4,11 +4,11 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload, Loader2, Square, Circle } from "lucide-react";
 
-const MIN_DURATION_SEC = 120;
+const MIN_DURATION_SEC = 30;
 const MAX_DURATION_SEC = 240;
 
 interface CoachFeedbackVideoRecorderProps {
-  onUpload: (file: File) => Promise<void>;
+  onUpload: (file: File, knownDurationSec?: number) => Promise<void>;
   uploading: boolean;
   inputId?: string;
   compact?: boolean;
@@ -133,7 +133,7 @@ export function CoachFeedbackVideoRecorder({
     if (!recordedBlob || recordedDuration < MIN_DURATION_SEC || recordedDuration > MAX_DURATION_SEC) return;
     const ext = recordedBlob.type.includes("webm") ? "webm" : "mp4";
     const file = new File([recordedBlob], `feedback-${Date.now()}.${ext}`, { type: recordedBlob.type });
-    await onUpload(file);
+    await onUpload(file, recordedDuration);
     setRecordedBlob(null);
     setRecordedDuration(0);
     setRecorderState("idle");
@@ -219,7 +219,7 @@ export function CoachFeedbackVideoRecorder({
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            Grabando... Detené cuando termines (entre 2 y 4 minutos).
+            Grabando... Detené cuando termines (mínimo 30 segundos, máximo 4 minutos).
           </p>
         </div>
       )}
@@ -235,10 +235,10 @@ export function CoachFeedbackVideoRecorder({
           <p className="text-sm">
             Duración: {formatTime(recordedDuration)} —{" "}
             {durationValid ? (
-              <span className="text-green-600">Duración correcta (2-4 min)</span>
+              <span className="text-green-600">Duración correcta (30 s - 4 min)</span>
             ) : (
               <span className="text-destructive">
-                Debe ser entre 2 y 4 minutos. Grabá de nuevo.
+                Debe ser mínimo 30 segundos y máximo 4 minutos. Grabá de nuevo.
               </span>
             )}
           </p>
@@ -272,7 +272,7 @@ export function CoachFeedbackVideoRecorder({
 
       {!compact && (
         <p className="text-xs text-muted-foreground">
-          Subí un archivo o grabá directo desde la cámara del celular. Duración: entre 2 y 4 minutos.
+          Subí un archivo o grabá directo desde la cámara del celular. Duración: mínimo 30 segundos, máximo 4 minutos.
         </p>
       )}
     </div>

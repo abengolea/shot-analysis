@@ -185,6 +185,9 @@ export function AnalysisPageClient({ id }: { id: string }) {
           shotSummary: analysisData.analysisResult?.shotSummary || analysisData.shotSummary,
           coachCompleted: analysisData.coachCompleted === true,
           shots: analysisData.analysisResult?.shots || analysisData.shots,
+          // Permisos: necesarios para que AnalysisView calcule canEditCoachChecklist correctamente
+          coachAccess: analysisData.coachAccess,
+          coachId: analysisData.coachId,
           // ⚖️ Agregar metadatos del score calculado
           scoreMetadata: analysisData.analysisResult?.scoreMetadata || analysisData.scoreMetadata || null,
           // 🔢 Calcular resumen de evaluación automáticamente

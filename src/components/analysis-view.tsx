@@ -589,6 +589,15 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
   const viewerId = authUserId || profileId;
   const hasPaidCoachAccess = userIds.some((id) => (analysis as any)?.coachAccess?.[id]?.status === 'paid');
   const isAssignedCoach = userIds.some((id) => id === (player?.coachId || ''));
+  const analysisCoachId = (analysis as any)?.coachId ? String((analysis as any).coachId) : null;
+  const paidCoachIds = Object.keys((analysis as any)?.coachAccess || {}).filter(
+    (k) => (analysis as any).coachAccess[k]?.status === 'paid'
+  );
+  /** Hay otro coach asignado/pagado para este lanzamiento (no el viewer) */
+  const hasOtherCoachForThisLaunch = Boolean(
+    (analysisCoachId && !userIds.includes(analysisCoachId)) ||
+    (paidCoachIds.length > 0 && !paidCoachIds.some((id) => userIds.includes(id)))
+  );
   const [hasPlayerCoachAccess, setHasPlayerCoachAccess] = useState(false);
   /** Solo el coach designado para ESTE lanzamiento (con pago) puede editar el checklist. isAssignedCoach/hasPlayerCoachAccess permiten ver pero no editar. */
   const canEditCoachChecklist = isAdmin || (isCoachRole && hasPaidCoachAccess);
@@ -850,25 +859,32 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
     }
   };
 
-  // Subir video de devolución (2-4 min, opcional)
-  const handleUploadFeedbackVideo = async (file: File) => {
+  // Subir video de devolución (mín 30 s, máx 4 min, opcional)
+  const handleUploadFeedbackVideo = async (file: File, knownDurationSec?: number) => {
     if (!canEdit || !user) return;
-    const duration = await new Promise<number>((resolve, reject) => {
-      const video = document.createElement('video');
-      video.preload = 'metadata';
-      video.onloadedmetadata = () => {
-        URL.revokeObjectURL(video.src);
-        resolve(video.duration);
-      };
-      video.onerror = () => reject(new Error('No se pudo leer el video'));
-      video.src = URL.createObjectURL(file);
-    });
-    const minSec = 120;
+    const minSec = 30;
     const maxSec = 240;
+    let duration: number;
+    if (typeof knownDurationSec === 'number' && Number.isFinite(knownDurationSec) && knownDurationSec > 0) {
+      duration = knownDurationSec;
+    } else {
+      duration = await new Promise<number>((resolve, reject) => {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.onloadedmetadata = () => {
+          URL.revokeObjectURL(video.src);
+          const d = video.duration;
+          resolve(Number.isFinite(d) && d > 0 ? d : 0);
+        };
+        video.onerror = () => reject(new Error('No se pudo leer el video'));
+        video.src = URL.createObjectURL(file);
+      });
+    }
     if (duration < minSec || duration > maxSec) {
+      const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
       toast({
         title: 'Duración incorrecta',
-        description: `El video debe durar entre 2 y 4 minutos (${Math.floor(duration / 60)} min actuales).`,
+        description: `El video debe durar mínimo 30 segundos y máximo 4 minutos (${Number.isFinite(duration) ? fmt(duration) : 'no se pudo leer'} actuales).`,
         variant: 'destructive',
       });
       return;
@@ -2191,7 +2207,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
 
   const saveAnnotation = async () => {
     setIsCommentFocused(false);
-    if (!canEdit) {
+    if (!canEditCoachChecklist) {
       setAnnotationStatus('Sin permisos para guardar.');
       toast({
         title: 'Sin permisos',
@@ -2410,7 +2426,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
   };
 
   const deleteLatestAnnotation = async () => {
-    if (!canEdit) {
+    if (!canEditCoachChecklist) {
       toast({
         title: 'Sin permisos',
         description: 'No tenés permisos para eliminar anotaciones.',
@@ -4208,10 +4224,30 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                     <ShieldAlert className="h-12 w-12 text-muted-foreground" />
                     {isCoach && !canEditCoachChecklist ? (
                       <>
-                        <h3 className="font-semibold">No puedes revisar este lanzamiento</h3>
+                        <h3 className="font-semibold">
+                          {hasOtherCoachForThisLaunch ? 'Otro entrenador está asignado a este lanzamiento' : 'No puedes revisar este lanzamiento'}
+                        </h3>
                         <p className="text-sm text-muted-foreground max-w-prose">
-                          Hasta que el jugador no te designe como coach para este lanzamiento (solicitando y abonando tu revisión), no vas a poder realizar la evaluación. Por ahora solo puedes ver el análisis de IA.
+                          {hasOtherCoachForThisLaunch
+                            ? 'Este lanzamiento tiene asignado otro entrenador para la revisión (el jugador solicitó y abonó su evaluación). Solo podés ver el análisis de IA.'
+                            : 'Hasta que el jugador no te designe como coach para este lanzamiento (solicitando y abonando tu revisión), no vas a poder realizar la evaluación. Por ahora solo puedes ver el análisis de IA.'}
                         </p>
+                      </>
+                    ) : isCoach && canEditCoachChecklist ? (
+                      <>
+                        <h3 className="font-semibold">Pendiente tu evaluación</h3>
+                        <p className="text-sm text-muted-foreground max-w-prose">
+                          Completá el checklist en la pestaña &quot;Checklist IA&quot; para dejar tu revisión con calificaciones y comentarios.
+                        </p>
+                        <Button
+                          onClick={() => {
+                            setIsEditingCoachFeedback(true);
+                            handleTabChange('checklist');
+                          }}
+                        >
+                          <ListChecks className="mr-2 h-4 w-4" />
+                          Ir a completar checklist
+                        </Button>
                       </>
                     ) : (
                       <>
@@ -4447,7 +4483,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                 >
                   {isExpanded ? <Minimize2 /> : <Maximize2 />}
                 </Button>
-                {canEdit && (
+                {canEditCoachChecklist && (
                   <>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'pencil'; }}><Pencil /></Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'line'; }}><Minus /></Button>
@@ -4535,9 +4571,13 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                       </div>
                     ) : isCoach ? (
                       <div className="text-sm text-muted-foreground p-4 text-center border-2 border-dashed rounded-lg bg-amber-50 border-amber-200">
-                        <p className="font-medium text-amber-800 mb-1">No puedes comentar en este fotograma</p>
+                        <p className="font-medium text-amber-800 mb-1">
+                          {hasOtherCoachForThisLaunch ? 'Otro entrenador está asignado a este lanzamiento' : 'No puedes comentar en este fotograma'}
+                        </p>
                         <p className="text-amber-700">
-                          Hasta que el jugador no te designe como coach para este lanzamiento (solicitando y abonando tu revisión), no vas a poder añadir comentarios. Por ahora solo puedes ver el análisis.
+                          {hasOtherCoachForThisLaunch
+                            ? 'Este lanzamiento tiene asignado otro entrenador para la revisión. Solo podés ver el análisis.'
+                            : 'Hasta que el jugador no te designe como coach para este lanzamiento (solicitando y abonando tu revisión), no vas a poder añadir comentarios. Por ahora solo puedes ver el análisis.'}
                         </p>
                       </div>
                     ) : (

@@ -140,6 +140,10 @@ export type ShotAnalysis = {
   shots?: any[];
   keyframesStatus?: 'pending' | 'ready' | 'error';
   keyframesUpdatedAt?: string;
+  /** Acceso pagado por coach: { [coachId]: { status: 'paid', ... } } - usado para canEditCoachChecklist */
+  coachAccess?: Record<string, { status?: string; [k: string]: unknown }>;
+  /** Coach asignado a este análisis (si aplica) */
+  coachId?: string;
 };
 
 export type Drill = {
