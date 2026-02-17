@@ -163,15 +163,11 @@ export default function CoachDashboardPage() {
     try {
       const ids = players.map((p) => p.id).filter(Boolean);
       const mergeAndSort = () => {
-        const hasPaidCoachAccess = (analysis: any) => {
-          const access = analysis?.coachAccess?.[user.uid];
-          return access?.status === 'paid';
-        };
         const byId: Record<string, any> = {};
         for (const list of Object.values(chunkMap)) {
           for (const item of list) byId[item.id] = item;
         }
-        const merged = Object.values(byId).filter(hasPaidCoachAccess);
+        const merged = Object.values(byId);
         merged.sort((a: any, b: any) => getTime(b.createdAt) - getTime(a.createdAt));
         setAnalyses(merged as any[]);
       };
@@ -254,6 +250,10 @@ export default function CoachDashboardPage() {
     String(analysis?.status) === "analyzed" && analysis?.coachCompleted === true;
   const isBiomechProAnalysis = (analysis: any) =>
     String(analysis?.analysisMode) === "biomech-pro";
+  const canCoachEditAnalysis = (analysis: any) => {
+    const access = analysis?.coachAccess?.[user?.uid || ''];
+    return access?.status === 'paid';
+  };
   const unreadCount = useMemo(() => messages.filter(m => !m.read).length, [messages]);
   const analyzedCount = useMemo(() => analyses.filter(isAnalysisDone).length, [analyses]);
   const pendingCount = useMemo(() => analyses.filter((a: any) => !isAnalysisDone(a)).length, [analyses]);
@@ -1040,6 +1040,7 @@ export default function CoachDashboardPage() {
                 )}
                 {filteredAnalyses.filter((a: any) => !isAnalysisDone(a)).map((a: any) => {
                   const p = players.find((pl) => pl.id === a.playerId);
+                  const canEdit = canCoachEditAnalysis(a);
                   return (
                     <div key={a.id} className="flex items-center justify-between gap-3 border rounded-md p-3">
                       <div className="min-w-0">
@@ -1048,6 +1049,11 @@ export default function CoachDashboardPage() {
                           <span className="truncate">{new Date(a.createdAt || Date.now()).toLocaleString()}</span>
                           {isBiomechProAnalysis(a) && (
                             <Badge variant="secondary">BIOMECH PRO</Badge>
+                          )}
+                          {canEdit ? (
+                            <Badge variant="default" className="bg-amber-600 hover:bg-amber-700">Pendiente tu evaluación</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">Solo ver</Badge>
                           )}
                         </div>
                       </div>
@@ -1067,6 +1073,7 @@ export default function CoachDashboardPage() {
                 )}
                 {filteredAnalyses.filter((a: any) => isAnalysisDone(a)).map((a: any) => {
                   const p = players.find((pl) => pl.id === a.playerId);
+                  const canEdit = canCoachEditAnalysis(a);
                   return (
                     <div key={a.id} className="flex items-center justify-between gap-3 border rounded-md p-3">
                       <div className="min-w-0">
@@ -1075,6 +1082,11 @@ export default function CoachDashboardPage() {
                           <span className="truncate">{new Date(a.createdAt || Date.now()).toLocaleString()}</span>
                           {isBiomechProAnalysis(a) && (
                             <Badge variant="secondary">BIOMECH PRO</Badge>
+                          )}
+                          {canEdit ? (
+                            <Badge variant="default" className="bg-green-600 hover:bg-green-700">Evaluado por ti</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">Solo ver</Badge>
                           )}
                         </div>
                       </div>

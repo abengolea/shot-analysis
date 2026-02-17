@@ -581,6 +581,14 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
                       const coachStatus = (a as any).coachCompleted === true
                         ? { label: 'Evaluado', variant: 'default' as const }
                         : { label: 'En revisión', variant: 'secondary' as const };
+                      const canCoachEdit = role === 'coach' && userProfile?.id && (a as any)?.coachAccess?.[userProfile.id]?.status === 'paid';
+                      const coachViewBadge = role === 'coach' && userProfile?.id ? (
+                        canCoachEdit
+                          ? (a as any).coachCompleted === true
+                            ? { label: 'Evaluado por ti', variant: 'default' as const, className: 'bg-green-600' }
+                            : { label: 'Pendiente tu evaluación', variant: 'default' as const, className: 'bg-amber-600' }
+                          : { label: 'Solo ver', variant: 'outline' as const, className: 'text-muted-foreground' }
+                      ) : null;
                       return (
                         <tr key={a.id} className={isLatest ? 'bg-primary/5' : ''}>
                           <td className="px-3 py-2 whitespace-nowrap"><FormattedDate dateString={a.createdAt} /></td>
@@ -594,7 +602,14 @@ export function PlayerProfileClient({ player, analyses, evaluations, comments }:
                           </td>
                           <td className="px-3 py-2">{score}</td>
                           <td className="px-3 py-2">
-                            <Badge variant={coachStatus.variant}>{coachStatus.label}</Badge>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant={coachStatus.variant}>{coachStatus.label}</Badge>
+                              {coachViewBadge && (
+                                <Badge variant={coachViewBadge.variant} className={coachViewBadge.className}>
+                                  {coachViewBadge.label}
+                                </Badge>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-2">
                             <span className="text-xs text-muted-foreground">

@@ -44,24 +44,10 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     const analysis = analysisSnap.data() as any;
     const coachAccess = analysis?.coachAccess || {};
     const access = coachAccess?.[uid];
+    // Solo el coach designado para ESTE lanzamiento (con pago) puede comentar en fotogramas
     if (access?.status === 'paid') return { ok: true, uid };
-    if (analysis?.coachId && String(analysis.coachId) === String(uid)) return { ok: true, uid };
-    const playerId = analysis?.playerId;
-    if (!playerId) return { ok: false, reason: 'Player missing' };
-
-    const hasPlayerPaidAccess = await hasPaidCoachAccessToPlayer({
-      adminDb,
-      coachId: uid,
-      playerId: String(playerId),
-    });
-    if (hasPlayerPaidAccess) return { ok: true, uid };
-
-    const assignedPlayerSnap = await adminDb.collection('players').doc(playerId).get();
-    const player = assignedPlayerSnap.exists ? (assignedPlayerSnap.data() as any) : null;
-    const assignedCoachId = player?.coachId || null;
-
-    if (assignedCoachId && assignedCoachId === uid) return { ok: true, uid };
-    return { ok: false, reason: 'Forbidden' };
+    // Coach sin acceso pagado para este análisis: no puede comentar
+    return { ok: false, reason: 'Debes ser designado por el jugador para este lanzamiento para poder comentar' };
   } catch (e) {
     console.error('verifyCoachPermission error', e);
     return { ok: false, reason: 'Auth error' };

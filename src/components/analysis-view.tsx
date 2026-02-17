@@ -590,6 +590,8 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
   const hasPaidCoachAccess = userIds.some((id) => (analysis as any)?.coachAccess?.[id]?.status === 'paid');
   const isAssignedCoach = userIds.some((id) => id === (player?.coachId || ''));
   const [hasPlayerCoachAccess, setHasPlayerCoachAccess] = useState(false);
+  /** Solo el coach designado para ESTE lanzamiento (con pago) puede editar el checklist. isAssignedCoach/hasPlayerCoachAccess permiten ver pero no editar. */
+  const canEditCoachChecklist = isAdmin || (isCoachRole && hasPaidCoachAccess);
   const canEdit = Boolean(
     isAdmin || (isCoachRole && userIds.length > 0 && (isAssignedCoach || hasPaidCoachAccess || hasPlayerCoachAccess))
   );
@@ -4196,19 +4198,32 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                     <ListChecks /> Checklist del Entrenador
                   </CardTitle>
                   <CardDescription>
-                    Estado pendiente de revisión por un entrenador.
+                    {isCoach && !canEditCoachChecklist
+                      ? "No tienes permiso para revisar este lanzamiento."
+                      : "Estado pendiente de revisión por un entrenador."}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-muted p-8 text-center">
                     <ShieldAlert className="h-12 w-12 text-muted-foreground" />
-                    <h3 className="font-semibold">Aún no hay revisión de entrenador</h3>
-                    <p className="text-sm text-muted-foreground max-w-prose">
-                      Hasta que no contactes a un entrenador y realice la revisión, este apartado permanecerá vacío.
-                    </p>
-                    <Button asChild>
-                      <a href="/player/coaches">Buscar Entrenador</a>
-                    </Button>
+                    {isCoach && !canEditCoachChecklist ? (
+                      <>
+                        <h3 className="font-semibold">No puedes revisar este lanzamiento</h3>
+                        <p className="text-sm text-muted-foreground max-w-prose">
+                          Hasta que el jugador no te designe como coach para este lanzamiento (solicitando y abonando tu revisión), no vas a poder realizar la evaluación. Por ahora solo puedes ver el análisis de IA.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="font-semibold">Aún no hay revisión de entrenador</h3>
+                        <p className="text-sm text-muted-foreground max-w-prose">
+                          Hasta que no contactes a un entrenador y realice la revisión, este apartado permanecerá vacío.
+                        </p>
+                        <Button asChild>
+                          <a href="/player/coaches">Buscar Entrenador</a>
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -4507,7 +4522,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {keyframeComments.length === 0 ? (
-                    canComment ? (
+                    canEditCoachChecklist ? (
                       <div
                         role="button"
                         tabIndex={0}
@@ -4519,8 +4534,11 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                         Aún no hay comentarios para este fotograma. Haz clic aquí para escribir uno.
                       </div>
                     ) : isCoach ? (
-                      <div className="text-sm text-muted-foreground p-4 text-center border-2 border-dashed rounded-lg bg-muted/20">
-                        Aún no hay comentarios para este fotograma. Solo el entrenador asignado o con acceso puede comentar.
+                      <div className="text-sm text-muted-foreground p-4 text-center border-2 border-dashed rounded-lg bg-amber-50 border-amber-200">
+                        <p className="font-medium text-amber-800 mb-1">No puedes comentar en este fotograma</p>
+                        <p className="text-amber-700">
+                          Hasta que el jugador no te designe como coach para este lanzamiento (solicitando y abonando tu revisión), no vas a poder añadir comentarios. Por ahora solo puedes ver el análisis.
+                        </p>
                       </div>
                     ) : (
                       <div className="text-sm text-muted-foreground p-4 text-center border-2 border-dashed rounded-lg">
@@ -4537,7 +4555,7 @@ export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps
                       ))}
                     </ul>
                   )}
-                  {canComment && (
+                  {canEditCoachChecklist && (
                     <>
                       <Textarea
                         ref={commentInputRef}
