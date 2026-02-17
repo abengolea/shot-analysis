@@ -151,47 +151,42 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   // Función para cargar smart keyframes desde el API
   const loadSmartKeyframes = useCallback(async () => {
-    if (!analysis.id) {
-      console.log('⚠️ [AnalysisView] No hay analysis.id, no se cargarán keyframes');
+    if (!analysis.id || !user) {
       return;
     }
-    
-    console.log(`🔍 [AnalysisView] Cargando smart keyframes para análisis: ${analysis.id}`);
-    
+
     try {
       setSmartKeyframesLoading(true);
       const url = `/api/analyses/${analysis.id}/smart-keyframes`;
-      console.log(`🔍 [AnalysisView] Llamando a: ${url}`);
-      
-      const response = await fetch(url);
-      console.log(`🔍 [AnalysisView] Respuesta recibida:`, response.status, response.statusText);
-      
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await getIdToken(currentUser, true) : null;
+      const response = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
       if (!response.ok) {
         if (response.status === 404) {
-          console.warn(`⚠️ [AnalysisView] Keyframes no encontrados (404) para análisis: ${analysis.id}`);
           setSmartKeyframesLoading(false);
           return;
         }
         const errorText = await response.text();
-        console.error(`❌ [AnalysisView] Error ${response.status} cargando keyframes:`, errorText);
-        throw new Error(`Error ${response.status}: ${response.statusText}`);
+        console.warn(`[AnalysisView] Keyframes no disponibles (${response.status}):`, errorText?.slice(0, 100));
+        setSmartKeyframesLoading(false);
+        return;
       }
-      
+
       const data = await response.json();
-      console.log(`✅ [AnalysisView] Keyframes cargados:`, {
-        front: data.front?.length || 0,
-        back: data.back?.length || 0,
-        left: data.left?.length || 0,
-        right: data.right?.length || 0
-      });
-      
       setSmartKeyframes(data);
-      setSmartKeyframesLoading(false);
     } catch (error) {
-      console.error('❌ [AnalysisView] Error cargando smart keyframes:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+      if (!/failed to fetch|networkerror|load failed/i.test(msg)) {
+        console.warn('[AnalysisView] Keyframes no cargados:', msg);
+      }
+    } finally {
       setSmartKeyframesLoading(false);
     }
-  }, [analysis.id]);
+  }, [analysis.id, user]);
 
   // Cargar smart keyframes al montar el componente
   useEffect(() => {
