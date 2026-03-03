@@ -13,20 +13,18 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { LogOut, User, Settings, Shield } from 'lucide-react';
+import { LogOut, User, Settings, Shield, Shuffle } from 'lucide-react';
 import { useEffect } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 
 export function UserMenu() {
   const { user, userProfile, signOutUser } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const pathname = usePathname();
-  // Detectar vista de coach SOLO por pathname (no por rol del perfil)
-  // Si está en /coach/... está en vista de coach, si está en /player/... está en vista de jugador
-  const inCoachView = pathname === '/coach' || pathname?.startsWith('/coach/');
-  const inPlayerView = pathname === '/player' || pathname?.startsWith('/player/');
+  const [preferredRole, setPreferredRole] = useState<string>('');
+  const inCoachView = (pathname === '/coach' || pathname?.startsWith('/coach/')) || preferredRole === 'coach';
 
   useEffect(() => {
     if (!user) return;
@@ -44,17 +42,38 @@ export function UserMenu() {
       };
       // Implementar dos contadores independientes y sumarlos
       let c1 = 0, c2 = 0;
-      unsubs.push(onSnapshot(q1, (snap) => { c1 = snap.size; setUnreadCount(c1 + c2); }, (error) => {
-        console.error('Error en listener de mensajes no leídos (q1):', error);
-      }));
-      unsubs.push(onSnapshot(q2, (snap) => { c2 = snap.size; setUnreadCount(c1 + c2); }, (error) => {
-        console.error('Error en listener de mensajes no leídos (q2):', error);
-      }));
+      unsubs.push(onSnapshot(q1, (snap) => { c1 = snap.size; setUnreadCount(c1 + c2); }));
+      unsubs.push(onSnapshot(q2, (snap) => { c2 = snap.size; setUnreadCount(c1 + c2); }));
       return () => { unsubs.forEach(u => u()); };
     } catch (e) {
       console.error('Error suscribiendo a mensajes no leídos:', e);
     }
   }, [user]);
+
+  useEffect(() => {
+    const readPreferredRole = () => {
+      try {
+        const stored = typeof window !== 'undefined' ? (localStorage.getItem('preferredRole') || '') : '';
+        setPreferredRole(stored);
+      } catch {}
+    };
+    readPreferredRole();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'preferredRole') {
+        readPreferredRole();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', onStorage);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('storage', onStorage);
+      }
+    };
+  }, [pathname, userProfile]);
+
+  
 
   const handleSignOut = async () => {
     await signOutUser();
@@ -71,7 +90,45 @@ export function UserMenu() {
       .slice(0, 2);
   };
 
+  //
+  const [hasCoachProfile, setHasCoachProfile] = useState(false);
+  const [hasPlayerProfile, setHasPlayerProfile] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const checkProfiles = async () => {
+      try {
+        const id = (userProfile as any)?.id || user?.uid;
+        if (!id) { 
+          if (!cancelled) { setHasCoachProfile(false); setHasPlayerProfile(false); }
+          return; 
+        }
+        const [coachSnap, playerSnap] = await Promise.all([
+          getDoc(doc(db as any, 'coaches', id)),
+          getDoc(doc(db as any, 'players', id)),
+        ]);
+        if (!cancelled) {
+          setHasCoachProfile(coachSnap.exists());
+          setHasPlayerProfile(playerSnap.exists());
+        }
+      } catch {
+        if (!cancelled) { setHasCoachProfile(false); setHasPlayerProfile(false); }
+      }
+    };
+    checkProfiles();
+    return () => { cancelled = true; };
+  }, [user, userProfile]);
   const isAdmin = (userProfile as any)?.role === 'admin';
+
+  const switchToCoach = () => {
+    try { localStorage.setItem('preferredRole', 'coach'); } catch {}
+    window.location.href = '/coach/dashboard';
+  };
+
+  const switchToPlayer = () => {
+    try { localStorage.setItem('preferredRole', 'player'); } catch {}
+    window.location.href = '/dashboard';
+  };
 
   if (!user) {
     return (
@@ -114,7 +171,7 @@ export function UserMenu() {
             </p>
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               {isAdmin ? <Shield className="h-3 w-3" /> : (inCoachView ? <Shield className="h-3 w-3" /> : <User className="h-3 w-3" />)}
-              {isAdmin ? 'Admin' : (inCoachView ? 'Entrenador' : (inPlayerView ? 'Jugador' : ((userProfile as any)?.role === 'coach' ? 'Entrenador' : 'Jugador')))}
+              {isAdmin ? 'Admin' : (inCoachView ? 'Entrenador' : 'Jugador')}
             </div>
           </div>
         </DropdownMenuLabel>
@@ -127,14 +184,28 @@ export function UserMenu() {
             </a>
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem onClick={() => { window.location.href = inCoachView ? '/coach/dashboard' : '/player/dashboard'; }} className="cursor-pointer">
+        <DropdownMenuItem onClick={() => (inCoachView ? switchToCoach() : switchToPlayer())} className="cursor-pointer">
           <User className="mr-2 h-4 w-4" />
           Dashboard
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => { try { localStorage.setItem('preferredRole', inCoachView ? 'coach' : 'player'); } catch {}; window.location.href = inCoachView ? '/coach/profile' : '/player/profile'; }} className="cursor-pointer">
+        <DropdownMenuItem onClick={() => { try { localStorage.setItem('preferredRole', inCoachView ? 'coach' : 'player'); } catch {}; window.location.href = '/profile'; }} className="cursor-pointer">
           <Settings className="mr-2 h-4 w-4" />
           Configuración
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {inCoachView ? (
+          <DropdownMenuItem onClick={switchToPlayer} className="cursor-pointer">
+            <Shuffle className="mr-2 h-4 w-4" />
+            Cambiar a Jugador
+          </DropdownMenuItem>
+        ) : (
+          hasCoachProfile ? (
+            <DropdownMenuItem onClick={switchToCoach} className="cursor-pointer">
+              <Shuffle className="mr-2 h-4 w-4" />
+              Cambiar a Entrenador
+            </DropdownMenuItem>
+          ) : null
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer">
           <LogOut className="mr-2 h-4 w-4" />

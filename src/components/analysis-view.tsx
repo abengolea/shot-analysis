@@ -10,6 +10,7 @@ import type {
   ChecklistCategory,
   DetailedChecklistItem,
   Coach,
+  Message,
 } from "@/lib/types";
 import {
   Card,
@@ -48,7 +49,10 @@ import {
   Dumbbell,
   Camera,
   MessageSquare,
+  Video,
+  Trash2,
   Move,
+  Minus,
   Pencil,
   Circle as CircleIcon,
   Eraser,
@@ -58,9 +62,11 @@ import {
   Maximize2,
   Minimize2,
   UserCircle,
+  ShoppingCart,
 } from "lucide-react";
 import { DrillCard } from "./drill-card";
 import { DetailedChecklist } from "./detailed-checklist";
+import { CoachFeedbackVideoRecorder } from "./coach-feedback-video-recorder";
 import { CANONICAL_CATEGORIES, CANONICAL_CATEGORIES_LIBRE } from "@/lib/canonical-checklist";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
@@ -70,22 +76,29 @@ import { getAuth, getIdToken } from "firebase/auth";
 import ShareButtons from "@/components/share-buttons";
 import { useToast } from "@/hooks/use-toast";
 import { getItemWeight, getDefaultWeights } from "@/lib/scoring-client";
+import { normalizeVideoUrl } from "@/lib/video-url";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, serverTimestamp, query, where, doc, getDoc } from "firebase/firestore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, Briefcase, Clock, Trophy } from "lucide-react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { buildConversationId, getMessageType } from "@/lib/message-utils";
+import { resolveMessageLinkToCurrentEnv } from "@/lib/app-url";
 
 interface AnalysisViewProps {
   analysis: ShotAnalysis;
   player: Player;
+  viewerRole?: string | null;
 }
 
-export function AnalysisView({ analysis, player }: AnalysisViewProps) {
+export function AnalysisView({ analysis, player, viewerRole }: AnalysisViewProps) {
   const { userProfile, user } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+  const [isClearingScore, setIsClearingScore] = useState(false);
+  const currentUserId = user?.uid || userProfile?.id;
       // Funciones auxiliares para visualización
   const getScoreColor = (score: number) => {
     if (score >= 90) return 'text-green-600';
@@ -151,47 +164,42 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
   // Función para cargar smart keyframes desde el API
   const loadSmartKeyframes = useCallback(async () => {
-    if (!analysis.id) {
-      console.log('⚠️ [AnalysisView] No hay analysis.id, no se cargarán keyframes');
+    if (!analysis.id || !user) {
       return;
     }
-    
-    console.log(`🔍 [AnalysisView] Cargando smart keyframes para análisis: ${analysis.id}`);
-    
+
     try {
       setSmartKeyframesLoading(true);
       const url = `/api/analyses/${analysis.id}/smart-keyframes`;
-      console.log(`🔍 [AnalysisView] Llamando a: ${url}`);
-      
-      const response = await fetch(url);
-      console.log(`🔍 [AnalysisView] Respuesta recibida:`, response.status, response.statusText);
-      
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await getIdToken(currentUser, true) : null;
+      const response = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
       if (!response.ok) {
         if (response.status === 404) {
-          console.warn(`⚠️ [AnalysisView] Keyframes no encontrados (404) para análisis: ${analysis.id}`);
           setSmartKeyframesLoading(false);
           return;
         }
         const errorText = await response.text();
-        console.error(`❌ [AnalysisView] Error ${response.status} cargando keyframes:`, errorText);
-        throw new Error(`Error ${response.status}: ${response.statusText}`);
+        console.warn(`[AnalysisView] Keyframes no disponibles (${response.status}):`, errorText?.slice(0, 100));
+        setSmartKeyframesLoading(false);
+        return;
       }
-      
+
       const data = await response.json();
-      console.log(`✅ [AnalysisView] Keyframes cargados:`, {
-        front: data.front?.length || 0,
-        back: data.back?.length || 0,
-        left: data.left?.length || 0,
-        right: data.right?.length || 0
-      });
-      
       setSmartKeyframes(data);
-      setSmartKeyframesLoading(false);
     } catch (error) {
-      console.error('❌ [AnalysisView] Error cargando smart keyframes:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+      if (!/failed to fetch|networkerror|load failed/i.test(msg)) {
+        console.warn('[AnalysisView] Keyframes no cargados:', msg);
+      }
+    } finally {
       setSmartKeyframesLoading(false);
     }
-  }, [analysis.id]);
+  }, [analysis.id, user]);
 
   // Cargar smart keyframes al montar el componente
   useEffect(() => {
@@ -241,10 +249,23 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   };
   const availableAngles = knownAngles.filter((a) => hasAngleAvailable(a));
 
-              // Verificar si el análisis es parcial (menos de 2 ángulos)
+  // Verificar si el análisis es parcial (menos de 2 ángulos)
   // Solo mostrar como parcial si hay menos de 2 videos, no 4
   const isPartialAnalysis = availableAngles.length < 2;
   const missingAngles = knownAngles.filter((angle) => !availableAngles.includes(angle));
+  const [partialModalOpen, setPartialModalOpen] = useState(false);
+  const [partialModalDismissed, setPartialModalDismissed] = useState(false);
+
+  useEffect(() => {
+    if (isPartialAnalysis && !partialModalDismissed) {
+      setPartialModalOpen(true);
+      return;
+    }
+    if (!isPartialAnalysis) {
+      setPartialModalOpen(false);
+      setPartialModalDismissed(false);
+    }
+  }, [isPartialAnalysis, partialModalDismissed]);
 
       // Estado del checklist (usar directamente lo que venga en analysis)
   const normalizeChecklist = (input: any): ChecklistCategory[] => {
@@ -446,6 +467,11 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         return canonical;
   };
 
+  const analysisResult: any = (analysis as any).analysisResult || {};
+  const [remoteAnalysisResult, setRemoteAnalysisResult] = useState<any | null>(null);
+  const [shotFrames, setShotFrames] = useState<Array<any>>([]);
+  const [shotFramesLoading, setShotFramesLoading] = useState(false);
+  const [shotFramesError, setShotFramesError] = useState<string | null>(null);
   const [checklistState, setChecklistState] = useState<ChecklistCategory[]>(() => {
         if (analysis.detailedChecklist && Array.isArray(analysis.detailedChecklist)) {
       const normalized = normalizeChecklist(analysis.detailedChecklist);
@@ -453,14 +479,136 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
     return [];
   });
+  const [remoteChecklist, setRemoteChecklist] = useState<ChecklistCategory[] | null>(null);
+
+  useEffect(() => {
+    const hasLocalChecklist = Array.isArray(analysis.detailedChecklist) && analysis.detailedChecklist.length > 0;
+    const checklistUrl =
+      (analysis as any).detailedChecklistUrl ||
+      analysisResult?.detailedChecklistUrl ||
+      (analysis as any)?.analysisResult?.detailedChecklistUrl;
+    if (hasLocalChecklist || remoteChecklist || !checklistUrl) return;
+
+    const loadChecklist = async () => {
+      try {
+        const resp = await fetch(String(checklistUrl));
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const checklist = Array.isArray(data?.detailedChecklist) ? data.detailedChecklist : data;
+        if (Array.isArray(checklist)) {
+          const normalized = normalizeChecklist(checklist);
+          setRemoteChecklist(normalized);
+          setChecklistState(normalized);
+        }
+      } catch (e) {}
+    };
+    loadChecklist();
+  }, [analysis, analysisResult, remoteChecklist]);
+
+  useEffect(() => {
+    const analysisUrl =
+      (analysis as any).analysisResultUrl ||
+      analysisResult?.analysisResultUrl ||
+      (analysis as any)?.analysisResult?.analysisResultUrl;
+    if (remoteAnalysisResult || !analysisUrl) return;
+
+    const loadAnalysis = async () => {
+      try {
+        const resp = await fetch(String(analysisUrl));
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const result = data?.analysisResult ?? data;
+        if (result && typeof result === 'object') {
+          setRemoteAnalysisResult(result);
+        }
+      } catch (e) {}
+    };
+    loadAnalysis();
+  }, [analysis, analysisResult, remoteAnalysisResult]);
+
+  useEffect(() => {
+    const shotFramesUrl =
+      (analysis as any).shotFramesUrl ||
+      analysisResult?.shotFramesUrl ||
+      (analysis as any)?.analysisResult?.shotFramesUrl;
+    if (!shotFramesUrl || shotFramesLoading || shotFrames.length > 0) return;
+
+    const loadShotFrames = async () => {
+      try {
+        setShotFramesLoading(true);
+        const resp = await fetch(String(shotFramesUrl));
+        if (!resp.ok) {
+          setShotFramesError('No se pudieron cargar los frames por tiro.');
+          setShotFramesLoading(false);
+          return;
+        }
+        const data = await resp.json();
+        const shots = Array.isArray(data?.shots) ? data.shots : [];
+        setShotFrames(shots);
+        setShotFramesError(null);
+        setShotFramesLoading(false);
+      } catch (e) {
+        setShotFramesError('No se pudieron cargar los frames por tiro.');
+        setShotFramesLoading(false);
+      }
+    };
+
+    loadShotFrames();
+  }, [analysis, analysisResult, shotFramesLoading, shotFrames.length]);
 
   // ===== Feedback del entrenador (privado para jugador y coach) =====
   const [coachFeedbackByItemId, setCoachFeedbackByItemId] = useState<Record<string, { rating?: number; comment?: string }>>({});
   const [coachSummary, setCoachSummary] = useState<string>("");
+  const [coachFeedbackVideoUrl, setCoachFeedbackVideoUrl] = useState<string | null>(null);
+  const [uploadingFeedbackVideo, setUploadingFeedbackVideo] = useState(false);
+  const [removingFeedbackVideo, setRemovingFeedbackVideo] = useState(false);
+  const seededCoachSummaryRef = useRef(false);
+  const [coachFeedbackCoachName, setCoachFeedbackCoachName] = useState<string | null>(null);
+  const [coachFeedbackCoachId, setCoachFeedbackCoachId] = useState<string | null>(null);
   const [generatingSummary, setGeneratingSummary] = useState(false);
+  const [savingCoachFeedback, setSavingCoachFeedback] = useState(false);
   const [isEditingCoachFeedback, setIsEditingCoachFeedback] = useState(false);
   const [hasExistingCoachFeedback, setHasExistingCoachFeedback] = useState(false);
-  const isCoach = (userProfile as any)?.role === 'coach' || (userProfile as any)?.role === 'admin';
+  const roleForPermissions = viewerRole || (userProfile as any)?.role;
+  const isAdmin = roleForPermissions === 'admin';
+  const isCoachRole = roleForPermissions === 'coach';
+  const authUserId = user?.uid ? String(user.uid) : '';
+  const profileId = (userProfile as any)?.id ? String((userProfile as any).id) : '';
+  const userIds = [authUserId, profileId].filter(Boolean);
+  const isCoach = isCoachRole || isAdmin;
+  const viewerId = authUserId || profileId;
+  const hasPaidCoachAccess = userIds.some((id) => (analysis as any)?.coachAccess?.[id]?.status === 'paid');
+  const isAssignedCoach = userIds.some((id) => id === (player?.coachId || ''));
+  const analysisCoachId = (analysis as any)?.coachId ? String((analysis as any).coachId) : null;
+  const paidCoachIds = Object.keys((analysis as any)?.coachAccess || {}).filter(
+    (k) => (analysis as any).coachAccess[k]?.status === 'paid'
+  );
+  /** Hay otro coach asignado/pagado para este lanzamiento (no el viewer) */
+  const hasOtherCoachForThisLaunch = Boolean(
+    (analysisCoachId && !userIds.includes(analysisCoachId)) ||
+    (paidCoachIds.length > 0 && !paidCoachIds.some((id) => userIds.includes(id)))
+  );
+  const [hasPlayerCoachAccess, setHasPlayerCoachAccess] = useState(false);
+  /** Solo el coach designado para ESTE lanzamiento (con pago) puede editar el checklist. isAssignedCoach/hasPlayerCoachAccess permiten ver pero no editar. */
+  const canEditCoachChecklist = isAdmin || (isCoachRole && hasPaidCoachAccess);
+  const canEdit = Boolean(
+    isAdmin || (isCoachRole && userIds.length > 0 && (isAssignedCoach || hasPaidCoachAccess || hasPlayerCoachAccess))
+  );
+  const canComment = Boolean(
+    isAdmin || (isCoachRole && (!player?.coachId || isAssignedCoach || hasPaidCoachAccess || hasPlayerCoachAccess))
+  );
+  const fallbackCoachSummary = (() => {
+    const raw =
+      (analysis as any)?.coachSummary ??
+      (analysis as any)?.coachFeedback?.coachSummary ??
+      (analysis as any)?.coachFeedback?.summary ??
+      (analysis as any)?.coachSummaryText ??
+      "";
+    return typeof raw === "string" ? raw : "";
+  })();
+  const resolvedCoachSummary =
+    coachSummary.trim().length > 0 ? coachSummary : fallbackCoachSummary;
+
   const hasCoachFeedback = useMemo(() => {
     const hasItems = Object.values(coachFeedbackByItemId).some((entry) => {
       if (!entry) return false;
@@ -468,9 +616,111 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       const hasComment = typeof entry.comment === 'string' && entry.comment.trim().length > 0;
       return hasRating || hasComment;
     });
-    return hasItems || coachSummary.trim().length > 0;
-  }, [coachFeedbackByItemId, coachSummary]);
-  const showCoachChecklistTab = isCoach || hasCoachFeedback;
+    return hasItems || resolvedCoachSummary.trim().length > 0;
+  }, [coachFeedbackByItemId, resolvedCoachSummary]);
+  const showCoachChecklistTab = isCoach || hasCoachFeedback || analysis.coachCompleted === true;
+  const isCoachCompleted = analysis.coachCompleted === true || hasCoachFeedback;
+  const analysisTabLabel = isCoachCompleted ? "Análisis" : "Análisis IA";
+  const analysisSummaryTitle = isCoachCompleted ? "Resumen del Análisis" : "Resumen del Análisis de IA";
+  const [analysisMessages, setAnalysisMessages] = useState<Message[]>([]);
+  const [analysisMessageText, setAnalysisMessageText] = useState("");
+  const [sendingAnalysisMessage, setSendingAnalysisMessage] = useState(false);
+  const getAnalysisMessageOriginLabel = (m: Message) => {
+    if (m.fromId === "system") return "Sistema";
+    if (viewerId && m.fromId === viewerId) return "Tú";
+    return isCoach ? "Jugador" : "Entrenador";
+  };
+  const isKeyframeMessage = (m: Message) =>
+    Boolean(m.keyframeUrl || m.angle || typeof m.index === "number");
+
+  const toMessageDate = (value: any) => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (typeof value === "string" || typeof value === "number") {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    if (typeof value?.toDate === "function") return value.toDate();
+    if (typeof value?._seconds === "number") {
+      return new Date(value._seconds * 1000 + Math.round((value._nanoseconds || 0) / 1e6));
+    }
+    return null;
+  };
+  const getMessageTime = (value: any) => toMessageDate(value)?.getTime() ?? 0;
+  const formatMessageDate = (value: any) => {
+    const d = toMessageDate(value);
+    return d ? d.toLocaleString() : "Fecha desconocida";
+  };
+  const renderMessageText = (text: string) => {
+    if (!text) return null;
+    const urlPattern = /https?:\/\/\S+/g;
+    const segments: Array<{ type: "text" | "link"; value: string }> = [];
+    let lastIndex = 0;
+    for (const match of text.matchAll(urlPattern)) {
+      const matchText = match[0];
+      const matchIndex = match.index ?? 0;
+      if (matchIndex > lastIndex) {
+        segments.push({ type: "text", value: text.slice(lastIndex, matchIndex) });
+      }
+      segments.push({ type: "link", value: matchText });
+      lastIndex = matchIndex + matchText.length;
+    }
+    if (lastIndex < text.length) {
+      segments.push({ type: "text", value: text.slice(lastIndex) });
+    }
+    return segments.map((segment, idx) => {
+      if (segment.type === "link") {
+        const href = resolveMessageLinkToCurrentEnv(segment.value);
+        return (
+          <a
+            key={`link-${idx}`}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline break-all"
+          >
+            {href}
+          </a>
+        );
+      }
+      return <span key={`text-${idx}`}>{segment.value}</span>;
+    });
+  };
+
+  useEffect(() => {
+    if (seededCoachSummaryRef.current) return;
+    if (coachSummary.trim().length > 0) {
+      seededCoachSummaryRef.current = true;
+      return;
+    }
+    if (fallbackCoachSummary.trim().length > 0) {
+      setCoachSummary(fallbackCoachSummary);
+      seededCoachSummaryRef.current = true;
+    }
+  }, [coachSummary, fallbackCoachSummary]);
+
+  useEffect(() => {
+    if (!analysis?.id || !user) {
+      setAnalysisMessages([]);
+      return;
+    }
+    try {
+      const q = query(
+        collection(db as any, "messages"),
+        where("analysisId", "==", analysis.id)
+      );
+      const unsub = onSnapshot(q, (snap) => {
+        const incoming = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })) as Message[];
+        const filtered = isCoach
+          ? incoming
+          : incoming.filter((m) => m.fromId === user.uid || m.toId === user.uid);
+        setAnalysisMessages(filtered.sort((a, b) => getMessageTime(b.createdAt) - getMessageTime(a.createdAt)));
+      });
+      return () => unsub();
+    } catch (e) {
+      console.error("Error cargando mensajes del lanzamiento:", e);
+    }
+  }, [analysis?.id, isCoach, user]);
 
   useEffect(() => {
     // Cargar feedback del coach para todos los usuarios (coach, admin y jugador)
@@ -512,17 +762,42 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             summaryPreview: summaryValue.substring(0, 100)
           });
           setCoachSummary(summaryValue);
+          const videoUrl = typeof fb?.coachFeedbackVideoUrl === 'string' && fb.coachFeedbackVideoUrl.trim() ? fb.coachFeedbackVideoUrl.trim() : null;
+          setCoachFeedbackVideoUrl(videoUrl);
+          const coachId = String(fb?.createdBy || fb?.id || "").trim();
+          setCoachFeedbackCoachId(coachId || null);
+          const coachNameFromFeedback = typeof fb?.coachName === "string" ? fb.coachName.trim() : "";
+          if (coachNameFromFeedback) {
+            setCoachFeedbackCoachName(coachNameFromFeedback);
+          } else {
+            if (coachId) {
+              try {
+                const coachSnap = await getDoc(doc(db as any, "coaches", coachId));
+                const coachData = coachSnap.exists() ? (coachSnap.data() as any) : null;
+                const coachName = typeof coachData?.name === "string" ? coachData.name.trim() : "";
+                setCoachFeedbackCoachName(coachName || null);
+              } catch (e) {
+                console.warn("[CoachFeedback] ⚠️ No se pudo cargar el nombre del coach:", e);
+                setCoachFeedbackCoachName(null);
+              }
+            } else {
+              setCoachFeedbackCoachName(null);
+            }
+          }
           // Detectar si ya hay feedback guardado (si hay items o summary)
           const hasItems = Object.keys(normalizedItems).length > 0;
           const hasSummary = summaryValue.trim().length > 0;
           setHasExistingCoachFeedback(hasItems || hasSummary);
-          // Si hay feedback existente, no iniciar en modo edición
-          setIsEditingCoachFeedback(!(hasItems || hasSummary));
+          // Si hay feedback existente, solo permitir edición si tiene permisos
+          setIsEditingCoachFeedback(canEdit && !(hasItems || hasSummary));
         } else {
           // No hay feedback, iniciar en modo edición
           console.log(`[CoachFeedback] ⚠️ No se encontró feedback para el análisis ${analysis.id}`);
           setHasExistingCoachFeedback(false);
-          setIsEditingCoachFeedback(true);
+          setIsEditingCoachFeedback(canEdit);
+          setCoachFeedbackCoachName(null);
+          setCoachFeedbackCoachId(null);
+          setCoachFeedbackVideoUrl(null);
         }
       } catch (e) {
         console.error('[CoachFeedback] ❌ Error cargando feedback:', e);
@@ -531,7 +806,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     if (user) {
       void load();
     }
-  }, [analysis.id, user?.uid]);
+  }, [analysis.id, user?.uid, canEdit]);
 
   const onCoachFeedbackChange = (itemId: string, next: { rating?: number; comment?: string }) => {
     // Normalizar el ID al guardar (lowercase y trim para consistencia)
@@ -542,6 +817,11 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   // Guardar feedback del entrenador
   const saveCoachFeedback = async () => {
     try {
+      if (!canEdit) {
+        toast({ title: 'Sin permisos', description: 'No tenés permisos para guardar esta revisión.', variant: 'destructive' });
+        return;
+      }
+      setSavingCoachFeedback(true);
       const auth = getAuth();
       const u = auth.currentUser;
       if (!u) {
@@ -554,20 +834,107 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ items: coachFeedbackByItemId, coachSummary }),
       });
-      if (!res.ok) throw new Error('save failed');
-      toast({ title: 'Feedback guardado', description: 'Se enviaron discrepancias a revisión de IA si correspondía.' });
-      // Si había feedback existente, volver a modo lectura después de guardar
-      if (hasExistingCoachFeedback) {
-        setIsEditingCoachFeedback(false);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || 'No se pudo guardar el feedback.');
       }
+      toast({ title: 'Feedback guardado', description: 'Se enviaron discrepancias a revisión de IA si correspondía.' });
+      setHasExistingCoachFeedback(true);
+      setIsEditingCoachFeedback(false);
     } catch (e) {
-      toast({ title: 'Error', description: 'No se pudo guardar el feedback.', variant: 'destructive' });
+      const message = e instanceof Error ? e.message : 'No se pudo guardar el feedback.';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+    } finally {
+      setSavingCoachFeedback(false);
+    }
+  };
+
+  // Subir video de devolución (mín 30 s, máx 4 min, opcional)
+  const handleUploadFeedbackVideo = async (file: File, knownDurationSec?: number) => {
+    if (!canEdit || !user) return;
+    const minSec = 30;
+    const maxSec = 240;
+    let duration: number;
+    if (typeof knownDurationSec === 'number' && Number.isFinite(knownDurationSec) && knownDurationSec > 0) {
+      duration = knownDurationSec;
+    } else {
+      duration = await new Promise<number>((resolve, reject) => {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.onloadedmetadata = () => {
+          URL.revokeObjectURL(video.src);
+          const d = video.duration;
+          resolve(Number.isFinite(d) && d > 0 ? d : 0);
+        };
+        video.onerror = () => reject(new Error('No se pudo leer el video'));
+        video.src = URL.createObjectURL(file);
+      });
+    }
+    if (duration < minSec || duration > maxSec) {
+      const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+      toast({
+        title: 'Duración incorrecta',
+        description: `El video debe durar mínimo 30 segundos y máximo 4 minutos (${Number.isFinite(duration) ? fmt(duration) : 'no se pudo leer'} actuales).`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      setUploadingFeedbackVideo(true);
+      const token = await getIdToken(getAuth().currentUser!);
+      const formData = new FormData();
+      formData.append('video', file);
+      const res = await fetch(`/api/analyses/${analysis.id}/coach-feedback-video`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || 'No se pudo subir el video.');
+      }
+      setCoachFeedbackVideoUrl(data?.url || null);
+      toast({ title: 'Video subido', description: 'El video de devolución se guardó correctamente.' });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error al subir el video.';
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
+    } finally {
+      setUploadingFeedbackVideo(false);
+    }
+  };
+
+  const handleRemoveFeedbackVideo = async () => {
+    if (!canEdit || !coachFeedbackVideoUrl) return;
+    try {
+      setRemovingFeedbackVideo(true);
+      const token = await getIdToken(getAuth().currentUser!);
+      const res = await fetch(`/api/analyses/${analysis.id}/coach-feedback-video`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || 'No se pudo eliminar el video.');
+      }
+      setCoachFeedbackVideoUrl(null);
+      toast({ title: 'Video eliminado', description: 'El video de devolución se eliminó correctamente.' });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error al eliminar el video.';
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
+    } finally {
+      setRemovingFeedbackVideo(false);
     }
   };
 
   // Generar resumen con IA basado en las calificaciones del coach
   const generateCoachSummary = async () => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const controller = new AbortController();
     try {
+      if (!canEdit) {
+        toast({ title: 'Sin permisos', description: 'No tenés permisos para generar el comentario global.', variant: 'destructive' });
+        return;
+      }
       setGeneratingSummary(true);
       const auth = getAuth();
       const u = auth.currentUser;
@@ -575,47 +942,51 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         toast({ title: 'No autenticado', description: 'Iniciá sesión para generar resumen', variant: 'destructive' });
         return;
       }
-      
+
       const token = await getIdToken(u);
       const shotType = (analysis as any).shotType || (analysis as any).scoreMetadata?.shotTypeKey || 'tres';
-      
+
+      timeoutId = setTimeout(() => controller.abort(), 20000);
       const res = await fetch(`/api/analyses/${analysis.id}/generate-coach-summary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           coachFeedback: coachFeedbackByItemId,
-          shotType 
+          shotType
         }),
+        signal: controller.signal,
       });
-      
+
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data?.error || 'Error generando resumen');
+        throw new Error((data as any)?.error || 'Error generando resumen');
       }
-      
-      const data = await res.json();
+
       if (data.ok && data.summary) {
         setCoachSummary(data.summary);
         const hasCoachRatings = Object.values(coachFeedbackByItemId).some(
           (cf) => cf && typeof cf.rating === 'number'
         );
-        toast({ 
-          title: 'Resumen generado', 
-          description: hasCoachRatings 
+        toast({
+          title: 'Resumen generado',
+          description: hasCoachRatings
             ? 'La IA ha generado un resumen basado en tus calificaciones. Podés editarlo si querés.'
-            : 'La IA ha generado un resumen basado en el análisis automático. Podés editarlo si querés.' 
+            : 'La IA ha generado un resumen basado en el análisis automático. Podés editarlo si querés.'
         });
       } else {
         throw new Error('No se recibió el resumen');
       }
     } catch (e) {
+      const message = e instanceof Error ? e.message : 'No se pudo generar el resumen.';
+      const isAbort = e instanceof DOMException && e.name === 'AbortError';
       console.error('Error generando resumen:', e);
-      toast({ 
-        title: 'Error', 
-        description: e instanceof Error ? e.message : 'No se pudo generar el resumen.', 
-        variant: 'destructive' 
+      toast({
+        title: 'Error',
+        description: isAbort ? 'La generación tardó demasiado y se canceló. Intentá de nuevo.' : message,
+        variant: 'destructive'
       });
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setGeneratingSummary(false);
     }
   };
@@ -623,18 +994,29 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   // Derivados del checklist basados en rating 1..5 (ordenados por importancia)
   const flatChecklistItems = checklistState.flatMap((c) => c.items);
 
+  const isEvaluableChecklistItem = (item: DetailedChecklistItem) =>
+    !item.na && item.status !== "no_evaluable";
+
   const checklistStrengths = flatChecklistItems
-    .filter((item) => (item.rating || 3) >= 4)
+    .filter((item) => isEvaluableChecklistItem(item) && (item.rating || 3) >= 4)
     .sort((a, b) => (b.rating || 3) - (a.rating || 3)) // 5 primero, luego 4
     .map((item) => item.name);
 
   const checklistWeaknesses = flatChecklistItems
-    .filter((item) => (item.rating || 3) <= 2)
+    .filter((item) => isEvaluableChecklistItem(item) && (item.rating || 3) <= 2)
     .sort((a, b) => (a.rating || 3) - (b.rating || 3)) // 1 primero, luego 2
     .map((item) => item.name);
 
+  const scrubTimestamps = (text: string) =>
+    text.replace(/\b\d+(\.\d+)?s\b/g, '').replace(/\b\d+(\.\d+)?s-\d+(\.\d+)?s\b/g, '').trim();
+
   const checklistRecommendations = flatChecklistItems
-    .filter((item) => (item.rating || 3) <= 3 && String(item.comment || '').trim() !== "")
+    .filter(
+      (item) =>
+        isEvaluableChecklistItem(item) &&
+        (item.rating || 3) <= 3 &&
+        String(item.comment || '').trim() !== ""
+    )
     .sort((a, b) => {
       const ra = a.rating || 3;
       const rb = b.rating || 3;
@@ -643,7 +1025,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       const lb = String(b.comment || '').length;
       return lb - la; // comentario más sustancioso primero
     })
-    .map((item) => `${item.name}: ${item.comment}`);
+    .map((item) => scrubTimestamps(`${item.name}: ${item.comment}`));
 
   // Evaluación final: promedio 1..5 (usa rating; si falta, mapea status legacy)
   const mapStatusToRating = (status?: DetailedChecklistItem["status"] | string): number | null => {
@@ -666,27 +1048,27 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const scoreLabel = (r: number) => (r >= 4.5 ? "Excelente" : r >= 4 ? "Correcto" : r >= 3 ? "Mejorable" : r >= 2 ? "Incorrecto leve" : "Incorrecto");
 
   // Asegurar que otros campos opcionales existan (tomando de analysisResult si es necesario)
-  const analysisResult: any = (analysis as any).analysisResult || {};
-  if (allRatings.length === 0 && Array.isArray(analysisResult.detailedChecklist)) {
-    allRatings = (analysisResult.detailedChecklist as any[])
+  const resolvedAnalysisResult = remoteAnalysisResult || analysisResult;
+  if (allRatings.length === 0 && Array.isArray(resolvedAnalysisResult.detailedChecklist)) {
+    allRatings = (resolvedAnalysisResult.detailedChecklist as any[])
       .flatMap((c: any) => c.items || [])
       .map((it: any) => (typeof it.rating === 'number' ? it.rating : mapStatusToRating(it.status)))
       .filter((v: any) => typeof v === 'number');
   }
-  const derivedSummary: string = analysis.analysisSummary || analysisResult.analysisSummary || 'Análisis completado';
+  const derivedSummary: string = analysis.analysisSummary || resolvedAnalysisResult.analysisSummary || 'Análisis completado';
   // Preferir valores del análisis; si no, usar los derivados del checklist; si tampoco, usar analysisResult
   const strengthsFromChecklist = checklistStrengths || [];
   const weaknessesFromChecklist = checklistWeaknesses || [];
   const recommendationsFromChecklist = checklistRecommendations || [];
   const derivedStrengths: string[] = (analysis.strengths && analysis.strengths.length > 0)
     ? analysis.strengths
-    : (strengthsFromChecklist.length > 0 ? strengthsFromChecklist : (analysisResult.strengths || []));
+    : (strengthsFromChecklist.length > 0 ? strengthsFromChecklist : (resolvedAnalysisResult.strengths || []));
   const derivedWeaknesses: string[] = (analysis.weaknesses && analysis.weaknesses.length > 0)
     ? analysis.weaknesses
-    : (weaknessesFromChecklist.length > 0 ? weaknessesFromChecklist : (analysisResult.weaknesses || []));
+    : (weaknessesFromChecklist.length > 0 ? weaknessesFromChecklist : (resolvedAnalysisResult.weaknesses || []));
   const derivedRecommendations: string[] = (analysis.recommendations && analysis.recommendations.length > 0)
     ? analysis.recommendations
-    : (recommendationsFromChecklist.length > 0 ? recommendationsFromChecklist : (analysisResult.recommendations || []));
+    : (recommendationsFromChecklist.length > 0 ? recommendationsFromChecklist : (resolvedAnalysisResult.recommendations || []));
   const derivedKeyframeAnalysis: string | null = (analysis as any).keyframeAnalysis || analysisResult.keyframeAnalysis || null;
 
   const toPct = (score: number): number => {
@@ -694,6 +1076,22 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     if (score <= 5) return Math.round((score / 5) * 100);
     return Math.round(score);
   };
+
+  const formatMs = (value?: number) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return 'N/A';
+    return `${(value / 1000).toFixed(2)}s`;
+  };
+
+  const ownerId = (analysis as any)?.playerId || (player as any)?.id;
+  const isOwnerPlayer = Boolean(viewerId && ownerId && String(viewerId) === String(ownerId));
+  const nonBasketballWarning =
+    (analysis as any).advertencia || (analysisResult as any).advertencia || '';
+  const isNonBasketballVideo =
+    /no corresponde a basquet|no detectamos/i.test(nonBasketballWarning || derivedSummary);
+  const canClearScore = Boolean(isOwnerPlayer && viewerId);
+  const hasStrengths = derivedStrengths.length > 0;
+  const hasWeaknesses = derivedWeaknesses.length > 0;
+  const hasRecommendations = derivedRecommendations.length > 0;
 
   const safeAnalysis = {
     ...analysis,
@@ -705,6 +1103,37 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     recommendations: derivedRecommendations,
     analysisSummary: derivedSummary,
   };
+
+  useEffect(() => {
+    let active = true;
+    const checkCoachAccess = async () => {
+      if (!isCoachRole || !safeAnalysis?.id) {
+        setHasPlayerCoachAccess(false);
+        return;
+      }
+      try {
+        const auth = getAuth();
+        const cu = auth.currentUser;
+        if (!cu) return;
+        const token = await getIdToken(cu, true);
+        const res = await fetch(`/api/analyses/${safeAnalysis.id}/coach-access`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          if (active) setHasPlayerCoachAccess(false);
+          return;
+        }
+        const data = await res.json();
+        if (active) setHasPlayerCoachAccess(Boolean(data?.hasCoachAccess));
+      } catch (e) {
+        if (active) setHasPlayerCoachAccess(false);
+      }
+    };
+    void checkCoachAccess();
+    return () => {
+      active = false;
+    };
+  }, [isCoachRole, safeAnalysis?.id]);
 
   const attempts: Array<{ start: number; end: number }> = Array.isArray((analysis as any).attempts)
     ? ((analysis as any).attempts as Array<{ start: number; end: number }>)
@@ -770,15 +1199,19 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const filteredCoaches = useMemo(() => {
     // Filtrar coaches ocultos primero
     const visibleCoaches = coaches.filter(coach => coach.hidden !== true);
+    const excludedCoachId = coachFeedbackCoachId?.trim();
+    const selectableCoaches = excludedCoachId
+      ? visibleCoaches.filter((coach) => String(coach.id || '').trim() !== excludedCoachId)
+      : visibleCoaches;
     
-    if (!coachSearchTerm) return visibleCoaches;
+    if (!coachSearchTerm) return selectableCoaches;
     const term = coachSearchTerm.toLowerCase();
-    return visibleCoaches.filter(coach => 
+    return selectableCoaches.filter(coach => 
       coach.name.toLowerCase().includes(term) ||
       coach.bio?.toLowerCase().includes(term) ||
       coach.specialties?.some(s => s.toLowerCase().includes(term))
     );
-  }, [coaches, coachSearchTerm]);
+  }, [coaches, coachSearchTerm, coachFeedbackCoachId]);
 
   // Función para renderizar estrellas de rating
   const renderCoachStars = (rating: number) => {
@@ -815,8 +1248,15 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         toCoachDocId: selectedCoachForMessage.id,
         toName: selectedCoachForMessage.name,
         text: messageText,
+        analysisId: analysis.id || null,
         createdAt: serverTimestamp(),
         read: false,
+        messageType: getMessageType({ fromId: user.uid, analysisId: analysis.id || null }),
+        conversationId: buildConversationId({
+          fromId: user.uid,
+          toId: selectedCoachForMessage.id,
+          analysisId: analysis.id || null,
+        }),
       };
       await addDoc(colRef, payload as any);
       setMessageDialogOpen(false);
@@ -835,6 +1275,49 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       });
     } finally {
       setSendingMessage(false);
+    }
+  };
+
+  const sendAnalysisMessage = async () => {
+    if (!user || !analysis?.id || !analysisMessageText.trim()) return;
+    const targetCoachId = (analysis as any)?.coachId || player?.coachId;
+    const toId = isCoach ? player?.id : targetCoachId;
+    if (!toId) {
+      toast({
+        title: "Falta destinatario",
+        description: "No hay entrenador asignado para este lanzamiento.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      setSendingAnalysisMessage(true);
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/analyses/${analysis.id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ text: analysisMessageText.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || res.statusText);
+      }
+      setAnalysisMessageText("");
+      if (isCoach) {
+        toast({
+          title: "Mensaje enviado",
+          description: "El jugador recibirá un correo con tu mensaje.",
+        });
+      }
+    } catch (e) {
+      console.error("Error enviando mensaje del lanzamiento:", e);
+      toast({
+        title: "Error",
+        description: e instanceof Error ? e.message : "No se pudo enviar el mensaje.",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingAnalysisMessage(false);
     }
   };
 
@@ -866,6 +1349,25 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         const unlockData = await unlockCheckRes.json();
         const paidCoachIds = unlockData.paidCoachIds || [];
         const pendingCoachIds = unlockData.pendingCoachIds || [];
+        const otherPending = pendingCoachIds.filter((c: any) => c.coachId !== coach.id);
+        const otherPaid = paidCoachIds.filter((c: any) => c.coachId !== coach.id);
+        if (otherPending.length > 0 || otherPaid.length > 0) {
+          const pendingNames = otherPending.map((c: any) => c.coachName || 'Entrenador');
+          const paidNames = otherPaid.map((c: any) => c.coachName || 'Entrenador');
+          const parts: string[] = [];
+          if (pendingNames.length > 0) {
+            parts.push(`Pago pendiente con ${pendingNames.join(', ')}.`);
+          }
+          if (paidNames.length > 0) {
+            parts.push(`Pago ya realizado con ${paidNames.join(', ')}.`);
+          }
+          parts.push('Si solicitás otra revisión, se generará un nuevo pago.');
+          toast({
+            title: 'Revisión pendiente con otro entrenador',
+            description: parts.join(' '),
+            variant: 'default',
+          });
+        }
         
         // Verificar si este coach ya está en la lista de pagados o pendientes
         const isPaid = paidCoachIds.some((c: any) => c.coachId === coach.id);
@@ -1068,7 +1570,6 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const platformFee = coachRate != null ? Math.max(1, Math.round(coachRate * 0.3)) : null;
   const totalAmount = coachRate != null && platformFee != null ? coachRate + platformFee : null;
 
-  const canEdit = userProfile?.role === 'coach' && userProfile.id === (player?.coachId || '');
   const [completing, setCompleting] = useState(false);
   
   // Validar que todos los checklist estén completos y el comentario global tenga mínimo 50 palabras
@@ -1142,35 +1643,71 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   };
   const [rebuilding, setRebuilding] = useState(false);
   const [uploadingFromClient, setUploadingFromClient] = useState(false);
+  const [keyframesGenStatus, setKeyframesGenStatus] = useState<string | null>(null);
 
   type KeyframeComment = { id?: string; comment: string; coachName?: string; createdAt: string };
   const [keyframeComments, setKeyframeComments] = useState<KeyframeComment[]>([]);
   const [newComment, setNewComment] = useState("");
+  const [isCommentFocused, setIsCommentFocused] = useState(false);
+  const isCommentFocusedRef = useRef(false);
+  const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [commentAiOpen, setCommentAiOpen] = useState(false);
+  const [commentAiLoading, setCommentAiLoading] = useState(false);
+  const [commentAiSuggestion, setCommentAiSuggestion] = useState("");
 
   type KeyframeAnnotation = { id?: string; overlayUrl: string; createdAt: string };
   const [annotations, setAnnotations] = useState<KeyframeAnnotation[]>([]);
+  const [savingAnnotation, setSavingAnnotation] = useState(false);
+  const [annotationStatus, setAnnotationStatus] = useState<string | null>(null);
+  const imageContainerRef = useRef<HTMLDivElement | null>(null);
+  const [imageLayout, setImageLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const imageNaturalSizeRef = useRef<{ width: number; height: number } | null>(null);
 
   // Canvas overlay refs y estado de herramienta
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
-  const toolRef = useRef<'move' | 'pencil' | 'circle' | 'eraser'>("move");
+  const toolRef = useRef<'move' | 'pencil' | 'circle' | 'line' | 'eraser'>("move");
   const startPointRef = useRef<{ x: number; y: number } | null>(null);
+  const canvasSnapshotRef = useRef<ImageData | null>(null);
+  const [drawColor, setDrawColor] = useState("#ef4444");
 
   const clearCanvas = useCallback(() => {
     const canvas = canvasRef.current; if (!canvas) return; const ctx = canvas.getContext('2d'); if (!ctx) return; ctx.clearRect(0, 0, canvas.width, canvas.height);
+    canvasSnapshotRef.current = null;
   }, []);
 
   const beginDraw = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    setIsCommentFocused(false);
     if (toolRef.current === 'move') return;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const x = e.clientX - rect.left; const y = e.clientY - rect.top;
+    if (imageLayout) {
+      if (x < imageLayout.x || y < imageLayout.y || x > imageLayout.x + imageLayout.width || y > imageLayout.y + imageLayout.height) {
+        return;
+      }
+    }
     drawingRef.current = true; startPointRef.current = { x, y };
+    const ctx = canvasRef.current?.getContext('2d'); if (!ctx || !canvasRef.current) return;
     if (toolRef.current === 'pencil' || toolRef.current === 'eraser') {
-      const ctx = canvasRef.current?.getContext('2d'); if (!ctx || !canvasRef.current) return;
       ctx.lineWidth = toolRef.current === 'eraser' ? 16 : 3;
-      ctx.strokeStyle = toolRef.current === 'eraser' ? 'rgba(0,0,0,1)' : '#ef4444';
+      ctx.strokeStyle = toolRef.current === 'eraser' ? 'rgba(0,0,0,1)' : drawColor;
       ctx.globalCompositeOperation = toolRef.current === 'eraser' ? 'destination-out' : 'source-over';
+      if (imageLayout) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(imageLayout.x, imageLayout.y, imageLayout.width, imageLayout.height);
+        ctx.clip();
+      }
       ctx.beginPath(); ctx.moveTo(x, y);
+      return;
+    }
+    if (toolRef.current === 'line' || toolRef.current === 'circle') {
+      try {
+        canvasSnapshotRef.current = ctx.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height);
+      } catch (e) {}
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = drawColor;
+      ctx.globalCompositeOperation = 'source-over';
     }
   };
   const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1179,17 +1716,51 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     const x = e.clientX - rect.left; const y = e.clientY - rect.top;
     const ctx = canvasRef.current?.getContext('2d'); if (!ctx) return;
     if (toolRef.current === 'pencil' || toolRef.current === 'eraser') {
+      if (imageLayout) {
+        if (x < imageLayout.x || y < imageLayout.y || x > imageLayout.x + imageLayout.width || y > imageLayout.y + imageLayout.height) {
+          return;
+        }
+      }
       ctx.lineTo(x, y); ctx.stroke();
-    } else if (toolRef.current === 'circle') {
+    } else if (toolRef.current === 'circle' || toolRef.current === 'line') {
       const sp = startPointRef.current; if (!sp || !canvasRef.current) return;
-      // Redibujar círculo provisional: limpiar y no borrar el trazo previo
-      // Para simplicidad, limpiar solo el último círculo provisional pintando sobre una capa temporal no implementada; aquí trazamos guía mínima
+      if (canvasSnapshotRef.current) {
+        ctx.putImageData(canvasSnapshotRef.current, 0, 0);
+      }
+      if (imageLayout) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(imageLayout.x, imageLayout.y, imageLayout.width, imageLayout.height);
+        ctx.clip();
+      }
+      ctx.beginPath();
+      if (toolRef.current === 'line') {
+        ctx.moveTo(sp.x, sp.y);
+        ctx.lineTo(x, y);
+      } else {
+        const radius = Math.hypot(x - sp.x, y - sp.y);
+        ctx.arc(sp.x, sp.y, radius, 0, Math.PI * 2);
+      }
+      ctx.stroke();
+      if (imageLayout) {
+        ctx.restore();
+      }
     }
   };
-  const endDraw = () => { drawingRef.current = false; startPointRef.current = null; };
+  const endDraw = () => {
+    const ctx = canvasRef.current?.getContext('2d');
+    if (ctx && toolRef.current === 'pencil') {
+      ctx.closePath();
+      if (imageLayout) ctx.restore();
+    }
+    drawingRef.current = false;
+    startPointRef.current = null;
+    canvasSnapshotRef.current = null;
+  };
 
   const loadCommentsAndAnnotations = useCallback(async () => {
     if (!selectedKeyframe) return;
+    const keyframeForQuery = normalizeKeyframeUrl(selectedKeyframe);
     console.log('🔄 loadCommentsAndAnnotations - usando POST (nuevo código)');
     try {
       // Usar POST para evitar error 431 cuando keyframeUrl es muy largo (data URL base64)
@@ -1198,13 +1769,13 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ keyframeUrl: selectedKeyframe, action: 'list' }),
+        body: JSON.stringify({ keyframeUrl: keyframeForQuery, action: 'list' }),
       });
       if (res.ok) {
         const data = await res.json();
         setKeyframeComments(Array.isArray(data.comments) ? data.comments : []);
       } else { setKeyframeComments([]); }
-    } catch { setKeyframeComments([]); }
+    } catch (e) { setKeyframeComments([]); }
     try {
       // Usar POST para evitar error 431 cuando keyframeUrl es muy largo (data URL base64)
       console.log('🔄 Cargando anotaciones - usando POST (nuevo código)');
@@ -1213,18 +1784,54 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ keyframeUrl: selectedKeyframe, action: 'list' }),
+        body: JSON.stringify({ keyframeUrl: keyframeForQuery, action: 'list' }),
       });
       if (res2.ok) {
         const data2 = await res2.json();
         setAnnotations(Array.isArray(data2.annotations) ? data2.annotations : []);
       } else { setAnnotations([]); }
-    } catch { setAnnotations([]); }
+    } catch (e) { setAnnotations([]); }
   }, [selectedKeyframe, safeAnalysis.id]);
 
   useEffect(() => {
     if (isModalOpen) { void loadCommentsAndAnnotations(); }
   }, [isModalOpen, loadCommentsAndAnnotations]);
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    void loadCommentsAndAnnotations();
+    // Enfocar el textarea para comentar al cambiar de fotograma
+    window.setTimeout(() => {
+      commentInputRef.current?.focus();
+    }, 0);
+  }, [selectedKeyframe, isModalOpen, loadCommentsAndAnnotations]);
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const container = imageContainerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+    const rect = container.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const nextWidth = Math.round(rect.width);
+    const nextHeight = Math.round(rect.height);
+    if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+      canvas.width = nextWidth;
+      canvas.height = nextHeight;
+      clearCanvas();
+    }
+    const natural = imageNaturalSizeRef.current;
+    if (natural?.width && natural?.height) {
+      const scale = Math.min(nextWidth / natural.width, nextHeight / natural.height);
+      const displayW = Math.round(natural.width * scale);
+      const displayH = Math.round(natural.height * scale);
+      const offsetX = Math.round((nextWidth - displayW) / 2);
+      const offsetY = Math.round((nextHeight - displayH) / 2);
+      setImageLayout({ x: offsetX, y: offsetY, width: displayW, height: displayH });
+    } else {
+      setImageLayout(null);
+    }
+  }, [isModalOpen, isExpanded, selectedKeyframe, clearCanvas]);
 
   // Cargar entrenadores cuando se abre el diálogo
   useEffect(() => {
@@ -1287,7 +1894,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         } else {
           alert("JSON inválido: falta frames");
         }
-      } catch {
+      } catch (e) {
         alert("No se pudo parsear JSON");
       }
     };
@@ -1313,6 +1920,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const openKeyframeModal = (keyframeUrl: string, angleKey: 'front'|'back'|'left'|'right', index: number) => {
         console.log(`🔍 Keyframes disponibles para ${angleKey}:`, (localKeyframes as any)[angleKey]);
     console.log(`🧠 Smart keyframes disponibles para ${angleKey}:`, (smartKeyframes as any)[angleKey]);
+    // Resetear herramienta para no confundir al comentar
+    toolRef.current = 'pencil';
+    setIsCommentFocused(false);
     
     setSelectedKeyframe(keyframeUrl);
     setSelectedAngle(angleKey);
@@ -1330,9 +1940,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       angleKeyframes = smartAngleKeyframes
         .map(kf => normalizeImageSrc(kf.imageBuffer))
         .filter((src) => Boolean(src));
-          } else if (Array.isArray(traditionalAngleKeyframes) && traditionalAngleKeyframes.length > 0) {
+    } else if (Array.isArray(traditionalAngleKeyframes) && traditionalAngleKeyframes.length > 0) {
       // Usar keyframes tradicionales (URLs)
-      angleKeyframes = traditionalAngleKeyframes;
+      angleKeyframes = traditionalAngleKeyframes.map((kf) => normalizeKeyframeUrl(kf));
           }
     
         if (angleKeyframes.length > 0) {
@@ -1344,28 +1954,53 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     setIsModalOpen(true);
   };
 
+
   const generateKeyframesFromClient = async () => {
     try {
       setUploadingFromClient(true);
+      setKeyframesGenStatus('Iniciando generación de fotogramas…');
       const isDev = process.env.NODE_ENV !== 'production';
 
       const generateKeyframesOnServer = async () => {
         const res = await fetch(`/api/analyses/${safeAnalysis.id}/rebuild-keyframes/dev`, { method: 'POST' });
         const data = await res.json();
-        if (!res.ok || !data?.keyframes) {
+        const hasAny = data?.keyframes && ['front','back','left','right'].some((k: string) => Array.isArray(data.keyframes[k]) && data.keyframes[k].length > 0);
+        if (!res.ok || !data?.keyframes || !hasAny) {
           throw new Error(data?.error || 'No se pudieron generar fotogramas en el servidor.');
         }
         setLocalKeyframes(data.keyframes);
+        setKeyframesGenStatus('Fotogramas generados en servidor.');
+        return true;
       };
 
       if (isDev) {
-        await generateKeyframesOnServer();
-        return;
+        try {
+          const ok = await generateKeyframesOnServer();
+          if (ok) return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'No se pudieron generar en el servidor.';
+          setKeyframesGenStatus(`Servidor falló: ${message}. Probando desde el video…`);
+          toast({
+            title: 'Fallback a cliente',
+            description: `${message} Intentando extraer desde el video…`,
+            variant: 'destructive',
+          });
+        }
       }
 
+      const findCandidateVideo = () => {
+        const tagged = Array.from(document.querySelectorAll<HTMLVideoElement>('video[data-analysis-video]'));
+        const visibleTagged = tagged.filter((el) => el.offsetParent !== null);
+        const fromTagged = (visibleTagged.length ? visibleTagged : tagged).find((el) => el.currentSrc || el.src);
+        if (fromTagged) return fromTagged;
+        const fallback = document.querySelector('video') as HTMLVideoElement | null;
+        return fallback || null;
+      };
+
       // Intentar extraer 12 frames desde el video visible del DOM
-      const v = document.querySelector('video');
-      if (!v) {
+      const videoEl = findCandidateVideo();
+      if (!videoEl) {
+        setKeyframesGenStatus('No se encontró un video visible para extraer fotogramas.');
         toast({
           title: 'Sin video',
           description: 'No se encontró un video visible para extraer fotogramas.',
@@ -1373,9 +2008,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         });
         return;
       }
-      const videoEl = v as HTMLVideoElement;
       const hasSrc = Boolean(videoEl.currentSrc || videoEl.src);
       if (!hasSrc) {
+        setKeyframesGenStatus('El video todavía no tiene fuente válida.');
         toast({
           title: 'Video no cargado',
           description: 'El video no tiene una fuente válida todavía.',
@@ -1386,6 +2021,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       if (!ctx) {
+        setKeyframesGenStatus('No se pudo crear el canvas para extraer fotogramas.');
         toast({
           title: 'Error',
           description: 'No se pudo crear el canvas para extraer fotogramas.',
@@ -1405,6 +2041,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         videoEl.addEventListener('error', onError, { once: true });
       });
       if (!Number.isFinite(videoEl.duration) || videoEl.duration <= 0) {
+        setKeyframesGenStatus('La duracion del video no es valida para extraer fotogramas.');
         toast({
           title: 'Video inválido',
           description: 'La duración del video no es válida para extraer fotogramas.',
@@ -1440,17 +2077,21 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       }
       const res = await fetch(`/api/analyses/${safeAnalysis.id}/keyframes/upload`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ angle:'front', frames: urls }) });
       const data = await res.json();
-      if (res.ok && data?.keyframes) setLocalKeyframes(data.keyframes);
+      if (res.ok && data?.keyframes) {
+        setLocalKeyframes(data.keyframes);
+        setKeyframesGenStatus('Fotogramas generados y guardados.');
+      }
       if (!res.ok) {
         throw new Error(data?.error || 'No se pudieron guardar los fotogramas.');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudieron generar los fotogramas.';
+      setKeyframesGenStatus(message);
       if (process.env.NODE_ENV !== 'production' && message.toLowerCase().includes('tainted')) {
         try {
           await fetch(`/api/analyses/${safeAnalysis.id}/rebuild-keyframes/dev`, { method: 'POST' });
           return;
-        } catch {}
+        } catch (e) {}
       }
       toast({
         title: 'Error',
@@ -1498,6 +2139,11 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!isModalOpen) return;
+      const target = event.target as HTMLElement | null;
+      if (isCommentFocused) return;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
       
       if (event.key === 'ArrowLeft' && canNavigatePrev) {
         event.preventDefault();
@@ -1512,25 +2158,47 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
     }
-  }, [isModalOpen, canNavigatePrev, canNavigateNext, navigateToKeyframe]);
+  }, [isModalOpen, canNavigatePrev, canNavigateNext, navigateToKeyframe, isCommentFocused]);
 
   const saveComment = async () => {
-    if (!canEdit || !selectedKeyframe) return;
+    if (!canComment || !selectedKeyframe) return;
     const text = newComment.trim(); if (!text) return;
     try {
+      toolRef.current = 'move';
       const auth = getAuth(); const cu = auth.currentUser; if (!cu) return;
       const token = await getIdToken(cu, true);
-      const body: any = { keyframeUrl: selectedKeyframe, comment: text };
+      const body: any = { keyframeUrl: normalizeKeyframeUrl(selectedKeyframe), comment: text };
       if (selectedAngle) body.angle = selectedAngle; if (typeof selectedIndex === 'number') body.index = selectedIndex;
       const res = await fetch(`/api/analyses/${safeAnalysis.id}/keyframe-comments`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(body)
       });
-      if (res.ok) { setNewComment(""); await loadCommentsAndAnnotations(); }
-    } catch {}
+      if (res.ok) {
+        setNewComment("");
+        await loadCommentsAndAnnotations();
+        return;
+      }
+      let errorMessage = 'No se pudo guardar el comentario.';
+      try {
+        const errorData = await res.json();
+        errorMessage = errorData?.error || errorMessage;
+      } catch (e) {
+        const errorText = await res.text().catch(() => '');
+        if (errorText) errorMessage = errorText;
+      }
+      toast({ title: 'Error al guardar', description: errorMessage, variant: 'destructive' });
+    } catch (e: any) {
+      toast({
+        title: 'Error al guardar',
+        description: e?.message || 'No se pudo guardar el comentario.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const saveAnnotation = async () => {
-    if (!canEdit) {
+    setIsCommentFocused(false);
+    if (!canEditCoachChecklist) {
+      setAnnotationStatus('Sin permisos para guardar.');
       toast({
         title: 'Sin permisos',
         description: 'No tienes permisos para editar este análisis.',
@@ -1540,6 +2208,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
     
     if (!selectedKeyframe) {
+      setAnnotationStatus('No hay fotograma seleccionado.');
       toast({
         title: 'Error',
         description: 'No hay fotograma seleccionado.',
@@ -1549,9 +2218,20 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
     
     if (!canvasRef.current) {
+      setAnnotationStatus('No se pudo acceder al canvas.');
       toast({
         title: 'Error',
         description: 'Error al acceder al canvas de dibujo.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!drawingRef.current && toolRef.current === 'move') {
+      setAnnotationStatus('Selecciona una herramienta para dibujar.');
+      toast({
+        title: 'Selecciona una herramienta',
+        description: 'Elegí lápiz, línea o círculo para dibujar antes de guardar.',
         variant: 'destructive',
       });
       return;
@@ -1599,6 +2279,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
 
     if (!hasContent) {
+      setAnnotationStatus('Canvas vacío. Dibuja algo primero.');
       toast({
         title: 'Canvas vacío',
         description: 'No hay nada dibujado para guardar. Dibuja algo primero.',
@@ -1608,6 +2289,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     }
 
     try {
+      setSavingAnnotation(true);
+      setAnnotationStatus('Guardando dibujo…');
       console.log('Iniciando guardado de anotación...', {
         analysisId: safeAnalysis.id,
         keyframeUrl: selectedKeyframe,
@@ -1630,6 +2313,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       const cu = auth.currentUser;
       
       if (!cu) {
+        setAnnotationStatus('Debes iniciar sesión para guardar.');
         toast({
           title: 'Sin autenticación',
           description: 'Debes iniciar sesión para guardar dibujos.',
@@ -1640,10 +2324,11 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
 
       const token = await getIdToken(cu, true);
       if (!token) {
+        setAnnotationStatus('No se pudo obtener token.');
         throw new Error('No se pudo obtener el token de autenticación');
       }
 
-      const body: any = { keyframeUrl: selectedKeyframe, overlayDataUrl };
+      const body: any = { keyframeUrl: normalizeKeyframeUrl(selectedKeyframe), overlayDataUrl };
       
       if (selectedAngle) body.angle = selectedAngle;
       if (typeof selectedIndex === 'number') body.index = selectedIndex;
@@ -1710,6 +2395,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       
       clearCanvas();
       await loadCommentsAndAnnotations();
+      setAnnotationStatus('Dibujo guardado correctamente.');
       
       toast({
         title: 'Dibujo guardado',
@@ -1718,9 +2404,62 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     } catch (e) {
       console.error('Error guardando anotación:', e);
       const errorMessage = e instanceof Error ? e.message : 'Error desconocido al guardar el dibujo';
+      setAnnotationStatus(errorMessage);
       toast({
         title: 'Error al guardar',
         description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingAnnotation(false);
+    }
+  };
+
+  const deleteLatestAnnotation = async () => {
+    if (!canEditCoachChecklist) {
+      toast({
+        title: 'Sin permisos',
+        description: 'No tenés permisos para eliminar anotaciones.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const latest = annotations[0];
+    if (!latest?.id) {
+      toast({
+        title: 'Sin anotaciones',
+        description: 'No hay anotaciones guardadas para eliminar.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      const auth = getAuth();
+      const cu = auth.currentUser;
+      if (!cu) return;
+      const token = await getIdToken(cu, true);
+      const res = await fetch(`/api/analyses/${safeAnalysis.id}/keyframe-annotations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: 'delete',
+          annotationId: latest.id,
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'No se pudo eliminar la anotación.');
+      }
+      setAnnotationStatus('Anotación eliminada.');
+      await loadCommentsAndAnnotations();
+    } catch (e: any) {
+      console.error('deleteLatestAnnotation error', e);
+      toast({
+        title: 'Error',
+        description: e?.message || 'No se pudo eliminar la anotación.',
         variant: 'destructive',
       });
     }
@@ -1738,7 +2477,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         const newArr = order.map(i => arr[i]);
         setLocalKeyframes(prev => ({ ...prev, [angle]: newArr }));
       }
-    } catch {}
+    } catch (e) {}
   };
 
   const deleteKeyframe = async (angle: 'front'|'back'|'left'|'right', index: number) => {
@@ -1749,7 +2488,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       if (res.ok) {
         setLocalKeyframes(prev => ({ ...prev, [angle]: (prev[angle] || []).filter((_, i) => i !== index) }));
       }
-    } catch {}
+    } catch (e) {}
   };
 
   const [attemptsDirty, setAttemptsDirty] = useState(false);
@@ -1871,6 +2610,17 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   };
 
   // (ya calculados arriba) checklistStrengths, checklistWeaknesses, checklistRecommendations
+  const coachFeedbackItemsByCategory = useMemo(() => {
+    return checklistState
+      .map((cat) => {
+        const items = cat.items.filter((it) => {
+          const cf = coachFeedbackByItemId[it.id];
+          return Boolean(cf && (typeof cf.rating === 'number' || String(cf.comment || '').trim() !== ''));
+        });
+        return { category: cat.category, items };
+      })
+      .filter((cat) => cat.items.length > 0);
+  }, [checklistState, coachFeedbackByItemId]);
 
   // Resumen dinámico de revisión del entrenador
   const coachReviewSummary = useMemo(() => {
@@ -1952,13 +2702,18 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     return `data:image/jpeg;base64,${src}`;
   };
 
-  const resolveVideoSrc = (src?: string | null) => {
-    if (!src) return null;
-    if (src.startsWith('temp://')) {
-      const name = src.replace('temp://', '');
-      return `/api/local-video?name=${encodeURIComponent(name)}`;
+  const normalizeKeyframeUrl = (src?: string | null) => {
+    if (!src) return '';
+    if (!src.startsWith('http')) return src;
+    const bucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "shotanalisys.firebasestorage.app";
+    if (src.includes('storage.googleapis.com/undefined/')) {
+      return src.replace('storage.googleapis.com/undefined/', `storage.googleapis.com/${bucket}/`);
     }
     return src;
+  };
+
+  const resolveVideoSrc = (src?: string | null) => {
+    return normalizeVideoUrl(src);
   };
 
   // Función para renderizar smart keyframes (data URLs)
@@ -2022,21 +2777,17 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
     return (
       <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-6 justify-items-center">
         {keyframes.map((keyframe, index) => {
+          const fixedKeyframe = normalizeKeyframeUrl(keyframe);
                     return (
             <div key={`${angleKey}-${index}`} className="space-y-2 text-center">
-              {/* DEBUG: Mostrar URL */}
-              <div className="text-xs text-gray-500 truncate max-w-32" title={keyframe}>
-                URL: {keyframe}
-              </div>
-              
               {/* Botón con imagen */}
               <button 
-                onClick={() => openKeyframeModal(keyframe, angleKey, index)} 
+                onClick={() => openKeyframeModal(fixedKeyframe, angleKey, index)} 
                 className="relative overflow-hidden rounded-lg border aspect-square focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-all hover:scale-105 w-24 h-24 md:w-28 md:h-28"
               >
                 {/* Imagen de Next.js */}
                 <Image
-                  src={keyframe}
+                  src={fixedKeyframe}
                   alt={`Fotograma ${angleLabel} ${index + 1}`}
                   width={112}
                   height={112}
@@ -2070,11 +2821,19 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   };
 
   const defaultTab = 'ai-analysis';
+  const getValidTabs = () => ([
+    'ai-analysis',
+    'videos',
+    'checklist',
+    'coach-checklist',
+    'messages',
+    ...(isCoach ? [] : ['improvement-plan']),
+  ]);
   // Inicializar el tab desde el hash si existe
   const getInitialTab = () => {
     if (typeof window === 'undefined') return defaultTab;
     const hash = window.location.hash.slice(1);
-    const validTabs = ['ai-analysis', 'videos', 'checklist', 'coach-checklist', 'improvement-plan'];
+    const validTabs = getValidTabs();
     if (hash && validTabs.includes(hash)) {
       return hash;
     }
@@ -2084,6 +2843,31 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   // Ref para rastrear si el cambio viene de un click manual (para evitar conflictos con useEffect)
   const isManualChangeRef = useRef(false);
+  const searchParams = useSearchParams();
+  const autoOpenHandledRef = useRef(false);
+
+  useEffect(() => {
+    if (autoOpenHandledRef.current) return;
+    const angleParam = searchParams.get('kfAngle') as ('front'|'back'|'left'|'right'|null);
+    const indexParam = searchParams.get('kfIndex');
+    const index = indexParam != null ? Number(indexParam) : NaN;
+    if (!angleParam || !Number.isFinite(index) || index < 0) return;
+
+    let targetUrl = '';
+    const smartArr = (smartKeyframes as any)[angleParam] as Array<{ imageBuffer: string }> | undefined;
+    if (Array.isArray(smartArr) && smartArr[index]) {
+      targetUrl = normalizeImageSrc(smartArr[index].imageBuffer);
+    }
+    const traditionalArr = (localKeyframes as any)[angleParam] as string[] | undefined;
+    if (!targetUrl && Array.isArray(traditionalArr) && traditionalArr[index]) {
+      targetUrl = normalizeKeyframeUrl(traditionalArr[index]);
+    }
+    if (!targetUrl) return;
+
+    autoOpenHandledRef.current = true;
+    setActiveTab('videos');
+    openKeyframeModal(targetUrl, angleParam, index);
+  }, [searchParams, smartKeyframes, localKeyframes, normalizeImageSrc, normalizeKeyframeUrl]);
 
   // Handler personalizado para cambios manuales de tab
   const handleTabChange = useCallback((value: string) => {
@@ -2121,7 +2905,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       }
 
       const hash = window.location.hash.slice(1); // Remover el #
-      const validTabs = ['ai-analysis', 'videos', 'checklist', 'coach-checklist', 'improvement-plan'];
+      const validTabs = getValidTabs();
       
       console.log(`[AnalysisView] 🔍 Verificando hash: "${hash}", showCoachChecklistTab: ${showCoachChecklistTab}`);
       
@@ -2178,7 +2962,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       clearTimeout(timeoutId);
       window.removeEventListener('hashchange', handleHashChange);
     };
-  }, [showCoachChecklistTab, isInitialLoad, activeTab]);
+  }, [showCoachChecklistTab, isInitialLoad, activeTab, isCoach]);
 
   // Re-verificar el hash cuando showCoachChecklistTab cambie (por si se estaba esperando)
   useEffect(() => {
@@ -2202,7 +2986,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap md:grid md:grid-cols-5">
           <TabsTrigger value="ai-analysis" className="min-w-[140px] md:min-w-0 whitespace-nowrap flex-shrink-0">
-            <Bot className="mr-2" /> Análisis IA
+            <Bot className="mr-2" /> {analysisTabLabel}
           </TabsTrigger>
           <TabsTrigger value="videos" className="min-w-[180px] md:min-w-0 whitespace-nowrap flex-shrink-0">
             <Camera className="mr-2" /> Videos y fotogramas
@@ -2215,21 +2999,26 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               <ListChecks className="mr-2" /> Checklist Entrenador
             </TabsTrigger>
           )}
-          <TabsTrigger value="improvement-plan" className="min-w-[150px] md:min-w-0 whitespace-nowrap flex-shrink-0">
-            <Dumbbell className="mr-2" /> Plan de Mejora
+          <TabsTrigger value="messages" className="min-w-[140px] md:min-w-0 whitespace-nowrap flex-shrink-0">
+            <MessageSquare className="mr-2" /> Mensajes
           </TabsTrigger>
+          {!isCoach && (
+            <TabsTrigger value="improvement-plan" className="min-w-[150px] md:min-w-0 whitespace-nowrap flex-shrink-0">
+              <Dumbbell className="mr-2" /> Plan de Mejora
+            </TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="ai-analysis" className="mt-6">
           <div className="flex flex-col gap-8">
             {/* Debug: verificar estado del coachSummary */}
             {(() => {
               console.log('[Render] 🔍 Estado del coachSummary:', {
-                hasCoachSummary: !!coachSummary,
-                coachSummaryLength: coachSummary?.length || 0,
-                coachSummaryPreview: coachSummary?.substring(0, 50) || 'vacío',
+                hasCoachSummary: !!resolvedCoachSummary,
+                coachSummaryLength: resolvedCoachSummary?.length || 0,
+                coachSummaryPreview: resolvedCoachSummary?.substring(0, 50) || 'vacío',
                 isEditingCoachFeedback,
                 isCoach,
-                willShow: coachSummary && coachSummary.trim().length > 0 && !isEditingCoachFeedback
+                willShow: resolvedCoachSummary && resolvedCoachSummary.trim().length > 0 && !isEditingCoachFeedback
               });
               return null;
             })()}
@@ -2302,7 +3091,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                                   (v as HTMLVideoElement).currentTime = Math.max(0, a.start - 0.1);
                                   (v as HTMLVideoElement).play().catch(() => {});
                                 }
-                              } catch {}
+                              } catch (e) {}
                             }}
                           >
                             Ver
@@ -2341,26 +3130,32 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 </CardContent>
               </Card>
             )}
-            {/* Aviso de análisis parcial */}
+            {/* Aviso de análisis parcial (modal) */}
             {isPartialAnalysis && (
-              <Card className="border-amber-200 bg-amber-50">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-amber-800">
-                    <ShieldAlert className="h-5 w-5" />
-                    Análisis Parcial
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <p className="text-amber-700">
+              <Dialog
+                open={partialModalOpen}
+                onOpenChange={(open) => {
+                  setPartialModalOpen(open);
+                  if (!open) setPartialModalDismissed(true);
+                }}
+              >
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-amber-800">
+                      <ShieldAlert className="h-5 w-5" />
+                      Análisis Parcial
+                    </DialogTitle>
+                    <DialogDescription className="text-amber-700">
                       Este análisis se realizó con videos limitados. Para un análisis completo, se recomienda subir videos desde múltiples ángulos.
-                    </p>
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-3">
                     <div className="flex flex-wrap gap-2">
                       <span className="text-sm font-medium text-amber-700">Videos disponibles:</span>
-                      {availableAngles.map(angle => (
+                      {availableAngles.map((angle) => (
                         <Badge key={angle} variant="secondary" className="bg-amber-100 text-amber-800">
-                          {angle === 'front' ? 'Frente' : 
-                           angle === 'back' ? 'Espalda' : 
+                          {angle === 'front' ? 'Frente' :
+                           angle === 'back' ? 'Espalda' :
                            angle === 'left' ? 'Izquierda' : 'Derecha'}
                         </Badge>
                       ))}
@@ -2368,18 +3163,23 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     {missingAngles.length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         <span className="text-sm font-medium text-amber-700">Ángulos faltantes:</span>
-                        {missingAngles.map(angle => (
+                        {missingAngles.map((angle) => (
                           <Badge key={angle} variant="outline" className="border-amber-300 text-amber-600">
-                            {angle === 'front' ? 'Frente' : 
-                             angle === 'back' ? 'Espalda' : 
+                            {angle === 'front' ? 'Frente' :
+                             angle === 'back' ? 'Espalda' :
                              angle === 'left' ? 'Izquierda' : 'Derecha'}
                           </Badge>
                         ))}
                       </div>
                     )}
                   </div>
-                </CardContent>
-              </Card>
+                  <DialogFooter>
+                    <Button onClick={() => { setPartialModalOpen(false); setPartialModalDismissed(true); }}>
+                      Aceptar
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             )}
 
             {/* PUNTUACIÓN GLOBAL (si existe scoreMetadata) */}
@@ -2424,16 +3224,21 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       <strong> Calculado:</strong> {new Date((safeAnalysis as any).scoreMetadata.calculatedAt).toLocaleString('es-ES')}
                     </p>
                   </div>
+                  {isPartialAnalysis && availableAngles.length === 1 && (
+                    <p className="mt-3 text-sm text-amber-700">
+                      Nota: la puntuación global se calculó con un solo video.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             )}
 
             {/* Comentarios del Entrenador (mostrar antes del análisis de IA si existen) */}
             {(() => {
-              const shouldShow = coachSummary && coachSummary.trim().length > 0 && !isEditingCoachFeedback;
+              const shouldShow = resolvedCoachSummary && resolvedCoachSummary.trim().length > 0 && !isEditingCoachFeedback;
               console.log('[CoachComments] 🎯 Verificando si mostrar comentarios:', {
-                hasCoachSummary: !!coachSummary,
-                coachSummaryLength: coachSummary?.length || 0,
+                hasCoachSummary: !!resolvedCoachSummary,
+                coachSummaryLength: resolvedCoachSummary?.length || 0,
                 isEditingCoachFeedback,
                 shouldShow
               });
@@ -2442,14 +3247,14 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   <CardHeader>
                     <CardTitle className="font-headline flex items-center gap-2 text-green-900">
                       <UserCircle className="h-5 w-5" />
-                      Comentarios del Entrenador
+                    Comentarios del Entrenador{coachFeedbackCoachName ? ` ${coachFeedbackCoachName}` : ""}
                     </CardTitle>
                     <CardDescription className="text-green-700">
-                      {isCoach ? 'Tu revisión de este análisis:' : 'Tu entrenador ha revisado este análisis y dejó los siguientes comentarios.'}
+                    {isCoach ? 'Tu revisión de este análisis:' : 'Tu entrenador ha revisado este análisis y dejó los siguientes comentarios.'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <FormattedText text={coachSummary} className="text-muted-foreground" />
+                    <FormattedText text={resolvedCoachSummary} className="text-muted-foreground" />
                   </CardContent>
                 </Card>
               ) : null;
@@ -2458,31 +3263,79 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
             <Card>
               <CardHeader>
                 <CardTitle className="font-headline">
-                  Resumen del Análisis de IA
+                  {analysisSummaryTitle}
                 </CardTitle>
                 <Badge variant="outline" className="w-fit">
                   {safeAnalysis.shotType}
                 </Badge>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground">{safeAnalysis.analysisSummary}</p>
-                {avgRating != null && (
-                  <div className="mt-3 flex items-center gap-3">
-                    <Badge>{Math.round((avgRating/5)*100)} / 100</Badge>
-                    <span className="text-sm text-muted-foreground">Evaluación final: {scoreLabel(avgRating)}</span>
+                {isNonBasketballVideo && (
+                  <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                    <div className="flex items-start gap-2">
+                      <ShieldAlert className="mt-0.5 h-4 w-4" />
+                      <div>
+                        <p className="text-sm font-medium">La IA no detectó un jugador realizando lanzamientos.</p>
+                        <p className="text-xs text-amber-800">{nonBasketballWarning}</p>
+                        {canClearScore && (
+                          <div className="mt-3">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={isClearingScore}
+                              onClick={async () => {
+                                try {
+                                  setIsClearingScore(true);
+                                  const auth = getAuth();
+                                  const cu = auth.currentUser;
+                                  if (!cu) throw new Error('Usuario no autenticado');
+                                  const token = await getIdToken(cu, true);
+                                  const res = await fetch(`/api/analyses/${analysis.id}/clear-score`, {
+                                    method: 'POST',
+                                    headers: { Authorization: `Bearer ${token}` },
+                                  });
+                                  if (!res.ok) throw new Error('No se pudo borrar la calificación');
+                                  toast({ title: 'Calificación eliminada', description: 'No afectará tu promedio.' });
+                                } catch (e: any) {
+                                  toast({
+                                    title: 'No se pudo borrar la calificación',
+                                    description: e?.message || 'Error desconocido',
+                                    variant: 'destructive',
+                                  });
+                                } finally {
+                                  setIsClearingScore(false);
+                                }
+                              }}
+                            >
+                              {isClearingScore ? 'Eliminando…' : 'Eliminar calificación'}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
-                <div className="mt-6 rounded-md border bg-muted/30 p-4">
-                  <p className="text-sm font-medium">¿Te sirvió este análisis? Compartilo en tus redes:</p>
-                  <div className="mt-3">
-                    <ShareButtons text="Mirá mi análisis de tiro en IaShot" />
+                {!isNonBasketballVideo && (
+                  <>
+                    <p className="text-muted-foreground">{safeAnalysis.analysisSummary}</p>
+                    {/* Puntuación ya se muestra en "Puntuación Global" */}
+                  </>
+                )}
+                {!isNonBasketballVideo && (
+                  <div className="mt-6 rounded-md border bg-muted/30 p-4">
+                    <p className="text-sm font-medium">¿Te sirvió este análisis? Compartilo en tus redes:</p>
+                    <div className="mt-3">
+                      <ShareButtons text="Mirá mi análisis de tiro en IaShot" />
+                    </div>
                   </div>
-                </div>
+                )}
               </CardContent>
             </Card>
 
             {/* Fortalezas, Debilidades y Recomendaciones (IA) */}
+            {!isNonBasketballVideo && (hasStrengths || hasWeaknesses) && (
             <div className="grid gap-4 md:grid-cols-2">
+              {hasStrengths && (
               <Card>
                 <CardHeader>
                   <CardTitle className="font-headline flex items-center gap-2 text-green-600">
@@ -2490,19 +3343,15 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {checklistStrengths.length > 0 ? (
-                    <ul className="grid list-inside list-disc grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
-                      {checklistStrengths.map((s, i) => (
-                        <li key={i}>{s}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      La IA no encontró fortalezas destacadas en este intento.
-                    </p>
-                  )}
+                  <ul className="grid list-inside list-disc grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
+                    {derivedStrengths.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
                 </CardContent>
               </Card>
+              )}
+              {hasWeaknesses && (
               <Card>
                 <CardHeader>
                   <CardTitle className="font-headline flex items-center gap-2 text-destructive">
@@ -2510,21 +3359,18 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {checklistWeaknesses.length > 0 ? (
-                    <ul className="grid list-inside list-disc grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
-                      {checklistWeaknesses.map((w, i) => (
-                        <li key={i}>{w}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      La IA no encontró debilidades claras en este intento.
-                    </p>
-                  )}
+                  <ul className="grid list-inside list-disc grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
+                    {derivedWeaknesses.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
                 </CardContent>
               </Card>
+              )}
             </div>
+            )}
 
+            {!isNonBasketballVideo && hasRecommendations && (
             <Card>
               <CardHeader>
                 <CardTitle className="font-headline flex items-center gap-2 text-accent">
@@ -2532,20 +3378,14 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {checklistRecommendations.length > 0 ? (
-                  <ul className="list-inside list-disc space-y-2 text-muted-foreground">
-                    {checklistRecommendations.map((r, i) => (
-                      <li key={i}>{r}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    El entrenador no ha dejado recomendaciones específicas en el
-                    checklist.
-                  </p>
-                )}
+                <ul className="list-inside list-disc space-y-2 text-muted-foreground">
+                  {derivedRecommendations.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
               </CardContent>
             </Card>
+            )}
 
             {/* (Videos y Fotogramas) fue movido a la pestaña "videos" */}
           </div>
@@ -2553,12 +3393,24 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
         <TabsContent value="videos" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle className="font-headline flex items-center gap-2">
-                <Camera /> Video y Fotogramas
-              </CardTitle>
-              <CardDescription>
-                Haz clic en un fotograma para ampliarlo, dibujar y comentar.
-              </CardDescription>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <CardTitle className="font-headline flex items-center gap-2">
+                    <Camera /> Video y Fotogramas
+                  </CardTitle>
+                  <CardDescription>
+                    Haz clic en un fotograma para ampliarlo, dibujar y comentar.
+                  </CardDescription>
+                </div>
+                {viewerRole === 'coach' && (
+                  <Link href="/upload">
+                    <Button variant="outline" size="sm" className="shrink-0 border-primary/30 hover:bg-primary/5">
+                      <ShoppingCart className="mr-2 h-4 w-4" />
+                      Comprar videos
+                    </Button>
+                  </Link>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {/* Videos disponibles (frente/espalda/izquierda/derecha) */}
@@ -2590,6 +3442,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       <div>
                         <h4 className="font-medium mb-2">Trasera</h4>
                         <video
+                          data-analysis-video="back"
                           controls
                           crossOrigin="anonymous"
                           className="w-full rounded-lg shadow-lg max-h-[360px]"
@@ -2603,6 +3456,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       <div>
                         <h4 className="font-medium mb-2">Frontal</h4>
                         <video
+                          data-analysis-video="front"
                           controls
                           crossOrigin="anonymous"
                           className="w-full rounded-lg shadow-lg max-h-[360px]"
@@ -2616,6 +3470,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       <div>
                         <h4 className="font-medium mb-2">Lateral Izquierdo</h4>
                         <video
+                          data-analysis-video="left"
                           controls
                           crossOrigin="anonymous"
                           className="w-full rounded-lg shadow-lg max-h-[360px]"
@@ -2629,6 +3484,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       <div>
                         <h4 className="font-medium mb-2">Lateral Derecho</h4>
                         <video
+                          data-analysis-video="right"
                           controls
                           crossOrigin="anonymous"
                           className="w-full rounded-lg shadow-lg max-h-[360px]"
@@ -2642,10 +3498,84 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 );
               })()}
 
+              {(shotFramesLoading || shotFrames.length > 0 || shotFramesError) && (
+                <div className="mt-6">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <Camera className="w-5 h-5" />
+                    Frames por tiro
+                    {shotFramesLoading && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Cargando...</span>
+                      </div>
+                    )}
+                  </h3>
+                  {shotFramesLoading ? (
+                    <div className="text-center py-6 text-muted-foreground">
+                      <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                      <p className="text-sm">Cargando frames por tiro…</p>
+                    </div>
+                  ) : shotFrames.length > 0 ? (
+                    <div className="space-y-4">
+                      {shotFrames.map((shot: any, shotIdx: number) => {
+                        const frames = Array.isArray(shot?.frames) ? shot.frames : [];
+                        return (
+                          <div key={`shot-frames-${shot?.idx ?? shotIdx}`} className="rounded-lg border p-4">
+                            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground mb-3">
+                              <span className="font-medium text-foreground">Tiro {shot?.idx ?? shotIdx + 1}</span>
+                              <span>Inicio: {formatMs(shot?.start_ms)}</span>
+                              <span>Liberación: {formatMs(shot?.release_ms)}</span>
+                              <span>Frames: {frames.length}</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+                              {frames.map((frame: any, frameIdx: number) => {
+                                const src = normalizeImageSrc(frame?.dataUrl || frame?.imageBuffer || frame?.src);
+                                if (!src) {
+                                  return (
+                                    <div key={`shot-frame-${shotIdx}-${frameIdx}`} className="flex items-center justify-center rounded-lg border h-24 text-xs text-muted-foreground">
+                                      Sin imagen
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <button
+                                    key={`shot-frame-${shotIdx}-${frameIdx}`}
+                                    className="group relative rounded-lg overflow-hidden border hover:border-primary transition-colors"
+                                    onClick={() => {
+                                      setSelectedKeyframe(src);
+                                      setSelectedIndex(frameIdx);
+                                      setIsModalOpen(true);
+                                    }}
+                                  >
+                                    <Image
+                                      src={src}
+                                      alt={`Tiro ${shot?.idx ?? shotIdx + 1} frame ${frameIdx + 1}`}
+                                      width={220}
+                                      height={220}
+                                      className="object-cover w-full h-24 group-hover:opacity-90 transition-opacity"
+                                      unoptimized
+                                    />
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-6 text-muted-foreground">
+                      <p className="text-sm">{shotFramesError || 'No hay frames por tiro disponibles.'}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Botón dev para generar si no hay nada - SOLO PARA ADMINS */}
               {availableAngles.length === 0 && (userProfile as any)?.role === 'admin' && (
                 <div className="flex items-center justify-center mb-6">
-                  <div className="flex gap-2">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="flex gap-2">
                     <Button
                       variant="secondary"
                       disabled={rebuilding}
@@ -2671,6 +3601,10 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     >
                       {uploadingFromClient ? 'Generando (cliente)…' : 'Generar (desde este video)'}
                     </Button>
+                    </div>
+                    {keyframesGenStatus && (
+                      <p className="text-xs text-muted-foreground">{keyframesGenStatus}</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -2795,6 +3729,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                             >
                               {uploadingFromClient ? 'Generando…' : 'Generar desde este video'}
                             </Button>
+                            {keyframesGenStatus && (
+                              <p className="text-xs text-muted-foreground mt-2">{keyframesGenStatus}</p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2861,7 +3798,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                   onChecklistChange={handleChecklistChange}
                   analysisId={safeAnalysis.id}
                   currentScore={safeAnalysis.score}
-                  editable={userProfile?.role === 'coach' && userProfile.id === (player?.coachId || '')}
+                  editable={roleForPermissions === 'coach' && userProfile?.id === (player?.coachId || '')}
                   showCoachBox={false}
                   coachInline={isCoach}
                   coachIsEditable={isCoach && isEditingCoachFeedback}
@@ -2878,6 +3815,54 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               return <div>Error rendering checklist: {message}</div>;
             }
           })()}
+
+          {/* Video de devolución (opcional, 2-4 min) - entre calificaciones y revisión final */}
+          {isCoach && (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                  <Video className="h-5 w-5" />
+                  Video de devolución (opcional)
+                </CardTitle>
+                <CardDescription>
+                  Podés subir un video de 2 a 4 minutos con feedback personalizado para el jugador.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {coachFeedbackVideoUrl ? (
+                  <div className="space-y-3">
+                    <video
+                      src={coachFeedbackVideoUrl}
+                      controls
+                      className="w-full max-w-lg rounded-lg border bg-black aspect-video"
+                      playsInline
+                    />
+                    {isEditingCoachFeedback && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRemoveFeedbackVideo}
+                        disabled={removingFeedbackVideo}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        {removingFeedbackVideo ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                        Eliminar video
+                      </Button>
+                    )}
+                  </div>
+                ) : isEditingCoachFeedback ? (
+                  <CoachFeedbackVideoRecorder
+                    onUpload={handleUploadFeedbackVideo}
+                    uploading={uploadingFeedbackVideo}
+                    inputId="coach-feedback-video-input"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">No hay video de devolución.</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {isCoach && (
             <div className="mt-6 space-y-4">
               {hasExistingCoachFeedback && !isEditingCoachFeedback && (
@@ -2897,6 +3882,8 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                         variant="outline"
                         onClick={() => setIsEditingCoachFeedback(true)}
                         className="flex items-center gap-2 border-green-300 text-green-700 hover:bg-green-100"
+                        disabled={!canEdit}
+                        title={!canEdit ? 'Solo el coach asignado o admin puede editar' : ''}
                       >
                         <Pencil className="w-4 h-4" />
                         Editar
@@ -2947,7 +3934,7 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                         variant="outline"
                         size="sm"
                         onClick={generateCoachSummary}
-                        disabled={!isEditingCoachFeedback || generatingSummary || Object.values(coachFeedbackByItemId).filter(cf => cf && typeof cf.rating === 'number').length === 0}
+                        disabled={!canEdit || !isEditingCoachFeedback || generatingSummary || Object.values(coachFeedbackByItemId).filter(cf => cf && typeof cf.rating === 'number').length === 0}
                         className="flex items-center gap-2"
                       >
                         {generatingSummary ? (
@@ -2995,7 +3982,9 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                         </div>
                       )}
                       <div className="flex items-center gap-2">
-                        <Button onClick={saveCoachFeedback}>Guardar revisión</Button>
+                        <Button onClick={saveCoachFeedback} disabled={savingCoachFeedback}>
+                          {savingCoachFeedback ? 'Guardando…' : 'Guardar revisión'}
+                        </Button>
                         <Button 
                           className="ml-2" 
                           variant="secondary" 
@@ -3025,9 +4014,11 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                                   if (fb) {
                                     setCoachFeedbackByItemId(fb.items || {});
                                     setCoachSummary(fb.coachSummary || "");
+                                    const vUrl = typeof fb?.coachFeedbackVideoUrl === 'string' && fb.coachFeedbackVideoUrl.trim() ? fb.coachFeedbackVideoUrl.trim() : null;
+                                    setCoachFeedbackVideoUrl(vUrl);
                                   }
                                   setIsEditingCoachFeedback(false);
-                                } catch {}
+                                } catch (e) {}
                               };
                               void load();
                             }}
@@ -3055,14 +4046,16 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
               <Card>
                 <CardHeader>
                   <CardTitle className="font-headline flex items-center gap-2">
-                    <ListChecks /> Checklist del Entrenador
+                    <ListChecks /> Checklist del Entrenador{coachFeedbackCoachName ? ` ${coachFeedbackCoachName}` : ""}
                   </CardTitle>
                   <CardDescription>
                     {isCoach ? 'Resultado con tus calificaciones y comentarios por ítem.' : 'Calificaciones y comentarios del entrenador.'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {(() => {
+                  <div className="space-y-2">
+                    <div className="text-sm font-semibold">Calificaciones y comentarios del entrenador</div>
+                    {(() => {
                     // Debug: mostrar información sobre los IDs
                     const allChecklistIds = checklistState.flatMap(cat => cat.items.map(it => it.id));
                     const allFeedbackIds = Object.keys(coachFeedbackByItemId);
@@ -3154,13 +4147,53 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                         </div>
                       </div>
                     ));
-                  })()}
-                  <div className="space-y-2">
+                    })()}
+                  </div>
+                  {coachFeedbackVideoUrl ? (
+                    <div className="space-y-2 pt-4 border-t">
+                      <div className="text-sm font-semibold flex items-center gap-2">
+                        <Video className="h-4 w-4" />
+                        Video de devolución del entrenador
+                      </div>
+                      <video
+                        src={coachFeedbackVideoUrl}
+                        controls
+                        className="w-full max-w-lg rounded-lg border bg-black aspect-video"
+                        playsInline
+                      />
+                      {isCoach && canEdit && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRemoveFeedbackVideo}
+                          disabled={removingFeedbackVideo}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          {removingFeedbackVideo ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                          Eliminar video
+                        </Button>
+                      )}
+                    </div>
+                  ) : isCoach && canEdit ? (
+                    <div className="space-y-2 pt-4 border-t">
+                      <div className="text-sm font-semibold flex items-center gap-2">
+                        <Video className="h-4 w-4" />
+                        Video de devolución (opcional)
+                      </div>
+                      <CoachFeedbackVideoRecorder
+                        onUpload={handleUploadFeedbackVideo}
+                        uploading={uploadingFeedbackVideo}
+                        inputId="coach-feedback-video-input-checklist"
+                        compact
+                      />
+                    </div>
+                  ) : null}
+                  <div className="space-y-2 pt-4 border-t">
                     <div className="text-sm font-semibold">Comentario global</div>
-                  <FormattedText
-                    text={coachSummary || 'Sin comentario global'}
-                    className="text-sm text-muted-foreground"
-                  />
+                    <FormattedText
+                      text={resolvedCoachSummary || 'Sin comentario global'}
+                      className="text-sm text-muted-foreground"
+                    />
                   </div>
                 </CardContent>
               </Card>
@@ -3171,79 +4204,161 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                     <ListChecks /> Checklist del Entrenador
                   </CardTitle>
                   <CardDescription>
-                    Estado pendiente de revisión por un entrenador.
+                    {isCoach && !canEditCoachChecklist
+                      ? "No tienes permiso para revisar este lanzamiento."
+                      : "Estado pendiente de revisión por un entrenador."}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-muted p-8 text-center">
                     <ShieldAlert className="h-12 w-12 text-muted-foreground" />
-                    <h3 className="font-semibold">Aún no hay revisión de entrenador</h3>
-                    <p className="text-sm text-muted-foreground max-w-prose">
-                      Hasta que no contactes a un entrenador y realice la revisión, este apartado permanecerá vacío.
-                    </p>
-                    <Button asChild>
-                      <a href="/player/coaches">Buscar Entrenador</a>
-                    </Button>
+                    {isCoach && !canEditCoachChecklist ? (
+                      <>
+                        <h3 className="font-semibold">
+                          {hasOtherCoachForThisLaunch ? 'Otro entrenador está asignado a este lanzamiento' : 'No puedes revisar este lanzamiento'}
+                        </h3>
+                        <p className="text-sm text-muted-foreground max-w-prose">
+                          {hasOtherCoachForThisLaunch
+                            ? 'Este lanzamiento tiene asignado otro entrenador para la revisión (el jugador solicitó y abonó su evaluación). Solo podés ver el análisis de IA.'
+                            : 'Hasta que el jugador no te designe como coach para este lanzamiento (solicitando y abonando tu revisión), no vas a poder realizar la evaluación. Por ahora solo puedes ver el análisis de IA.'}
+                        </p>
+                      </>
+                    ) : isCoach && canEditCoachChecklist ? (
+                      <>
+                        <h3 className="font-semibold">Pendiente tu evaluación</h3>
+                        <p className="text-sm text-muted-foreground max-w-prose">
+                          Completá el checklist en la pestaña &quot;Checklist IA&quot; para dejar tu revisión con calificaciones y comentarios.
+                        </p>
+                        <Button
+                          onClick={() => {
+                            setIsEditingCoachFeedback(true);
+                            handleTabChange('checklist');
+                          }}
+                        >
+                          <ListChecks className="mr-2 h-4 w-4" />
+                          Ir a completar checklist
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="font-semibold">Aún no hay revisión de entrenador</h3>
+                        <p className="text-sm text-muted-foreground max-w-prose">
+                          Hasta que no contactes a un entrenador y realice la revisión, este apartado permanecerá vacío.
+                        </p>
+                        <Button asChild>
+                          <a href="/player/coaches">Buscar Entrenador</a>
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>
             )}
           </TabsContent>
         )}
-        <TabsContent value="improvement-plan" className="mt-6">
+        <TabsContent value="messages" className="mt-6">
           <Card>
             <CardHeader>
               <CardTitle className="font-headline flex items-center gap-2">
-                <Dumbbell /> Plan de Mejora (Sesión con Entrenador)
+                <MessageSquare /> Mensajes del lanzamiento
               </CardTitle>
               <CardDescription>
-                Este plan debe ser guiado por un entrenador certificado. La IA no ejecuta esta actividad.
+                Conversaciones relacionadas con este análisis.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              {player?.coachId ? (
-                <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-green-200 bg-green-50 p-8 text-center">
-                  <FilePenLine className="h-12 w-12 text-green-600" />
-                  <h3 className="font-semibold text-green-800">Tu entrenador asignado te dará el plan de mejora</h3>
-                  <p className="text-sm text-green-700 max-w-prose">
-                    Ya tienes un entrenador asignado que revisará tu análisis y te proporcionará un plan de mejora personalizado con objetivos específicos y ejercicios correctivos.
-                  </p>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <Button 
-                      variant="outline" 
-                      className="border-green-300 text-green-700 hover:bg-green-100"
-                      onClick={() => setCoachSelectionDialogOpen(true)}
-                    >
-                      <MessageSquare className="mr-2 h-4 w-4" />
-                      Contactar Entrenador
-                    </Button>
-                    <Button asChild className="bg-green-600 hover:bg-green-700">
-                      <a href="/player/dashboard">
-                        <Users className="mr-2 h-4 w-4" />
-                        Ir a Mi Panel
+            <CardContent className="space-y-4">
+              {analysisMessages.length === 0 ? (
+                <div className="rounded-lg border-2 border-dashed border-muted p-6 text-center text-sm text-muted-foreground">
+                  No hay mensajes para este lanzamiento.
+                </div>
+              ) : (
+                <ul className="space-y-3">
+                  {analysisMessages.map((m) => (
+                    <li key={m.id} className="rounded border p-3 text-sm">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-1">
+                        <Badge variant="outline">{getAnalysisMessageOriginLabel(m)}</Badge>
+                        {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                        <span>{(m.fromName || "Sistema")} · {formatMessageDate(m.createdAt)}</span>
+                      </div>
+                      <div className="whitespace-pre-wrap">{renderMessageText(m.text)}</div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+            <CardFooter className="flex flex-col gap-2">
+              <Textarea
+                placeholder="Escribe un mensaje sobre este lanzamiento..."
+                value={analysisMessageText}
+                onChange={(e) => setAnalysisMessageText(e.target.value)}
+                rows={3}
+              />
+              <Button
+                className="w-full"
+                onClick={sendAnalysisMessage}
+                disabled={sendingAnalysisMessage || !analysisMessageText.trim() || !user}
+              >
+                {sendingAnalysisMessage ? 'Enviando...' : 'Enviar mensaje'}
+              </Button>
+            </CardFooter>
+          </Card>
+        </TabsContent>
+        {!isCoach && (
+          <TabsContent value="improvement-plan" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                  <Dumbbell /> Plan de Mejora (Sesión con Entrenador)
+                </CardTitle>
+                <CardDescription>
+                  Este plan debe ser guiado por un entrenador certificado. La IA no ejecuta esta actividad.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {player?.coachId ? (
+                  <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-green-200 bg-green-50 p-8 text-center">
+                    <FilePenLine className="h-12 w-12 text-green-600" />
+                    <h3 className="font-semibold text-green-800">Tu entrenador asignado te dará el plan de mejora</h3>
+                    <p className="text-sm text-green-700 max-w-prose">
+                      Ya tienes un entrenador asignado que revisará tu análisis y te proporcionará un plan de mejora personalizado con objetivos específicos y ejercicios correctivos.
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <Button 
+                        variant="outline" 
+                        className="border-green-300 text-green-700 hover:bg-green-100"
+                        onClick={() => setCoachSelectionDialogOpen(true)}
+                      >
+                        <MessageSquare className="mr-2 h-4 w-4" />
+                        Contactar Entrenador
+                      </Button>
+                      <Button asChild className="bg-green-600 hover:bg-green-700">
+                        <a href="/dashboard">
+                          <Users className="mr-2 h-4 w-4" />
+                          Ir a Mi Panel
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-muted p-8 text-center">
+                    <FilePenLine className="h-12 w-12 text-muted-foreground" />
+                    <h3 className="font-semibold">Coordina una sesión de mejora técnica</h3>
+                    <p className="text-sm text-muted-foreground max-w-prose">
+                      Un entrenador revisará tu análisis, definirá objetivos específicos y te guiará en ejercicios correctivos. Puedes contactar a un entrenador desde el siguiente enlace.
+                    </p>
+                    <Button asChild>
+                      <a href="/player/coaches">
+                        <ShieldAlert className="mr-2 h-4 w-4" />
+                        Buscar Entrenador
                       </a>
                     </Button>
                   </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-muted p-8 text-center">
-                  <FilePenLine className="h-12 w-12 text-muted-foreground" />
-                  <h3 className="font-semibold">Coordina una sesión de mejora técnica</h3>
-                  <p className="text-sm text-muted-foreground max-w-prose">
-                    Un entrenador revisará tu análisis, definirá objetivos específicos y te guiará en ejercicios correctivos. Puedes contactar a un entrenador desde el siguiente enlace.
-                  </p>
-                  <Button asChild>
-                    <a href="/player/coaches">
-                      <ShieldAlert className="mr-2 h-4 w-4" />
-                      Buscar Entrenador
-                    </a>
-                  </Button>
-                </div>
-              )}
-              {/* Se removió la generación de ejercicios de ejemplo para evitar contenido dummy */}
-            </CardContent>
-          </Card>
-        </TabsContent>
+                )}
+                {/* Se removió la generación de ejercicios de ejemplo para evitar contenido dummy */}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
@@ -3288,56 +4403,115 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
           </DialogHeader>
           <div className={isExpanded ? "grid grid-cols-1 gap-6" : "grid grid-cols-1 md:grid-cols-2 gap-6"}>
             <div className="relative">
-              <Image
-                src={selectedKeyframe || "https://placehold.co/600x600.png"}
-                alt="Fotograma seleccionado"
-                width={isExpanded ? 800 : 600}
-                height={isExpanded ? 800 : 600}
-                className="rounded-lg border"
-              />
-              {/* overlays guardados */}
-              {annotations.map((a, i) => (
-                <img key={a.id || i} src={a.overlayUrl} alt="overlay" className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
-              ))}
-              {/* canvas de dibujo */}
-              <canvas
-                ref={canvasRef}
-                width={isExpanded ? 800 : 600}
-                height={isExpanded ? 800 : 600}
-                className="absolute inset-0 rounded-lg"
-                style={{ cursor: toolRef.current === 'pencil' ? 'crosshair' : toolRef.current === 'eraser' ? 'cell' : 'default' }}
-                onMouseDown={beginDraw}
-                onMouseMove={draw}
-                onMouseUp={endDraw}
-                onMouseLeave={endDraw}
-              />
-              <div className="absolute top-2 left-2 flex flex-col gap-2 rounded-lg border bg-background/80 p-2 shadow-lg backdrop-blur-sm">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8" 
+              <div
+                ref={imageContainerRef}
+                className={`relative w-full ${isExpanded ? 'aspect-[3/4]' : 'aspect-[3/4]'} overflow-hidden rounded-lg border bg-muted/20`}
+              >
+                <Image
+                  src={(selectedKeyframe ? normalizeKeyframeUrl(selectedKeyframe) : "") || "https://placehold.co/600x600.png"}
+                  alt="Fotograma seleccionado"
+                  fill
+                  sizes="(max-width: 768px) 100vw, 600px"
+                  className="object-contain pointer-events-none select-none"
+                  draggable={false}
+                  onLoadingComplete={(img) => {
+                    imageNaturalSizeRef.current = { width: img.naturalWidth, height: img.naturalHeight };
+                    const container = imageContainerRef.current;
+                    if (container) {
+                      const rect = container.getBoundingClientRect();
+                      const scale = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight);
+                      const displayW = Math.round(img.naturalWidth * scale);
+                      const displayH = Math.round(img.naturalHeight * scale);
+                      const offsetX = Math.round((rect.width - displayW) / 2);
+                      const offsetY = Math.round((rect.height - displayH) / 2);
+                      setImageLayout({ x: offsetX, y: offsetY, width: displayW, height: displayH });
+                    }
+                  }}
+                />
+                {/* overlays guardados */}
+                {annotations.map((a, i) => (
+                  <img
+                    key={a.id || i}
+                    src={a.overlayUrl}
+                    alt="overlay"
+                    className="absolute pointer-events-none"
+                    style={imageLayout ? { left: imageLayout.x, top: imageLayout.y, width: imageLayout.width, height: imageLayout.height } : { inset: 0, width: '100%', height: '100%' }}
+                  />
+                ))}
+                {/* canvas de dibujo */}
+                <canvas
+                  ref={canvasRef}
+                  className="absolute inset-0"
+                  style={{ cursor: toolRef.current === 'pencil' || toolRef.current === 'line' || toolRef.current === 'circle' ? 'crosshair' : toolRef.current === 'eraser' ? 'cell' : 'default' }}
+                  onMouseDown={(e) => {
+                    if (commentInputRef.current) commentInputRef.current.blur();
+                    isCommentFocusedRef.current = false;
+                    setIsCommentFocused(false);
+                    beginDraw(e);
+                  }}
+                  onMouseMove={draw}
+                  onMouseUp={endDraw}
+                  onMouseLeave={endDraw}
+                />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
                   onClick={() => { toolRef.current = 'move'; }}
-                  title="Herramienta de movimiento"
+                  title="Mover"
                 >
                   <Move />
                 </Button>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8" 
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
                   onClick={() => setIsExpanded(!isExpanded)}
                   title={isExpanded ? "Minimizar" : "Expandir"}
                 >
                   {isExpanded ? <Minimize2 /> : <Maximize2 />}
                 </Button>
-                {canEdit && (
+                {canEditCoachChecklist && (
                   <>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'pencil'; }}><Pencil /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'line'; }}><Minus /></Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'circle'; }}><CircleIcon /></Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { toolRef.current = 'eraser'; }}><Eraser /></Button>
-                    <Button variant="secondary" size="sm" onClick={saveAnnotation}>Guardar dibujo</Button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Color</span>
+                      <div className="flex items-center gap-1">
+                        {['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#111827'].map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            className={`h-5 w-5 rounded-full border ${drawColor === c ? 'ring-2 ring-primary' : ''}`}
+                            style={{ backgroundColor: c }}
+                            onClick={() => setDrawColor(c)}
+                            title={`Color ${c}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <Button variant="secondary" size="sm" disabled={savingAnnotation} onClick={() => { void saveAnnotation(); }}>
+                      {savingAnnotation ? 'Guardando…' : 'Guardar dibujo'}
+                    </Button>
                     <Button variant="outline" size="sm" onClick={clearCanvas}>Limpiar</Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={annotations.length === 0}
+                      onClick={() => { void deleteLatestAnnotation(); }}
+                    >
+                      Eliminar último
+                    </Button>
                   </>
+                )}
+                {annotationStatus && (
+                  <div className="text-xs text-muted-foreground">
+                    {annotationStatus}
+                  </div>
                 )}
               </div>
               
@@ -3374,9 +4548,33 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {keyframeComments.length === 0 ? (
-                    <div className="text-sm text-muted-foreground p-4 text-center border-2 border-dashed rounded-lg">
-                      Aún no hay comentarios para este fotograma.
-                    </div>
+                    canEditCoachChecklist ? (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => commentInputRef.current?.focus()}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); commentInputRef.current?.focus(); } }}
+                        className="text-sm text-muted-foreground p-4 text-center border-2 border-dashed rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                        aria-label="Haz clic para añadir un comentario"
+                      >
+                        Aún no hay comentarios para este fotograma. Haz clic aquí para escribir uno.
+                      </div>
+                    ) : isCoach ? (
+                      <div className="text-sm text-muted-foreground p-4 text-center border-2 border-dashed rounded-lg bg-amber-50 border-amber-200">
+                        <p className="font-medium text-amber-800 mb-1">
+                          {hasOtherCoachForThisLaunch ? 'Otro entrenador está asignado a este lanzamiento' : 'No puedes comentar en este fotograma'}
+                        </p>
+                        <p className="text-amber-700">
+                          {hasOtherCoachForThisLaunch
+                            ? 'Este lanzamiento tiene asignado otro entrenador para la revisión. Solo podés ver el análisis.'
+                            : 'Hasta que el jugador no te designe como coach para este lanzamiento (solicitando y abonando tu revisión), no vas a poder añadir comentarios. Por ahora solo puedes ver el análisis.'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground p-4 text-center border-2 border-dashed rounded-lg">
+                        Aún no hay comentarios para este fotograma.
+                      </div>
+                    )
                   ) : (
                     <ul className="space-y-2">
                       {keyframeComments.map((c, i) => (
@@ -3387,16 +4585,149 @@ export function AnalysisView({ analysis, player }: AnalysisViewProps) {
                       ))}
                     </ul>
                   )}
-                  {canEdit && (
+                  {canEditCoachChecklist && (
                     <>
-                      <Textarea placeholder="Añade tu comentario aquí..." value={newComment} onChange={(e) => setNewComment(e.target.value)} />
-                      <Button className="w-full" onClick={saveComment}>Guardar Comentario</Button>
+                      <Textarea
+                        ref={commentInputRef}
+                        className="pointer-events-auto"
+                        placeholder="Añade tu comentario aquí..."
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        onFocus={() => {
+                          toolRef.current = 'move';
+                          isCommentFocusedRef.current = true;
+                          setIsCommentFocused(true);
+                        }}
+                        onBlur={() => {
+                          isCommentFocusedRef.current = false;
+                          setIsCommentFocused(false);
+                        }}
+                        autoFocus
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={async () => {
+                            const text = newComment.trim();
+                            if (!text) {
+                              toast({ title: 'Escribí un borrador', description: 'Escribí tu comentario para que la IA mejore la redacción.', variant: 'destructive' });
+                              return;
+                            }
+                            setCommentAiOpen(true);
+                            setCommentAiLoading(true);
+                            setCommentAiSuggestion("");
+                            try {
+                              const auth = getAuth();
+                              const u = auth.currentUser;
+                              if (!u) {
+                                toast({ title: 'No autenticado', description: 'Iniciá sesión para usar el asistente.', variant: 'destructive' });
+                                return;
+                              }
+                              const token = await getIdToken(u, true);
+                              const res = await fetch("/api/coach/compare/rewrite", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                                body: JSON.stringify({ text }),
+                              });
+                              if (!res.ok) {
+                                const err = await res.json().catch(() => ({}));
+                                throw new Error((err as any)?.error || "Error al mejorar el comentario");
+                              }
+                              const data = await res.json();
+                              setCommentAiSuggestion(String(data?.improved || ""));
+                            } catch (e) {
+                              console.error("Asistente comentario:", e);
+                              toast({ title: "Error", description: "No se pudo mejorar la redacción. Intentá de nuevo.", variant: "destructive" });
+                            } finally {
+                              setCommentAiLoading(false);
+                            }
+                          }}
+                          disabled={commentAiLoading}
+                        >
+                          {commentAiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                          <span className="ml-2">Asistente de redacción (IA)</span>
+                        </Button>
+                        <Button className="w-full sm:w-auto flex-1 sm:flex-initial" onClick={() => { toolRef.current = 'move'; void saveComment(); }}>
+                          Guardar y enviar comentario
+                        </Button>
+                      </div>
                     </>
                   )}
                 </CardContent>
               </Card>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo asistente de redacción IA para comentario de fotograma */}
+      <Dialog open={commentAiOpen} onOpenChange={setCommentAiOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              Asistente de redacción (IA)
+            </DialogTitle>
+            <DialogDescription>
+              Revisá la propuesta y ajustala si querés antes de usarla en tu comentario.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm font-medium text-muted-foreground">Propuesta</div>
+            <Textarea
+              value={commentAiSuggestion}
+              onChange={(e) => setCommentAiSuggestion(e.target.value)}
+              placeholder={commentAiLoading ? "Generando propuesta..." : "La propuesta aparecerá aquí"}
+              rows={5}
+              disabled={commentAiLoading}
+            />
+          </div>
+          <DialogFooter className="flex flex-wrap gap-2 sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                const text = newComment.trim();
+                if (!text) return;
+                setCommentAiLoading(true);
+                setCommentAiSuggestion("");
+                try {
+                  const auth = getAuth();
+                  const u = auth.currentUser;
+                  if (!u) return;
+                  const token = await getIdToken(u, true);
+                  const res = await fetch("/api/coach/compare/rewrite", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ text }),
+                  });
+                  if (res.ok) {
+                    const data = await res.json();
+                    setCommentAiSuggestion(String(data?.improved || ""));
+                  }
+                } finally {
+                  setCommentAiLoading(false);
+                }
+              }}
+              disabled={commentAiLoading}
+            >
+              {commentAiLoading ? "Generando..." : "Reintentar"}
+            </Button>
+            <Button
+              onClick={() => {
+                if (commentAiSuggestion.trim()) {
+                  setNewComment(commentAiSuggestion.trim());
+                  setCommentAiOpen(false);
+                  toast({ title: "Redacción aplicada", description: "Podés editarla y guardar cuando quieras." });
+                } else {
+                  toast({ title: "No hay propuesta", description: "Generá una propuesta antes de aplicar.", variant: "destructive" });
+                }
+              }}
+              disabled={commentAiLoading}
+            >
+              Usar esta versión
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

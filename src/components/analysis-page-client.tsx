@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { notFound } from "next/navigation";
+import { notFound, useRouter } from "next/navigation";
 import Link from "next/link";
 import { AnalysisView } from "@/components/analysis-view";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -43,11 +43,14 @@ function CommentForm({ analysisId }: { analysisId: string }) {
 
 export function AnalysisPageClient({ id }: { id: string }) {
   const { user, userProfile, loading: authLoading } = useAuth();
+  const router = useRouter();
   const [analysis, setAnalysis] = useState<ShotAnalysis | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
   const [loading, setLoading] = useState(true);
+  const [redirecting, setRedirecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formattedDate, setFormattedDate] = useState("");
+  const [viewerRole, setViewerRole] = useState<string | null>(null);
   const [unlockStatus, setUnlockStatus] = useState<{
     status: 'none' | 'pending_payment' | 'paid_pending_review' | 'reviewed';
     paidCoachIds: Array<{ coachId: string; coachName: string }>;
@@ -56,7 +59,8 @@ export function AnalysisPageClient({ id }: { id: string }) {
   } | null>(null);
   const mpCheckRef = useRef(false);
   const userRole = (userProfile as any)?.role;
-  const isCoach = userRole === 'coach';
+  const resolvedRole = viewerRole || userRole;
+  const isCoach = resolvedRole === 'coach';
   const paidCoachNames = unlockStatus?.paidCoachIds
     ?.map((coach) => coach.coachName)
     .filter((name) => typeof name === 'string' && name.trim().length > 0) || [];
@@ -86,7 +90,10 @@ export function AnalysisPageClient({ id }: { id: string }) {
         
         // Obtener el análisis específico
         console.log(`[AnalysisPageClient] 📡 Llamando a /api/analyses/${id}`);
-        const response = await fetch(`/api/analyses/${id}`);
+        const token = user ? await user.getIdToken() : null;
+        const response = await fetch(`/api/analyses/${id}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
         console.log(`[AnalysisPageClient] 📥 Respuesta recibida:`, response.status, response.statusText);
         
         if (!response.ok) {
@@ -95,12 +102,13 @@ export function AnalysisPageClient({ id }: { id: string }) {
           throw new Error(errorData.error || `Error ${response.status}: Análisis no encontrado`);
         }
         
-        const analysisData = await response.json();
+        const rawData = await response.json();
+        const analysisData = (rawData && rawData.analysis) ? rawData.analysis : rawData;
         console.log(`[AnalysisPageClient] ✅ Datos del análisis recibidos:`, {
-          id: analysisData.id,
-          playerId: analysisData.playerId,
-          status: analysisData.status,
-          hasCoachAccess: !!analysisData.coachAccess
+          id: analysisData?.id,
+          playerId: analysisData?.playerId,
+          status: analysisData?.status,
+          hasCoachAccess: !!analysisData?.coachAccess
         });
         
         // Validar que tenemos datos válidos
@@ -109,6 +117,12 @@ export function AnalysisPageClient({ id }: { id: string }) {
           throw new Error('Datos de análisis inválidos');
         }
         
+        if (analysisData?.analysisMode === 'biomech-pro') {
+          setRedirecting(true);
+          router.replace(`/biomech-pro/analysis/${analysisData.id}`);
+          return;
+        }
+
         // Adaptar a tipo ShotAnalysis
         let shotAnalysis: ShotAnalysis = {
           id: analysisData.id,
@@ -169,9 +183,13 @@ export function AnalysisPageClient({ id }: { id: string }) {
           // Agregar verificación y otros campos del análisis
           verification: analysisData.analysisResult?.verification || analysisData.verification,
           shotSummary: analysisData.analysisResult?.shotSummary || analysisData.shotSummary,
+          coachCompleted: analysisData.coachCompleted === true,
           shots: analysisData.analysisResult?.shots || analysisData.shots,
+          // Permisos: necesarios para que AnalysisView calcule canEditCoachChecklist correctamente
+          coachAccess: analysisData.coachAccess,
+          coachId: analysisData.coachId,
           // ⚖️ Agregar metadatos del score calculado
-          scoreMetadata: analysisData.analysisResult?.scoreMetadata || null,
+          scoreMetadata: analysisData.analysisResult?.scoreMetadata || analysisData.scoreMetadata || null,
           // 🔢 Calcular resumen de evaluación automáticamente
           resumen_evaluacion: (() => {
             const parameters = analysisData.analysisResult?.technicalAnalysis?.parameters || analysisData.analysisResult?.detailedChecklist || analysisData.detailedChecklist || [];
@@ -221,47 +239,62 @@ export function AnalysisPageClient({ id }: { id: string }) {
           })(),
         } as any;
 
-        // Validar acceso al análisis
-        if (!user) {
-          console.error('[AnalysisPageClient] ❌ Usuario no autenticado');
-          throw new Error('Usuario no autenticado');
+        const analysisPlayerId = analysisData.playerId;
+        const userId = user?.uid || null;
+        const coachAccess = userId ? (analysisData.coachAccess || {})[userId] : null;
+        const hasCoachAccess = !!coachAccess && coachAccess.status === 'paid';
+        const isAssignedCoach = Boolean(
+          userId && analysisData.coachId && String(analysisData.coachId) === String(userId)
+        );
+        const isOwnerPlayer = userId && analysisPlayerId && String(analysisPlayerId) === String(userId);
+        const effectiveRole = userRole === 'admin'
+          ? 'admin'
+          : (hasCoachAccess || isAssignedCoach)
+            ? 'coach'
+            : isOwnerPlayer
+              ? 'player'
+              : userRole;
+
+        if (hasCoachAccess || isAssignedCoach) {
+          try { localStorage.setItem('preferredRole', 'coach'); } catch {}
         }
+        setViewerRole(effectiveRole || null);
 
         console.log(`[AnalysisPageClient] 👤 Usuario autenticado:`, {
-          uid: user.uid,
-          role: userRole
+          uid: userId || 'anon',
+          role: effectiveRole
         });
 
         // Si es jugador, verificar que el análisis le pertenece
-        if (userRole === 'player' && analysisData.playerId !== user.uid) {
+        if (effectiveRole === 'player' && userId && analysisData.playerId !== userId) {
           console.error(`[AnalysisPageClient] ❌ Jugador no tiene permiso:`, {
             analysisPlayerId: analysisData.playerId,
-            userUid: user.uid
+            userUid: userId
           });
           throw new Error('No tienes permiso para ver este análisis');
         }
 
         // Si es coach, verificar que tenga acceso pagado al análisis
-        if (userRole === 'coach') {
-          const coachAccess = (analysisData.coachAccess || {})[user.uid];
+        if (effectiveRole === 'coach') {
           console.log(`[AnalysisPageClient] 🔐 Verificando acceso del coach:`, {
-            coachUid: user.uid,
+            coachUid: userId || 'anon',
             hasCoachAccess: !!analysisData.coachAccess,
             coachAccessKeys: analysisData.coachAccess ? Object.keys(analysisData.coachAccess) : [],
             coachAccessForUser: coachAccess,
-            status: coachAccess?.status
+            status: coachAccess?.status,
+            isAssignedCoach
           });
           
-          if (!coachAccess || coachAccess.status !== 'paid') {
-            console.error(`[AnalysisPageClient] ❌ Coach no tiene acceso pagado:`, {
+          if (!hasCoachAccess && !isAssignedCoach) {
+            console.error(`[AnalysisPageClient] ❌ Coach sin acceso:`, {
               hasAccess: !!coachAccess,
               status: coachAccess?.status,
-              required: 'paid'
+              required: 'paid_or_assigned'
             });
             throw new Error('No tienes acceso a este análisis. Debes comprar el acceso primero.');
           }
           
-          console.log(`[AnalysisPageClient] ✅ Coach tiene acceso pagado`);
+          console.log(`[AnalysisPageClient] ✅ Coach con acceso`);
         }
 
         console.log(`[AnalysisPageClient] ✅ Análisis procesado correctamente`);
@@ -308,7 +341,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
         }
         
         // Cargar estado de unlock si es jugador
-        if (!isCoach && user) {
+        if (effectiveRole === 'player' && user) {
           try {
             const token = await user.getIdToken();
             const unlockResponse = await fetch(`/api/analyses/${id}/unlock-status`, {
@@ -347,7 +380,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
   useEffect(() => {
     const tryProcessPendingMp = async () => {
       if (mpCheckRef.current) return;
-      if (!user || userRole !== 'player' || !unlockStatus || unlockStatus.status !== 'pending_payment') return;
+      if (!user || resolvedRole !== 'player' || !unlockStatus || unlockStatus.status !== 'pending_payment') return;
       const mpUnlock = unlockStatus.unlocks.find(
         (u) => u.paymentProvider === 'mercadopago' && u.preferenceId
       );
@@ -391,15 +424,15 @@ export function AnalysisPageClient({ id }: { id: string }) {
     };
 
     tryProcessPendingMp();
-  }, [id, user, userRole, unlockStatus]);
+  }, [id, user, resolvedRole, unlockStatus]);
 
-  if (authLoading || loading) {
+  if (authLoading || loading || redirecting) {
     console.log(`[AnalysisPageClient] ⏳ Mostrando estado de carga (authLoading: ${authLoading}, loading: ${loading})`);
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
         <Loader2 className="w-8 h-8 animate-spin mb-4" />
         <p className="text-muted-foreground">
-          {authLoading ? 'Verificando autenticación...' : 'Cargando análisis...'}
+          {authLoading ? 'Verificando autenticación...' : redirecting ? 'Redirigiendo al análisis biomecánico...' : 'Cargando análisis...'}
         </p>
       </div>
     );
@@ -416,7 +449,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
           <CardContent>
             <p className="text-red-700 mb-4">{error || 'Análisis no encontrado'}</p>
             <div className="flex flex-col gap-2">
-              <Link href={isCoach ? "/coach/dashboard" : "/player/dashboard"}>
+              <Link href={isCoach ? "/coach/dashboard" : "/dashboard"}>
                 <Button variant="default" className="w-full sm:w-auto">
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Volver al Dashboard
@@ -444,10 +477,10 @@ export function AnalysisPageClient({ id }: { id: string }) {
   });
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-8 min-w-0 overflow-x-hidden">
       {/* Header con info del jugador */}
       <div className="mb-6">
-        <Link href={isCoach ? "/coach/dashboard" : "/player/dashboard"}>
+        <Link href={isCoach ? "/coach/dashboard" : "/dashboard"}>
           <Button variant="ghost" size="sm" className="mb-4">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Volver al Dashboard
@@ -481,7 +514,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
         )}
 
         {/* Botón destacado para solicitar revisión con coach real (solo para jugadores) */}
-        {!isCoach && analysis && userRole === 'player' && (
+        {!isCoach && analysis && resolvedRole === 'player' && (
           <div className="mb-6 flex flex-col items-end gap-2">
             {unlockStatus?.hasCoachFeedback ? (
               <div className="flex flex-col items-end gap-2">
@@ -489,12 +522,6 @@ export function AnalysisPageClient({ id }: { id: string }) {
                   <Button size="default" variant="outline" className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100">
                     <CheckCircle2 className="mr-2 h-4 w-4" />
                     Ver revisión del entrenador
-                  </Button>
-                </Link>
-                <Link href={`/player/coaches?analysisId=${analysis.id}`}>
-                  <Button size="default" variant="outline" className="border-primary/30 hover:bg-primary/5">
-                    <UserCircle className="mr-2 h-4 w-4" />
-                    Solicitar otra revisión con otro entrenador
                   </Button>
                 </Link>
               </div>
@@ -508,22 +535,7 @@ export function AnalysisPageClient({ id }: { id: string }) {
                   <p className="mt-1 text-xs">
                     Pendiente evaluación por {paidCoachLabel}. Te notificaremos cuando esté listo.
                   </p>
-                  <p className="mt-1 text-xs">
-                    Si querés otra revisión con un entrenador distinto, podés solicitarla abajo.
-                  </p>
                 </div>
-                <Link href={`/player/coaches?analysisId=${analysis.id}`}>
-                  <Button size="default" variant="outline" className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100">
-                    <Clock className="mr-2 h-4 w-4" />
-                    Ver estado de revisión
-                  </Button>
-                </Link>
-                <Link href={`/player/coaches?analysisId=${analysis.id}`}>
-                  <Button size="default" variant="outline" className="border-primary/30 hover:bg-primary/5">
-                    <UserCircle className="mr-2 h-4 w-4" />
-                    Solicitar otra revisión con otro entrenador
-                  </Button>
-                </Link>
               </div>
             ) : (
               <Link href={`/player/coaches?analysisId=${analysis.id}`}>
@@ -539,7 +551,11 @@ export function AnalysisPageClient({ id }: { id: string }) {
 
       {/* Componente principal de análisis */}
       {analysis ? (
-        <AnalysisView analysis={analysis} player={player || {} as Player} />
+        <AnalysisView
+          analysis={analysis}
+          player={player || ({} as Player)}
+          viewerRole={resolvedRole}
+        />
       ) : (
         <Card className="border-yellow-200 bg-yellow-50">
           <CardHeader>

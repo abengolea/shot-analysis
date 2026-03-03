@@ -17,22 +17,13 @@ export interface LogoProps extends React.HTMLAttributes<HTMLImageElement> {
   alt?: string;
 }
 
-export function Logo({
-  size = "md",
-  src = "/b45ad063-29cf-4572-9910-e87f35f9ecd8.jpg",
-  alt = "chaaaas.com logo",
-  className = "",
-  ...rest
-}: LogoProps) {
+// URL de producción como fallback: en staging los assets de public/ pueden no servirse (404)
+const PROD_LOGO_URL = "https://www.chaaaas.com/chas-logo.svg";
+
+export function Logo({ size = "md", src = "/chas-logo.svg", alt = "chaaaas.com logo", className = "", ...rest }: LogoProps) {
   const classNames = `block ${sizeToClass[size]} ${className}`.trim();
   const [srcIndex, setSrcIndex] = React.useState(0);
-  const sources = [
-    src,
-    "/b45ad063-29cf-4572-9910-e87f35f9ecd8.jpg",
-    "/chas-logo.png",
-    "/chas-logo.svg",
-    "/favicon.svg",
-  ];
+  const sources = [src, "/chas-logo.png", "/chas-logo.svg", "/favicon.svg", PROD_LOGO_URL];
   const effectiveSrc = sources[Math.min(srcIndex, sources.length - 1)];
 
   return (
@@ -45,4 +36,6 @@ export function Logo({
     />
   );
 }
+
+
 

@@ -8,7 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Save, RefreshCw } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth';
+import { getIdToken } from 'firebase/auth';
+import { Loader2, Save, RefreshCw, Mail } from 'lucide-react';
 
 interface MaintenanceConfig {
   enabled: boolean;
@@ -24,6 +26,7 @@ interface MaintenanceConfig {
 }
 
 export default function MaintenancePage() {
+  const { user } = useAuth();
   const [config, setConfig] = useState<MaintenanceConfig>({
     enabled: false,
     title: '🔧 SITIO EN MANTENIMIENTO',
@@ -38,13 +41,18 @@ export default function MaintenancePage() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [emailTestLoading, setEmailTestLoading] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState<{ ok: boolean; message: string; detail?: unknown } | null>(null);
   const { toast } = useToast();
 
   // Cargar configuración actual
   const loadConfig = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/maintenance');
+      const token = user ? await getIdToken(user, true) : '';
+      const response = await fetch('/api/admin/maintenance', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       if (response.ok) {
         const data = await response.json();
         setConfig({
@@ -73,9 +81,13 @@ export default function MaintenancePage() {
   const saveConfig = async () => {
     try {
       setSaving(true);
+      const token = user ? await getIdToken(user, true) : '';
       const response = await fetch('/api/admin/maintenance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           ...config,
           updatedBy: 'admin' // Aquí podrías usar el usuario actual
@@ -105,8 +117,36 @@ export default function MaintenancePage() {
     }
   };
 
+  const sendEmailTest = async () => {
+    setEmailTestResult(null);
+    setEmailTestLoading(true);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const res = await fetch('/api/email/test', { method: 'POST', signal: controller.signal });
+      clearTimeout(timeoutId);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setEmailTestResult({ ok: true, message: 'Email de prueba enviado correctamente.', detail: data });
+        toast({ title: 'Email enviado', description: 'Revisá la bandeja (y spam) de abengolea1@gmail.com', variant: 'default' });
+      } else {
+        const msg = data?.error || `Error ${res.status}`;
+        setEmailTestResult({ ok: false, message: msg, detail: data });
+        toast({ title: 'Error al enviar', description: msg, variant: 'destructive' });
+      }
+    } catch (err) {
+      const isAbort = err instanceof Error && err.name === 'AbortError';
+      const msg = isAbort ? 'Timeout: el servidor no respondió en 30 segundos. Revisá Secret Manager o la consola del backend.' : (err instanceof Error ? err.message : 'Error de red');
+      setEmailTestResult({ ok: false, message: msg, detail: null });
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
+    } finally {
+      setEmailTestLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) {
@@ -128,6 +168,45 @@ export default function MaintenancePage() {
       </div>
 
       <div className="grid gap-6">
+        {/* Email de prueba - primero para que sea visible */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5" />
+              Email de prueba (Resend)
+            </CardTitle>
+            <CardDescription>
+              Envía un email de prueba a abengolea1@gmail.com para verificar que Resend (o Secret Manager en staging) está configurado.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button variant="outline" onClick={sendEmailTest} disabled={emailTestLoading}>
+              {emailTestLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <Mail className="mr-2 h-4 w-4" />
+                  Enviar email de prueba
+                </>
+              )}
+            </Button>
+            {emailTestResult && (
+              <div className={`rounded-lg border p-4 text-sm ${emailTestResult.ok ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                <p className="font-medium">{emailTestResult.ok ? '✓ Éxito' : '✗ Error'}</p>
+                <p className="mt-1">{emailTestResult.message}</p>
+                {emailTestResult.detail != null ? (
+                  <pre className="mt-3 overflow-auto rounded bg-black/5 p-2 text-xs">
+                    {JSON.stringify(emailTestResult.detail, null, 2)}
+                  </pre>
+                ) : null}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Estado Actual - Mantenimiento General */}
         <Card>
           <CardHeader>

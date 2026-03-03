@@ -8,6 +8,7 @@ export type CoachPaymentAccount = {
   mpRefreshToken?: string;
   status?: 'pending' | 'active' | 'inactive';
   platformFeePercent?: number;
+  disableMarketplaceSplit?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -38,4 +39,3 @@ export function resolvePlatformFeePercent(account?: CoachPaymentAccount | null, 
   }
   return fallbackPercent;
 }
-

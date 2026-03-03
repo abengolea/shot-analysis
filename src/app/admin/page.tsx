@@ -1,10 +1,32 @@
 "use client";
-
-export const dynamic = 'force-dynamic';
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getAuth, getIdToken } from "firebase/auth";
-import { CoachAdminForm } from "@/components/coach-admin-form";
+import { ClubAdminForm } from "@/components/club-admin-form";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+
+function PlayerGiftDropdown({ onGift }: { onGift: (count: number) => Promise<void> }) {
+	return (
+		<DropdownMenu>
+			<DropdownMenuTrigger asChild>
+				<Button variant="outline" size="sm" className="h-7 text-xs">Regalar</Button>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end">
+				{[1, 3, 5, 10].map((n) => (
+					<DropdownMenuItem key={n} onSelect={() => void onGift(n)}>
+						+{n} análisis y +{n} revisiones
+					</DropdownMenuItem>
+				))}
+			</DropdownMenuContent>
+		</DropdownMenu>
+	);
+}
 
 type WeeklyPoint = {
 	weekStart: string;
@@ -24,20 +46,6 @@ type OverviewMetrics = {
 	weekly: WeeklyPoint[];
 };
 
-const sumBy = (items: WeeklyPoint[], key: keyof WeeklyPoint) =>
-	items.reduce((acc, item) => acc + (typeof item[key] === 'number' ? (item[key] as number) : 0), 0);
-
-const pctChange = (current: number, previous: number) => {
-	if (previous === 0) return null;
-	return ((current - previous) / previous) * 100;
-};
-
-const formatPct = (value: number | null) => {
-	if (value == null) return '—';
-	const sign = value > 0 ? '+' : '';
-	return `${sign}${value.toFixed(1)}%`;
-};
-
 export default function AdminHome() {
 	const [activeTab, setActiveTab] = useState<string>("home");
 	const [metrics, setMetrics] = useState<OverviewMetrics | null>(null);
@@ -52,6 +60,22 @@ export default function AdminHome() {
 	const [coaches, setCoaches] = useState<any[]>([]);
 	const [coachesNext, setCoachesNext] = useState<string | undefined>(undefined);
 	const [coachesLoading, setCoachesLoading] = useState(false);
+	const [coachUpdatingId, setCoachUpdatingId] = useState<string | null>(null);
+
+	const [clubRequests, setClubRequests] = useState<any[]>([]);
+	const [clubRequestsLoading, setClubRequestsLoading] = useState(false);
+	const [clubsList, setClubsList] = useState<any[]>([]);
+	const [clubsListLoading, setClubsListLoading] = useState(false);
+
+	// Acceso por club + coach (La Emilia, Victor Baldo, etc.)
+	const [clubBulkName, setClubBulkName] = useState<string>("");
+	const [clubBulkCoachId, setClubBulkCoachId] = useState<string>("");
+	const [clubBulkGiftAnalyses, setClubBulkGiftAnalyses] = useState<number>(5);
+	const [clubBulkGiftReviews, setClubBulkGiftReviews] = useState<number>(5);
+	const [clubBulkPreview, setClubBulkPreview] = useState<{ count: number; players: Array<{ id: string; name: string; email: string; club: string; yaRecibioRegalo?: boolean }>; nuevos?: number } | null>(null);
+	const [clubBulkLoading, setClubBulkLoading] = useState(false);
+	const [clubBulkExecuting, setClubBulkExecuting] = useState(false);
+	const [clubBulkResult, setClubBulkResult] = useState<string | null>(null);
 
 	const [payments, setPayments] = useState<any[]>([]);
 	const [paymentsNext, setPaymentsNext] = useState<string | undefined>(undefined);
@@ -62,18 +86,12 @@ export default function AdminHome() {
 	const [subsNext, setSubsNext] = useState<string | undefined>(undefined);
 	const [subsLoading, setSubsLoading] = useState(false);
 
-	const [coachReviews, setCoachReviews] = useState<any[]>([]);
-	const [coachReviewsNext, setCoachReviewsNext] = useState<string | undefined>(undefined);
-	const [coachReviewsLoading, setCoachReviewsLoading] = useState(false);
-	const [coachReviewsHiddenOnly, setCoachReviewsHiddenOnly] = useState(false);
-	const [coachReviewsSavingById, setCoachReviewsSavingById] = useState<Record<string, boolean>>({});
-
 	// Filtros de búsqueda
 	const [playersQuery, setPlayersQuery] = useState<string>("");
+	const [playersClubFilter, setPlayersClubFilter] = useState<string>("");
 	const [coachesQuery, setCoachesQuery] = useState<string>("");
 	const [paymentsQuery, setPaymentsQuery] = useState<string>("");
 	const [subsQuery, setSubsQuery] = useState<string>("");
-	const [coachReviewsQuery, setCoachReviewsQuery] = useState<string>("");
 
 	// Helpers CSV export
 	const toCsvAndDownload = (filename: string, headers: string[], rows: Array<(string|number|null|undefined)[]>) => {
@@ -117,11 +135,7 @@ export default function AdminHome() {
 		if (!q) return payments;
 		return payments.filter(p => String(p.id).toLowerCase().includes(q)
 			|| String(p.userId||'').toLowerCase().includes(q)
-			|| String(p.userName||'').toLowerCase().includes(q)
-			|| String(p.productId||'').toLowerCase().includes(q)
-			|| String(p.paymentMethod||'').toLowerCase().includes(q)
-			|| String(p.coachName||'').toLowerCase().includes(q)
-			|| String(p.coachId||'').toLowerCase().includes(q));
+			|| String(p.productId||'').toLowerCase().includes(q));
 	}, [payments, paymentsQuery]);
 	const filteredSubs = useMemo(() => {
 		const q = subsQuery.trim().toLowerCase();
@@ -129,19 +143,6 @@ export default function AdminHome() {
 		return subs.filter(w => String(w.id).toLowerCase().includes(q)
 			|| String(w.userId||'').toLowerCase().includes(q));
 	}, [subs, subsQuery]);
-	const filteredCoachReviews = useMemo(() => {
-		const q = coachReviewsQuery.trim().toLowerCase();
-		const base = coachReviewsHiddenOnly ? coachReviews.filter(r => r.hidden === true) : coachReviews;
-		if (!q) return base;
-		return base.filter(r =>
-			String(r.id).toLowerCase().includes(q)
-			|| String(r.analysisId||'').toLowerCase().includes(q)
-			|| String(r.coachId||'').toLowerCase().includes(q)
-			|| String(r.coachName||'').toLowerCase().includes(q)
-			|| String(r.playerId||'').toLowerCase().includes(q)
-			|| String(r.playerName||'').toLowerCase().includes(q)
-		);
-	}, [coachReviews, coachReviewsQuery, coachReviewsHiddenOnly]);
 
 	useEffect(() => {
 		try {
@@ -173,14 +174,54 @@ export default function AdminHome() {
 		run();
 	}, []);
 
+	// Cargar coaches y clubes al abrir tab de clubes o jugadores
+	useEffect(() => {
+		if (activeTab !== 'clubs' && activeTab !== 'players') return;
+		const loadCoaches = async () => {
+			if (coaches.length > 0 || coachesLoading) return;
+			try {
+				setCoachesLoading(true);
+				const auth = getAuth();
+				const cu = auth.currentUser;
+				if (!cu) return;
+				const token = await getIdToken(cu, true);
+				const res = await fetch('/api/admin/coaches?limit=200', { headers: { Authorization: `Bearer ${token}` } });
+				const data = await res.json();
+				if (Array.isArray(data.items)) setCoaches(data.items);
+			} catch {
+				// noop
+			} finally {
+				setCoachesLoading(false);
+			}
+		};
+		const loadClubs = async () => {
+			if (clubsListLoading) return;
+			try {
+				setClubsListLoading(true);
+				const auth = getAuth();
+				const cu = auth.currentUser;
+				if (!cu) return;
+				const token = await getIdToken(cu, true);
+				const res = await fetch('/api/admin/clubs?limit=100', { headers: { Authorization: `Bearer ${token}` } });
+				const data = await res.json();
+				if (Array.isArray(data.items)) setClubsList(data.items);
+			} catch {
+				// noop
+			} finally {
+				setClubsListLoading(false);
+			}
+		};
+		loadCoaches();
+		loadClubs();
+	}, [activeTab]);
+
 	const Tabs = useMemo(() => [
 		{ id: 'home', label: 'Inicio' },
 		{ id: 'players', label: 'Jugadores' },
 		{ id: 'coaches', label: 'Entrenadores' },
-		{ id: 'coach-reviews', label: 'Reseñas' },
+		{ id: 'clubs', label: 'Clubes' },
 		{ id: 'payments', label: 'Pagos' },
 		{ id: 'subscriptions', label: 'Suscripciones' },
-		{ id: 'emails', label: 'Emails' },
 		{ id: 'stats', label: 'Estadísticas' },
 	], []);
 
@@ -193,45 +234,54 @@ export default function AdminHome() {
 		} catch {}
 	};
 
-	const stats = useMemo(() => {
-		if (!metrics) return null;
-		const weekly = metrics.weekly || [];
-		const last4 = weekly.slice(-4);
-		const prev4 = weekly.slice(-8, -4);
-		const current = {
-			payments: sumBy(last4, 'paymentsCount'),
-			revenue: sumBy(last4, 'paymentsAmountARS'),
-			analyses: sumBy(last4, 'analysesCount'),
-		};
-		const previous = {
-			payments: sumBy(prev4, 'paymentsCount'),
-			revenue: sumBy(prev4, 'paymentsAmountARS'),
-			analyses: sumBy(prev4, 'analysesCount'),
-		};
-		const max = {
-			payments: Math.max(1, ...weekly.map((w) => w.paymentsCount || 0)),
-			revenue: Math.max(1, ...weekly.map((w) => w.paymentsAmountARS || 0)),
-			analyses: Math.max(1, ...weekly.map((w) => w.analysesCount || 0)),
-		};
-		return {
-			weekly,
-			current,
-			previous,
-			trends: {
-				payments: pctChange(current.payments, previous.payments),
-				revenue: pctChange(current.revenue, previous.revenue),
-				analyses: pctChange(current.analyses, previous.analyses),
-			},
-			max,
-		};
-	}, [metrics]);
+	const refreshClubsList = useCallback(async () => {
+		try {
+			const auth = getAuth();
+			const cu = auth.currentUser;
+			if (!cu) return;
+			const token = await getIdToken(cu, true);
+			const res = await fetch('/api/admin/clubs?limit=100', { headers: { Authorization: `Bearer ${token}` } });
+			const data = await res.json();
+			if (Array.isArray(data.items)) setClubsList(data.items);
+		} catch {
+			// noop
+		}
+	}, []);
+
+	const updateCoach = async (
+		id: string,
+		payload: { status?: 'active' | 'pending' | 'suspended'; ratePerAnalysis?: number }
+	) => {
+		try {
+			setCoachUpdatingId(id);
+			const auth = getAuth();
+			const cu = auth.currentUser;
+			if (!cu) throw new Error('Usuario no autenticado');
+			const token = await getIdToken(cu, true);
+			const res = await fetch('/api/admin/coaches', {
+				method: 'PATCH',
+				headers: {
+					'Authorization': `Bearer ${token}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ id, ...payload }),
+			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+			setCoaches((prev) => prev.map((c) => (c.id === id ? { ...c, ...payload } : c)));
+		} catch (e: any) {
+			alert(e?.message || 'Error actualizando entrenador');
+		} finally {
+			setCoachUpdatingId(null);
+		}
+	};
 
 	return (
-		<div className="p-6 space-y-6">
+		<div className="p-4 sm:p-6 space-y-6 min-w-0">
 			<h1 className="text-xl font-semibold">Admin</h1>
 
 			{/* Tabs */}
-			<div className="flex gap-2 border-b">
+			<div className="flex gap-2 border-b overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
 				{Tabs.map(t => (
 					<button
 						key={t.id}
@@ -264,13 +314,13 @@ export default function AdminHome() {
 							{/* Acciones de mantenimiento */}
 							<div className="mt-4 rounded border p-4 space-y-3">
 								<h2 className="text-lg font-medium">Mantenimiento</h2>
-								<p className="text-sm text-gray-600">Configuración de pesos y recálculo de puntajes.</p>
+								<p className="text-sm text-gray-600">Recalcular puntajes históricos a escala 0–100.</p>
 								<div className="flex flex-wrap gap-2">
-									<Link href="/admin/weights">
-										<button className="rounded border px-3 py-1 text-sm bg-blue-50 hover:bg-blue-100">
-											⚖️ Configurar Pesos
-										</button>
+									<Link className="rounded border px-3 py-1 text-sm hover:bg-gray-50" href="/admin/maintenance">
+										Abrir panel de mantenimiento
 									</Link>
+								</div>
+								<div className="flex flex-wrap gap-2">
 									<button
 										className="rounded border px-3 py-1 text-sm"
 										onClick={async () => {
@@ -348,9 +398,11 @@ export default function AdminHome() {
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin?tab=coaches">Entrenadores</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin?tab=payments">Pagos</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin?tab=subscriptions">Suscripciones</Link>
+									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin/maintenance">Mantenimiento</Link>
 									<Link className="rounded border p-3 hover:bg-gray-50" href="/admin/revision-ia">Revisión IA</Link>
-									<Link className="rounded border p-3 hover:bg-gray-50" href="/player/upload">Subir y analizar video</Link>
-									<Link className="rounded border p-3 hover:bg-gray-50" href="/player/dashboard">Dashboard usuario</Link>
+									<Link className="rounded border p-3 hover:bg-gray-50" href="/rankings">Rankings públicos</Link>
+									<Link className="rounded border p-3 hover:bg-gray-50" href="/upload">Subir y analizar video</Link>
+									<Link className="rounded border p-3 hover:bg-gray-50" href="/dashboard">Dashboard usuario</Link>
 								</div>
 							</div>
 						</>
@@ -386,7 +438,7 @@ export default function AdminHome() {
 									const data = await res.json();
 									setSubs(Array.isArray(data.items) ? data.items : []);
 									setSubsNext(data.nextCursor);
-								} catch (e) {
+								} catch {
 									// noop
 								} finally {
 									setSubsLoading(false);
@@ -443,7 +495,7 @@ export default function AdminHome() {
 									const data = await res.json();
 									setSubs([...subs, ...(Array.isArray(data.items) ? data.items : [])]);
 									setSubsNext(data.nextCursor);
-								} catch (e) {
+								} catch {
 									// noop
 								} finally {
 									setSubsLoading(false);
@@ -473,24 +525,10 @@ export default function AdminHome() {
 								<option value="pending">Pendientes</option>
 								<option value="rejected">Rechazados</option>
 							</select>
-							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Usuario/Producto/Medio/Entrenador" value={paymentsQuery} onChange={(e)=>setPaymentsQuery(e.target.value)} />
+							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Usuario/Producto" value={paymentsQuery} onChange={(e)=>setPaymentsQuery(e.target.value)} />
 							<button className="rounded border px-3 py-1 text-sm" onClick={() => {
-                                const headers = ['id','usuario','userId','producto','entrenador','coachId','estado','medio','mpPaymentId','mpPreferenceId','importe','moneda','creado'];
-                                const rows = filteredPayments.map((p:any) => [
-									p.id,
-									p.userName || p.userId,
-									p.userId || '',
-									p.productId || '',
-									p.coachName || p.coachId || '',
-									p.coachId || '',
-									p.status || '',
-									p.paymentMethod || p.provider || '',
-									p.mpPaymentId || '',
-									p.mpPreferenceId || '',
-									p.amount,
-									p.currency,
-									typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : ''))
-								]);
+                                const headers = ['id','userId','productId','status','amount','currency','createdAt'];
+                                const rows = filteredPayments.map((p:any) => [p.id,p.userId,p.productId,p.status,p.amount,p.currency, typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : ''))]);
 								toCsvAndDownload('payments.csv', headers, rows);
 							}}>Exportar CSV</button>
 							<button
@@ -509,7 +547,7 @@ export default function AdminHome() {
 										const data = await res.json();
 										setPayments(Array.isArray(data.items) ? data.items : []);
 										setPaymentsNext(data.nextCursor);
-									} catch (e) {
+									} catch {
 										// noop
 									} finally {
 										setPaymentsLoading(false);
@@ -527,11 +565,7 @@ export default function AdminHome() {
 									<th className="py-2 px-3">ID</th>
 									<th className="py-2 px-3">Usuario</th>
 									<th className="py-2 px-3">Producto</th>
-									<th className="py-2 px-3">Entrenador</th>
 									<th className="py-2 px-3">Estado</th>
-									<th className="py-2 px-3">Medio</th>
-									<th className="py-2 px-3">MP Payment</th>
-									<th className="py-2 px-3">MP Pref</th>
 									<th className="py-2 px-3">Importe</th>
 									<th className="py-2 px-3">Moneda</th>
 									<th className="py-2 px-3">Creado</th>
@@ -541,13 +575,9 @@ export default function AdminHome() {
                                 {filteredPayments.map((p:any) => (
 									<tr key={p.id} className="border-t">
 										<td className="py-2 px-3">{p.id}</td>
-										<td className="py-2 px-3">{p.userName || p.userId || '-'}</td>
+										<td className="py-2 px-3">{p.userId || '-'}</td>
 										<td className="py-2 px-3">{p.productId || '-'}</td>
-										<td className="py-2 px-3">{p.coachName || p.coachId || '-'}</td>
 										<td className="py-2 px-3">{p.status || '-'}</td>
-										<td className="py-2 px-3">{p.paymentMethod || p.provider || '-'}</td>
-										<td className="py-2 px-3">{p.mpPaymentId || '-'}</td>
-										<td className="py-2 px-3">{p.mpPreferenceId || '-'}</td>
 										<td className="py-2 px-3">{typeof p.amount === 'number' ? p.amount.toLocaleString('es-AR') : '-'}</td>
 										<td className="py-2 px-3">{p.currency || '-'}</td>
                                         <td className="py-2 px-3">{typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
@@ -555,7 +585,7 @@ export default function AdminHome() {
 								))}
 								{!filteredPayments.length && (
 									<tr>
-										<td className="py-6 px-3 text-gray-500" colSpan={11}>{paymentsLoading ? 'Cargando…' : 'Sin datos'}</td>
+										<td className="py-6 px-3 text-gray-500" colSpan={7}>{paymentsLoading ? 'Cargando…' : 'Sin datos'}</td>
 									</tr>
 								)}
 							</tbody>
@@ -580,7 +610,7 @@ export default function AdminHome() {
 									const data = await res.json();
 									setPayments([...payments, ...(Array.isArray(data.items) ? data.items : [])]);
 									setPaymentsNext(data.nextCursor);
-								} catch (e) {
+								} catch {
 									// noop
 								} finally {
 									setPaymentsLoading(false);
@@ -593,16 +623,30 @@ export default function AdminHome() {
 				</div>
 			)}
 
+
 			{/* Jugadores */}
 			{activeTab === 'players' && (
 				<div className="space-y-3">
 					<div className="flex items-center justify-between gap-2 flex-wrap">
 						<h2 className="text-lg font-medium">Jugadores</h2>
-						<div className="flex items-center gap-2">
+						<div className="flex items-center gap-2 flex-wrap">
+							<select
+								className="rounded border px-2 py-1 text-sm"
+								value={playersClubFilter}
+								onChange={(e) => setPlayersClubFilter(e.target.value)}
+							>
+								<option value="">Todos los clubes</option>
+								{clubsList.map((c: any) => (
+									<option key={c.id} value={c.name || c.id}>
+											{c.name || c.id}
+										</option>
+								))}
+								{!clubsList.length && !clubsListLoading && <option value="" disabled>Sin clubes cargados</option>}
+							</select>
 							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Email/Nombre" value={playersQuery} onChange={(e)=>setPlayersQuery(e.target.value)} />
 							<button className="rounded border px-3 py-1 text-sm" onClick={() => {
-                                const headers = ['id','name','email','playerLevel','status','createdAt'];
-                                const rows = filteredPlayers.map((p:any) => [p.id,p.name,p.email,p.playerLevel,p.status, typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : ''))]);
+                                const headers = ['id','name','email','club','playerLevel','status','createdAt'];
+                                const rows = filteredPlayers.map((p:any) => [p.id,p.name,p.email,p.club||'',p.playerLevel,p.status, typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : ''))]);
 								toCsvAndDownload('players.csv', headers, rows);
 							}}>Exportar CSV</button>
 						</div>
@@ -615,20 +659,23 @@ export default function AdminHome() {
 									const cu = auth.currentUser;
 									if (!cu) throw new Error('Usuario no autenticado');
 									const token = await getIdToken(cu, true);
+									const search = playersQuery.trim();
 									const url = new URL('/api/admin/players', window.location.origin);
-									url.searchParams.set('limit', '50');
+									if (search) url.searchParams.set('q', search);
+									if (playersClubFilter) url.searchParams.set('club', playersClubFilter);
+									if (!search && !playersClubFilter) url.searchParams.set('limit', '50');
 									const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
 									const data = await res.json();
 									setPlayers(Array.isArray(data.items) ? data.items : []);
-									setPlayersNext(data.nextCursor);
-								} catch (e) {
+									setPlayersNext(search || playersClubFilter ? undefined : data.nextCursor);
+								} catch {
 									// noop
 								} finally {
 									setPlayersLoading(false);
 								}
 							}}
 						>
-							{players.length ? 'Refrescar' : 'Cargar'}
+							{playersQuery.trim() || playersClubFilter ? 'Buscar' : (players.length ? 'Refrescar' : 'Cargar')}
 						</button>
 					</div>
 					<div className="rounded border overflow-x-auto">
@@ -638,9 +685,11 @@ export default function AdminHome() {
 									<th className="py-2 px-3">ID</th>
 									<th className="py-2 px-3">Nombre</th>
 									<th className="py-2 px-3">Email</th>
+									<th className="py-2 px-3">Club</th>
 									<th className="py-2 px-3">Nivel</th>
 									<th className="py-2 px-3">Estado</th>
 									<th className="py-2 px-3">Creado</th>
+									<th className="py-2 px-3">Regalar</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -653,14 +702,35 @@ export default function AdminHome() {
                                         </td>
                                         <td className="py-2 px-3">{p.name || '-'}</td>
                                         <td className="py-2 px-3">{p.email || '-'}</td>
+										<td className="py-2 px-3">{p.club || '-'}</td>
                                         <td className="py-2 px-3">{p.playerLevel || '-'}</td>
                                         <td className="py-2 px-3">{p.status || '-'}</td>
                                         <td className="py-2 px-3">{typeof p.createdAt === 'string' ? p.createdAt : (p?.createdAt?.toDate?.() ? p.createdAt.toDate().toISOString() : (typeof p?.createdAt?._seconds === 'number' ? new Date(p.createdAt._seconds * 1000 + Math.round((p.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
+										<td className="py-2 px-3">
+											<PlayerGiftDropdown onGift={async (count) => {
+												try {
+													const auth = getAuth();
+													const cu = auth.currentUser;
+													if (!cu) throw new Error('No autenticado');
+													const token = await getIdToken(cu, true);
+													const res = await fetch('/api/admin/gift-player', {
+														method: 'POST',
+														headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+														body: JSON.stringify({ userId: p.id, count }),
+													});
+													const data = await res.json();
+													if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+													alert(data?.message || 'Listo');
+												} catch (e: any) {
+													alert(e?.message || 'Error');
+												}
+											}} />
+										</td>
                                     </tr>
                                 ))}
 								{!filteredPlayers.length && (
 									<tr>
-										<td className="py-6 px-3 text-gray-500" colSpan={6}>{playersLoading ? 'Cargando…' : 'Sin datos'}</td>
+										<td className="py-6 px-3 text-gray-500" colSpan={8}>{playersLoading ? 'Cargando…' : 'Sin datos'}</td>
 									</tr>
 								)}
 							</tbody>
@@ -684,7 +754,7 @@ export default function AdminHome() {
 									const data = await res.json();
 									setPlayers([...players, ...(Array.isArray(data.items) ? data.items : [])]);
 									setPlayersNext(data.nextCursor);
-								} catch (e) {
+								} catch {
 									// noop
 								} finally {
 									setPlayersLoading(false);
@@ -699,18 +769,308 @@ export default function AdminHome() {
 
 			{/* Entrenadores */}
 			{activeTab === 'coaches' && (
-				<div className="grid gap-4 lg:grid-cols-3">
-					<div className="space-y-3 lg:col-span-2">
-						<div className="flex items-center justify-between gap-2 flex-wrap">
-							<h2 className="text-lg font-medium">Entrenadores</h2>
-							<div className="flex items-center gap-2">
-								<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Email/Nombre" value={coachesQuery} onChange={(e)=>setCoachesQuery(e.target.value)} />
-								<button className="rounded border px-3 py-1 text-sm" onClick={() => {
-									const headers = ['id','name','email','status','ratePerAnalysis','createdAt'];
-									const rows = filteredCoaches.map((c:any) => [c.id,c.name,c.email,c.status,c.ratePerAnalysis,c.createdAt]);
-									toCsvAndDownload('coaches.csv', headers, rows);
-								}}>Exportar CSV</button>
+				<div className="space-y-3">
+					<div className="flex items-center justify-between gap-2 flex-wrap">
+						<h2 className="text-lg font-medium">Entrenadores</h2>
+						<div className="flex items-center gap-2">
+							<input className="rounded border px-2 py-1 text-sm" placeholder="Buscar ID/Email/Nombre" value={coachesQuery} onChange={(e)=>setCoachesQuery(e.target.value)} />
+							<button className="rounded border px-3 py-1 text-sm" onClick={() => {
+								const headers = ['id','name','email','status','ratePerAnalysis','createdAt'];
+								const rows = filteredCoaches.map((c:any) => [c.id,c.name,c.email,c.status,c.ratePerAnalysis,c.createdAt]);
+								toCsvAndDownload('coaches.csv', headers, rows);
+							}}>Exportar CSV</button>
+						</div>
+						<button
+							className="rounded border px-3 py-1 text-sm"
+							onClick={async () => {
+								try {
+									setCoachesLoading(true);
+									const auth = getAuth();
+									const cu = auth.currentUser;
+									if (!cu) throw new Error('Usuario no autenticado');
+									const token = await getIdToken(cu, true);
+									const url = new URL('/api/admin/coaches', window.location.origin);
+									url.searchParams.set('limit', '50');
+									const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+									const data = await res.json();
+									setCoaches(Array.isArray(data.items) ? data.items : []);
+									setCoachesNext(data.nextCursor);
+								} catch {
+									// noop
+								} finally {
+									setCoachesLoading(false);
+								}
+							}}
+						>
+							{coaches.length ? 'Refrescar' : 'Cargar'}
+						</button>
+					</div>
+					<div className="rounded border overflow-x-auto">
+						<table className="min-w-[800px] text-sm">
+							<thead>
+								<tr className="text-left">
+									<th className="py-2 px-3">ID</th>
+									<th className="py-2 px-3">Nombre</th>
+									<th className="py-2 px-3">Email</th>
+									<th className="py-2 px-3">Estado</th>
+									<th className="py-2 px-3">Tarifa</th>
+									<th className="py-2 px-3">Creado</th>
+									<th className="py-2 px-3">Acciones</th>
+								</tr>
+							</thead>
+							<tbody>
+                                {filteredCoaches.map((c:any) => (
+                                    <tr key={c.id} className="border-t">
+                                        <td className="py-2 px-3">
+                                            <Link href={`/admin/coaches/${c.id}`} className="underline">
+                                                {c.id}
+                                            </Link>
+                                        </td>
+                                        <td className="py-2 px-3">{c.name || '-'}</td>
+                                        <td className="py-2 px-3">{c.email || '-'}</td>
+                                        <td className="py-2 px-3">{c.status || '-'}</td>
+                                        <td className="py-2 px-3">{typeof c.ratePerAnalysis === 'number' ? c.ratePerAnalysis : '-'}</td>
+                                        <td className="py-2 px-3">{typeof c.createdAt === 'string' ? c.createdAt : (c?.createdAt?.toDate?.() ? c.createdAt.toDate().toISOString() : (typeof c?.createdAt?._seconds === 'number' ? new Date(c.createdAt._seconds * 1000 + Math.round((c.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
+										<td className="py-2 px-3">
+											<div className="flex flex-wrap gap-2">
+												<button
+													className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+													disabled={coachUpdatingId === c.id}
+													onClick={() => {
+														const nextStatus = c.status === 'active' ? 'suspended' : 'active';
+														const label = nextStatus === 'active' ? 'activar' : 'suspender';
+														if (!confirm(`¿Seguro que querés ${label} a este entrenador?`)) return;
+														updateCoach(c.id, { status: nextStatus });
+													}}
+												>
+													{c.status === 'active' ? 'Suspender' : 'Activar'}
+												</button>
+												<button
+													className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+													disabled={coachUpdatingId === c.id}
+													onClick={() => {
+														const currentRate = typeof c.ratePerAnalysis === 'number' ? String(c.ratePerAnalysis) : '';
+														const input = prompt('Nueva tarifa por análisis (ARS):', currentRate);
+														if (input == null) return;
+														const rate = Number(String(input).trim());
+														if (Number.isNaN(rate) || rate < 0) {
+															alert('Tarifa inválida');
+															return;
+														}
+														updateCoach(c.id, { ratePerAnalysis: rate });
+													}}
+												>
+													Cambiar tarifa
+												</button>
+											</div>
+										</td>
+                                    </tr>
+                                ))}
+								{!filteredCoaches.length && (
+									<tr>
+										<td className="py-6 px-3 text-gray-500" colSpan={7}>{coachesLoading ? 'Cargando…' : 'Sin datos'}</td>
+									</tr>
+								)}
+							</tbody>
+						</table>
+					</div>
+					<div className="flex justify-end">
+						<button
+							className="rounded border px-3 py-1 text-sm disabled:opacity-50"
+							disabled={!coachesNext || coachesLoading}
+							onClick={async () => {
+								try {
+									setCoachesLoading(true);
+									const auth = getAuth();
+									const cu = auth.currentUser;
+									if (!cu) throw new Error('Usuario no autenticado');
+									const token = await getIdToken(cu, true);
+									const url = new URL('/api/admin/coaches', window.location.origin);
+									url.searchParams.set('limit', '50');
+									if (coachesNext) url.searchParams.set('startAfter', coachesNext);
+									const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+									const data = await res.json();
+									setCoaches([...coaches, ...(Array.isArray(data.items) ? data.items : [])]);
+									setCoachesNext(data.nextCursor);
+								} catch {
+									// noop
+								} finally {
+									setCoachesLoading(false);
+								}
+						}}
+						>
+							Cargar más
+						</button>
+					</div>
+				</div>
+			)}
+
+			{/* Clubes */}
+			{activeTab === 'clubs' && (
+				<div className="space-y-4">
+					{/* Acceso gratis por club + coach (La Emilia, Victor Baldo, etc.) */}
+					<div className="rounded border p-4 bg-amber-50/50 border-amber-200 space-y-4">
+						<h2 className="text-lg font-medium">Acceso gratis por club y entrenador</h2>
+						<p className="text-sm text-muted-foreground">
+							Asignar entrenador y regalar análisis/revisiones a jugadores de un club. Cada jugador recibe el regalo solo una vez (no se suma si vuelve a aplicar).
+						</p>
+						<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+							<div>
+								<label className="text-sm font-medium block mb-1">Nombre del club</label>
+								<select
+									className="w-full rounded border px-2 py-1.5 text-sm"
+									value={clubBulkName}
+									onChange={(e) => { setClubBulkName(e.target.value); setClubBulkPreview(null); setClubBulkResult(null); }}
+								>
+									<option value="">-- Seleccionar club --</option>
+									{clubsList.map((c: any) => (
+										<option key={c.id} value={c.name || c.id}>
+											{c.name || c.id}
+										</option>
+									))}
+									{!clubsList.length && <option value="" disabled>Sin clubes — cargá abajo y refrescá</option>}
+								</select>
+								<p className="text-xs text-muted-foreground mt-0.5">Clubes creados/autorizados. Coincide con el campo club del jugador.</p>
 							</div>
+							<div>
+								<label className="text-sm font-medium block mb-1">Entrenador (ID o buscar)</label>
+								<select
+									className="w-full rounded border px-2 py-1.5 text-sm"
+									value={clubBulkCoachId}
+									onChange={(e) => { setClubBulkCoachId(e.target.value); setClubBulkResult(null); }}
+								>
+									<option value="">-- Seleccionar --</option>
+									{coaches.map((c: any) => (
+										<option key={c.id} value={c.id}>
+											{c.name || c.email || c.id} ({c.id})
+										</option>
+									))}
+									{!coaches.length && <option value="" disabled>Cargar entrenadores primero</option>}
+								</select>
+							</div>
+							<div>
+								<label className="text-sm font-medium block mb-1">Regalar análisis</label>
+								<input
+									type="number"
+									min={0}
+									className="w-full rounded border px-2 py-1.5 text-sm"
+									value={clubBulkGiftAnalyses}
+									onChange={(e) => setClubBulkGiftAnalyses(parseInt(e.target.value, 10) || 0)}
+								/>
+							</div>
+							<div>
+								<label className="text-sm font-medium block mb-1">Regalar revisiones coach</label>
+								<input
+									type="number"
+									min={0}
+									className="w-full rounded border px-2 py-1.5 text-sm"
+									value={clubBulkGiftReviews}
+									onChange={(e) => setClubBulkGiftReviews(parseInt(e.target.value, 10) || 0)}
+								/>
+							</div>
+						</div>
+						<div className="flex flex-wrap gap-2">
+							<button
+								className="rounded border px-3 py-1.5 text-sm bg-white hover:bg-gray-50 disabled:opacity-50"
+								disabled={clubBulkLoading}
+								onClick={async () => {
+									try {
+										setClubBulkLoading(true);
+										setClubBulkResult(null);
+										const auth = getAuth();
+										const cu = auth.currentUser;
+										if (!cu) throw new Error('Usuario no autenticado');
+										const token = await getIdToken(cu, true);
+										const url = new URL('/api/admin/bulk-club-coach', window.location.origin);
+										url.searchParams.set('clubName', clubBulkName.trim());
+										const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+										const data = await res.json();
+										if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+										setClubBulkPreview({
+											count: data.count,
+											players: data.players || [],
+											nuevos: data.nuevos ?? data.count,
+										});
+									} catch (e: any) {
+										alert(e?.message || 'Error al buscar');
+									} finally {
+										setClubBulkLoading(false);
+									}
+								}}
+							>
+								{clubBulkLoading ? 'Buscando…' : 'Vista previa'}
+							</button>
+							<button
+								className="rounded border px-3 py-1.5 text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+								disabled={clubBulkExecuting || !clubBulkCoachId || !clubBulkName.trim()}
+								onClick={async () => {
+									const nuevos = clubBulkPreview?.nuevos ?? clubBulkPreview?.count ?? 0;
+									const confirmMsg = `¿Aplicar a ${clubBulkPreview?.count ?? '?'} jugador(es) del club "${clubBulkName}"?\n- Coach asignado a todos\n- ${nuevos} recibirán el regalo (análisis: ${clubBulkGiftAnalyses}, revisiones: ${clubBulkGiftReviews})\n- Los que ya recibieron antes no se suman\n¿Continuar?`;
+									if (!confirm(confirmMsg)) return;
+									try {
+										setClubBulkExecuting(true);
+										setClubBulkResult(null);
+										const auth = getAuth();
+										const cu = auth.currentUser;
+										if (!cu) throw new Error('Usuario no autenticado');
+										const token = await getIdToken(cu, true);
+										const res = await fetch('/api/admin/bulk-club-coach', {
+											method: 'POST',
+											headers: {
+												Authorization: `Bearer ${token}`,
+												'Content-Type': 'application/json',
+											},
+											body: JSON.stringify({
+												clubName: clubBulkName.trim(),
+												coachId: clubBulkCoachId,
+												giftAnalyses: clubBulkGiftAnalyses,
+												giftCoachReviews: clubBulkGiftReviews,
+											}),
+										});
+										const data = await res.json();
+										if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+										setClubBulkResult(data?.message || `Listo. ${data?.updated ?? 0} actualizados.`);
+										setClubBulkPreview((prev) => prev ? { ...prev, count: data?.updated ?? prev.count } : null);
+									} catch (e: any) {
+										alert(e?.message || 'Error al aplicar');
+									} finally {
+										setClubBulkExecuting(false);
+									}
+								}}
+							>
+								{clubBulkExecuting ? 'Aplicando…' : 'Aplicar en bloque'}
+							</button>
+						</div>
+						{clubBulkPreview && (
+							<div className="text-sm">
+								<p className="font-medium text-green-700">
+									{clubBulkPreview.count} jugador(es) con club &quot;{clubBulkName}&quot;
+									{typeof clubBulkPreview.nuevos === 'number' && clubBulkPreview.nuevos < clubBulkPreview.count && (
+										<span className="text-amber-600 ml-1">
+											({clubBulkPreview.nuevos} recibirán regalo, {clubBulkPreview.count - clubBulkPreview.nuevos} ya lo tenían)
+										</span>
+									)}
+								</p>
+								<div className="mt-2 max-h-40 overflow-y-auto rounded border bg-white p-2">
+									{clubBulkPreview.players.slice(0, 20).map((p: any) => (
+										<div key={p.id} className="flex gap-2 py-0.5">
+											<span className="font-mono text-xs">{p.id}</span>
+											<span>{p.name}</span>
+											<span className="text-muted-foreground">{p.email}</span>
+										</div>
+									))}
+									{clubBulkPreview.players.length > 20 && (
+										<p className="text-muted-foreground pt-1">… y {clubBulkPreview.players.length - 20} más</p>
+									)}
+								</div>
+							</div>
+						)}
+						{clubBulkResult && (
+							<div className="rounded border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+								{clubBulkResult}
+							</div>
+						)}
+						{!coaches.length && (
 							<button
 								className="rounded border px-3 py-1 text-sm"
 								onClick={async () => {
@@ -720,528 +1080,174 @@ export default function AdminHome() {
 										const cu = auth.currentUser;
 										if (!cu) throw new Error('Usuario no autenticado');
 										const token = await getIdToken(cu, true);
-										const url = new URL('/api/admin/coaches', window.location.origin);
-										url.searchParams.set('limit', '50');
-										const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+										const res = await fetch('/api/admin/coaches?limit=200', { headers: { Authorization: `Bearer ${token}` } });
 										const data = await res.json();
 										setCoaches(Array.isArray(data.items) ? data.items : []);
-										setCoachesNext(data.nextCursor);
-									} catch (e) {
+									} catch {
 										// noop
 									} finally {
 										setCoachesLoading(false);
 									}
 								}}
 							>
-								{coaches.length ? 'Refrescar' : 'Cargar'}
+								{coachesLoading ? 'Cargando…' : 'Cargar entrenadores'}
+							</button>
+						)}
+					</div>
+
+					{/* Clubes creados */}
+					<div className="rounded border p-4 space-y-3">
+						<div className="flex items-center justify-between gap-2 flex-wrap">
+							<h2 className="text-lg font-medium">Clubes creados / autorizados</h2>
+							<button
+								className="rounded border px-3 py-1 text-sm"
+								disabled={clubsListLoading}
+								onClick={async () => {
+									try {
+										setClubsListLoading(true);
+										const auth = getAuth();
+										const cu = auth.currentUser;
+										if (!cu) throw new Error('Usuario no autenticado');
+										const token = await getIdToken(cu, true);
+										const res = await fetch('/api/admin/clubs?limit=100', { headers: { Authorization: `Bearer ${token}` } });
+										const data = await res.json();
+										setClubsList(Array.isArray(data.items) ? data.items : []);
+									} catch {
+										// noop
+									} finally {
+										setClubsListLoading(false);
+									}
+								}}
+							>
+								{clubsListLoading ? 'Cargando…' : (clubsList.length ? 'Refrescar clubes' : 'Cargar clubes')}
 							</button>
 						</div>
 						<div className="rounded border overflow-x-auto">
-							<table className="min-w-[800px] text-sm">
+							<table className="min-w-[600px] text-sm">
 								<thead>
 									<tr className="text-left">
-										<th className="py-2 px-3">ID</th>
 										<th className="py-2 px-3">Nombre</th>
 										<th className="py-2 px-3">Email</th>
+										<th className="py-2 px-3">Ciudad</th>
+										<th className="py-2 px-3">Provincia</th>
 										<th className="py-2 px-3">Estado</th>
-										<th className="py-2 px-3">Tarifa</th>
-										<th className="py-2 px-3">Creado</th>
+										<th className="py-2 px-3">ID</th>
 									</tr>
 								</thead>
 								<tbody>
-									{filteredCoaches.map((c:any) => (
-										<tr key={c.id} className={`border-t ${c.hidden === true ? 'opacity-60 bg-muted/30' : ''}`}>
-											<td className="py-2 px-3">
-												<Link href={`/admin/coaches/${c.id}`} className="underline">
-													{c.id}
-												</Link>
-											</td>
-											<td className="py-2 px-3">
-												<div className="flex items-center gap-2">
-													{c.hidden === true && (
-														<span className="text-xs text-muted-foreground bg-orange-100 text-orange-700 px-2 py-0.5 rounded">Oculto</span>
-													)}
-													<span>{c.name || '-'}</span>
-												</div>
-											</td>
+									{clubsList.map((c: any) => (
+										<tr key={c.id} className="border-t">
+											<td className="py-2 px-3 font-medium">{c.name || '-'}</td>
 											<td className="py-2 px-3">{c.email || '-'}</td>
-											<td className="py-2 px-3">{c.status || '-'}</td>
-											<td className="py-2 px-3">{typeof c.ratePerAnalysis === 'number' ? c.ratePerAnalysis : '-'}</td>
-											<td className="py-2 px-3">{typeof c.createdAt === 'string' ? c.createdAt : (c?.createdAt?.toDate?.() ? c.createdAt.toDate().toISOString() : (typeof c?.createdAt?._seconds === 'number' ? new Date(c.createdAt._seconds * 1000 + Math.round((c.createdAt._nanoseconds||0)/1e6)).toISOString() : '-'))}</td>
+											<td className="py-2 px-3">{c.city || '-'}</td>
+											<td className="py-2 px-3">{c.province || '-'}</td>
+											<td className="py-2 px-3">Operativo</td>
+											<td className="py-2 px-3 font-mono text-xs">{c.id}</td>
 										</tr>
 									))}
-									{!filteredCoaches.length && (
+									{!clubsList.length && (
 										<tr>
-											<td className="py-6 px-3 text-gray-500" colSpan={6}>{coachesLoading ? 'Cargando…' : 'Sin datos'}</td>
+											<td className="py-6 px-3 text-gray-500" colSpan={6}>
+												{clubsListLoading ? 'Cargando…' : 'Pulsá "Cargar clubes" para ver los clubes creados'}
+											</td>
 										</tr>
 									)}
 								</tbody>
 							</table>
 						</div>
-						<div className="flex justify-end">
-							<button
-								className="rounded border px-3 py-1 text-sm disabled:opacity-50"
-								disabled={!coachesNext || coachesLoading}
-								onClick={async () => {
-									try {
-										setCoachesLoading(true);
-										const auth = getAuth();
-										const cu = auth.currentUser;
-										if (!cu) throw new Error('Usuario no autenticado');
-										const token = await getIdToken(cu, true);
-										const url = new URL('/api/admin/coaches', window.location.origin);
-										url.searchParams.set('limit', '50');
-										if (coachesNext) url.searchParams.set('startAfter', coachesNext);
-										const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
-										const data = await res.json();
-										setCoaches([...coaches, ...(Array.isArray(data.items) ? data.items : [])]);
-										setCoachesNext(data.nextCursor);
-									} catch (e) {
-										// noop
-									} finally {
-										setCoachesLoading(false);
-									}
+					</div>
+
+					<div className="flex items-center justify-between gap-2 flex-wrap">
+						<h2 className="text-lg font-medium">Alta de clubes</h2>
+						<button
+							className="rounded border px-3 py-1 text-sm"
+							onClick={async () => {
+								try {
+									setClubRequestsLoading(true);
+									const auth = getAuth();
+									const cu = auth.currentUser;
+									if (!cu) throw new Error('Usuario no autenticado');
+									const token = await getIdToken(cu, true);
+									const url = new URL('/api/admin/club-requests', window.location.origin);
+									url.searchParams.set('status', 'pending');
+									url.searchParams.set('limit', '100');
+									const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+									const data = await res.json();
+									setClubRequests(Array.isArray(data.items) ? data.items : []);
+								} catch {
+									// noop
+								} finally {
+									setClubRequestsLoading(false);
+								}
 							}}
-							>
-								Cargar más
-							</button>
-						</div>
-					</div>
-					<div className="space-y-3">
-						<CoachAdminForm />
-						<div className="rounded border p-4 text-sm space-y-2">
-							<h3 className="font-medium">Gestión rápida</h3>
-							<p>1. Creá un perfil nuevo con foto y datos reales. El alta genera un usuario en Firebase Auth.</p>
-							<p>2. En el detalle del entrenador podés editar bio, tarifas, visibilidad y estado (activo, pendiente o suspendido).</p>
-							<p>3. También desde el detalle hay botones para enviar o regenerar contraseña y bloquear/desbloquear.</p>
-						</div>
-					</div>
-				</div>
-			)}
-
-			{/* Emails */}
-			{activeTab === 'emails' && (
-				<div className="space-y-6">
-					<EmailCampaignForm />
-				</div>
-			)}
-
-			{/* Estadísticas */}
-			{activeTab === 'stats' && (
-				<div className="space-y-6">
-					{error && <p className="text-sm text-red-600">{error}</p>}
-					{loading && <p className="text-sm">Cargando…</p>}
-					{!metrics && !loading && (
-						<p className="text-sm text-gray-600">No hay métricas disponibles.</p>
-					)}
-					{metrics && stats && (
-						<>
-							<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-								<div className="rounded border p-4">
-									<div className="text-xs text-gray-500">Pagos (últimos 28 días)</div>
-									<div className="text-2xl font-semibold">{stats.current.payments}</div>
-									<div className="text-xs text-gray-500">Vs. previos 28 días: {formatPct(stats.trends.payments)}</div>
-								</div>
-								<div className="rounded border p-4">
-									<div className="text-xs text-gray-500">Ingresos ARS (últimos 28 días)</div>
-									<div className="text-2xl font-semibold">{stats.current.revenue.toLocaleString('es-AR')}</div>
-									<div className="text-xs text-gray-500">Vs. previos 28 días: {formatPct(stats.trends.revenue)}</div>
-								</div>
-								<div className="rounded border p-4">
-									<div className="text-xs text-gray-500">Análisis (últimos 28 días)</div>
-									<div className="text-2xl font-semibold">{stats.current.analyses}</div>
-									<div className="text-xs text-gray-500">Vs. previos 28 días: {formatPct(stats.trends.analyses)}</div>
-								</div>
-								<div className="rounded border p-4">
-									<div className="text-xs text-gray-500">Ticket promedio (últimos 28 días)</div>
-									<div className="text-2xl font-semibold">
-										{stats.current.payments > 0
-											? (stats.current.revenue / stats.current.payments).toLocaleString('es-AR', { maximumFractionDigits: 0 })
-											: '—'}
-									</div>
-									<div className="text-xs text-gray-500">ARS por pago aprobado</div>
-								</div>
-								<div className="rounded border p-4">
-									<div className="text-xs text-gray-500">Análisis por semana (promedio)</div>
-									<div className="text-2xl font-semibold">
-										{stats.weekly.length ? Math.round(sumBy(stats.weekly, 'analysesCount') / stats.weekly.length) : 0}
-									</div>
-									<div className="text-xs text-gray-500">Últimas {stats.weekly.length} semanas</div>
-								</div>
-								<div className="rounded border p-4">
-									<div className="text-xs text-gray-500">Usuarios con pago (total)</div>
-									<div className="text-2xl font-semibold">{metrics.payingUsers}</div>
-									<div className="text-xs text-gray-500">Pagos aprobados totales: {metrics.approvedPaymentsCount}</div>
-								</div>
-							</div>
-
-							<div className="rounded border p-4 space-y-4">
-								<h2 className="text-lg font-medium">Tendencia semanal (últimas 8 semanas)</h2>
-								<div className="space-y-3">
-									{stats.weekly.map((w) => (
-										<div key={w.weekStart} className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-center">
-											<div className="text-sm text-gray-700">{w.weekStart}</div>
-											<div className="flex items-center gap-2">
-												<div className="w-24 text-xs text-gray-500">Pagos</div>
-												<div className="flex-1 h-2 rounded bg-gray-100">
-													<div
-														className="h-2 rounded bg-blue-500"
-														style={{ width: `${(w.paymentsCount / stats.max.payments) * 100}%` }}
-													/>
-												</div>
-												<div className="w-12 text-xs text-gray-500 text-right">{w.paymentsCount}</div>
-											</div>
-											<div className="flex items-center gap-2">
-												<div className="w-24 text-xs text-gray-500">ARS</div>
-												<div className="flex-1 h-2 rounded bg-gray-100">
-													<div
-														className="h-2 rounded bg-emerald-500"
-														style={{ width: `${(w.paymentsAmountARS / stats.max.revenue) * 100}%` }}
-													/>
-												</div>
-												<div className="w-16 text-xs text-gray-500 text-right">
-													{w.paymentsAmountARS.toLocaleString('es-AR')}
-												</div>
-											</div>
-											<div className="flex items-center gap-2">
-												<div className="w-24 text-xs text-gray-500">Análisis</div>
-												<div className="flex-1 h-2 rounded bg-gray-100">
-													<div
-														className="h-2 rounded bg-violet-500"
-														style={{ width: `${(w.analysesCount / stats.max.analyses) * 100}%` }}
-													/>
-												</div>
-												<div className="w-12 text-xs text-gray-500 text-right">{w.analysesCount}</div>
-											</div>
-										</div>
-									))}
-								</div>
-							</div>
-
-							<div className="rounded border overflow-x-auto">
-								<table className="min-w-[700px] text-sm">
-									<thead>
-										<tr className="text-left">
-											<th className="py-2 px-3">Semana</th>
-											<th className="py-2 px-3">Pagos</th>
-											<th className="py-2 px-3">Ingresos (ARS)</th>
-											<th className="py-2 px-3">Análisis</th>
-										</tr>
-									</thead>
-									<tbody>
-										{stats.weekly.map((w) => (
-											<tr key={w.weekStart} className="border-t">
-												<td className="py-2 px-3">{w.weekStart}</td>
-												<td className="py-2 px-3">{w.paymentsCount}</td>
-												<td className="py-2 px-3">{w.paymentsAmountARS.toLocaleString('es-AR')}</td>
-												<td className="py-2 px-3">{w.analysesCount}</td>
-											</tr>
-										))}
-									</tbody>
-								</table>
-							</div>
-						</>
-					)}
-				</div>
-			)}
-		</div>
-	);
-}
-
-// Componente para el formulario de envío de emails masivos
-function EmailCampaignForm() {
-	const [target, setTarget] = useState<'all' | 'players' | 'coaches'>('all');
-	const [subject, setSubject] = useState('');
-	const [message, setMessage] = useState('');
-	const [previewMode, setPreviewMode] = useState(false);
-	const [loading, setLoading] = useState(false);
-	const [result, setResult] = useState<any>(null);
-	const [subscribersInfo, setSubscribersInfo] = useState<any>(null);
-
-	// Cargar información de suscriptores al montar
-	useEffect(() => {
-		const loadSubscribers = async () => {
-			try {
-				const auth = getAuth();
-				const cu = auth.currentUser;
-				if (!cu) return;
-				const token = await getIdToken(cu, true);
-				const res = await fetch('/api/admin/emails/subscribers', {
-					headers: { 'Authorization': `Bearer ${token}` }
-				});
-				if (res.ok) {
-					const data = await res.json();
-					setSubscribersInfo(data);
-				}
-			} catch (e) {
-				console.error('Error cargando suscriptores:', e);
-			}
-		};
-		loadSubscribers();
-	}, []);
-
-	const handleSubmit = async (e: React.FormEvent) => {
-		e.preventDefault();
-		
-		if (!subject.trim() || !message.trim()) {
-			alert('Por favor completa todos los campos');
-			return;
-		}
-
-		const confirmMsg = `¿Estás seguro de enviar este email a ${
-			target === 'all' ? 'TODOS los usuarios' :
-			target === 'players' ? 'todos los JUGADORES' :
-			'todos los ENTRENADORES'
-		}?`;
-		
-		if (!confirm(confirmMsg)) return;
-
-		setLoading(true);
-		setResult(null);
-
-		try {
-			const auth = getAuth();
-			const cu = auth.currentUser;
-			if (!cu) throw new Error('Usuario no autenticado');
-			const token = await getIdToken(cu, true);
-
-			// Crear HTML del email
-			const html = `
-				<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-					<div style="text-align: center; margin-bottom: 30px;">
-						<h1 style="color: #2563eb; margin: 0;">Shot Analysis</h1>
-					</div>
-					<div style="background: #f9fafb; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-						${message.split('\n').map(line => `<p style="margin: 10px 0;">${line}</p>`).join('')}
-					</div>
-					<div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-						<p style="color: #6b7280; font-size: 14px; margin: 5px 0;">Shot Analysis - Análisis de Lanzamiento</p>
-						<p style="color: #9ca3af; font-size: 12px; margin: 5px 0;">
-							<a href="https://shotanalysis.com" style="color: #2563eb; text-decoration: none;">Visitar sitio web</a>
-						</p>
-					</div>
-				</div>
-			`;
-
-			const res = await fetch('/api/admin/emails/send-bulk', {
-				method: 'POST',
-				headers: {
-					'Authorization': `Bearer ${token}`,
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					target,
-					subject,
-					html,
-					text: message
-				})
-			});
-
-			const data = await res.json();
-
-			if (res.ok) {
-				setResult({
-					success: true,
-					message: data.message,
-					stats: data
-				});
-				// Limpiar formulario
-				setSubject('');
-				setMessage('');
-			} else {
-				setResult({
-					success: false,
-					message: data.error || 'Error desconocido'
-				});
-			}
-
-		} catch (e: any) {
-			setResult({
-				success: false,
-				message: e?.message || 'Error enviando emails'
-			});
-		} finally {
-			setLoading(false);
-		}
-	};
-
-	const getRecipientCount = () => {
-		if (!subscribersInfo) return 0;
-		if (target === 'all') return subscribersInfo.total;
-		if (target === 'players') return subscribersInfo.players;
-		if (target === 'coaches') return subscribersInfo.coaches;
-		return 0;
-	};
-
-	return (
-		<div className="space-y-6">
-			<div className="rounded border p-6">
-				<h2 className="text-xl font-semibold mb-4">📧 Enviar Email Masivo</h2>
-				
-				{subscribersInfo && (
-					<div className="bg-blue-50 border border-blue-200 rounded p-4 mb-6">
-						<h3 className="font-medium text-blue-900 mb-2">Información de Suscriptores</h3>
-						<div className="text-sm text-blue-800 space-y-1">
-							<p>• Total usuarios activos: <strong>{subscribersInfo.total}</strong></p>
-							<p>• Jugadores: <strong>{subscribersInfo.players}</strong></p>
-							<p>• Entrenadores: <strong>{subscribersInfo.coaches}</strong></p>
-						</div>
-					</div>
-				)}
-
-				<form onSubmit={handleSubmit} className="space-y-4">
-					{/* Destinatarios */}
-					<div>
-						<label className="block text-sm font-medium mb-2">
-							Destinatarios ({getRecipientCount()} usuarios)
-						</label>
-						<div className="flex gap-4">
-							<label className="flex items-center gap-2">
-								<input
-									type="radio"
-									name="target"
-									value="all"
-									checked={target === 'all'}
-									onChange={(e) => setTarget(e.target.value as any)}
-									className="w-4 h-4"
-								/>
-								<span className="text-sm">Todos</span>
-							</label>
-							<label className="flex items-center gap-2">
-								<input
-									type="radio"
-									name="target"
-									value="players"
-									checked={target === 'players'}
-									onChange={(e) => setTarget(e.target.value as any)}
-									className="w-4 h-4"
-								/>
-								<span className="text-sm">Solo Jugadores</span>
-							</label>
-							<label className="flex items-center gap-2">
-								<input
-									type="radio"
-									name="target"
-									value="coaches"
-									checked={target === 'coaches'}
-									onChange={(e) => setTarget(e.target.value as any)}
-									className="w-4 h-4"
-								/>
-								<span className="text-sm">Solo Entrenadores</span>
-							</label>
-						</div>
-					</div>
-
-					{/* Asunto */}
-					<div>
-						<label className="block text-sm font-medium mb-2">
-							Asunto del Email *
-						</label>
-						<input
-							type="text"
-							value={subject}
-							onChange={(e) => setSubject(e.target.value)}
-							className="w-full rounded border px-3 py-2"
-							placeholder="Ej: Nuevas funcionalidades en Shot Analysis"
-							required
-						/>
-					</div>
-
-					{/* Mensaje */}
-					<div>
-						<label className="block text-sm font-medium mb-2">
-							Mensaje *
-						</label>
-						<textarea
-							value={message}
-							onChange={(e) => setMessage(e.target.value)}
-							className="w-full rounded border px-3 py-2 min-h-[200px] font-mono text-sm"
-							placeholder="Escribe tu mensaje aquí. Se enviará con formato HTML básico."
-							required
-						/>
-						<p className="text-xs text-gray-500 mt-1">
-							Usa saltos de línea para separar párrafos. El mensaje se enviará con el diseño de Shot Analysis.
-						</p>
-					</div>
-
-					{/* Vista previa */}
-					<div className="flex items-center gap-2">
-						<button
-							type="button"
-							onClick={() => setPreviewMode(!previewMode)}
-							className="text-sm text-blue-600 hover:underline"
 						>
-							{previewMode ? 'Ocultar' : 'Mostrar'} vista previa
+							{clubRequests.length ? 'Refrescar solicitudes' : 'Cargar solicitudes'}
 						</button>
 					</div>
-
-					{previewMode && (
-						<div className="border rounded p-4 bg-gray-50">
-							<h3 className="text-sm font-medium mb-2">Vista Previa del Email:</h3>
-							<div className="bg-white border rounded p-4">
-								<div style={{ fontFamily: 'Arial, sans-serif', maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
-									<div style={{ textAlign: 'center', marginBottom: '30px' }}>
-										<h1 style={{ color: '#2563eb', margin: 0 }}>Shot Analysis</h1>
-									</div>
-									<div style={{ background: '#f9fafb', borderRadius: '8px', padding: '20px', marginBottom: '20px' }}>
-										{message.split('\n').map((line, i) => (
-											<p key={i} style={{ margin: '10px 0' }}>{line}</p>
-										))}
-									</div>
-									<div style={{ textAlign: 'center', marginTop: '30px', paddingTop: '20px', borderTop: '1px solid #e5e7eb' }}>
-										<p style={{ color: '#6b7280', fontSize: '14px', margin: '5px 0' }}>Shot Analysis - Análisis de Lanzamiento</p>
-									</div>
-								</div>
-							</div>
-						</div>
-					)}
-
-					{/* Botón de envío */}
-					<div className="pt-4 border-t">
-						<button
-							type="submit"
-							disabled={loading || !subject.trim() || !message.trim()}
-							className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-						>
-							{loading ? 'Enviando...' : `Enviar a ${getRecipientCount()} usuarios`}
-						</button>
-					</div>
-				</form>
-
-				{/* Resultado */}
-				{result && (
-					<div className={`mt-6 p-4 rounded border ${result.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-						<h3 className={`font-medium mb-2 ${result.success ? 'text-green-900' : 'text-red-900'}`}>
-							{result.success ? '✅ Emails enviados exitosamente' : '❌ Error al enviar emails'}
-						</h3>
-						<p className={`text-sm ${result.success ? 'text-green-800' : 'text-red-800'}`}>
-							{result.message}
-						</p>
-						{result.stats && (
-							<div className="mt-2 text-sm">
-								<p>• Total destinatarios: {result.stats.totalRecipients}</p>
-								<p>• Enviados exitosamente: {result.stats.successCount}</p>
-								{result.stats.failureCount > 0 && (
-									<p className="text-red-600">• Fallidos: {result.stats.failureCount}</p>
+					<div className="rounded border overflow-x-auto">
+						<table className="min-w-[700px] text-sm">
+							<thead>
+								<tr className="text-left">
+									<th className="py-2 px-3">Club solicitado</th>
+									<th className="py-2 px-3">Jugador</th>
+									<th className="py-2 px-3">Email</th>
+									<th className="py-2 px-3">Creado</th>
+									<th className="py-2 px-3">Acciones</th>
+								</tr>
+							</thead>
+							<tbody>
+								{clubRequests.map((req) => (
+									<tr key={req.id} className="border-t">
+										<td className="py-2 px-3">{req.proposedName || '-'}</td>
+										<td className="py-2 px-3">{req.playerName || req.playerId || '-'}</td>
+										<td className="py-2 px-3">{req.playerEmail || '-'}</td>
+										<td className="py-2 px-3">{req.createdAt || '-'}</td>
+										<td className="py-2 px-3">
+											<button
+												className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+												disabled={clubRequestsLoading}
+												onClick={async () => {
+													try {
+														const auth = getAuth();
+														const cu = auth.currentUser;
+														if (!cu) throw new Error('Usuario no autenticado');
+														const token = await getIdToken(cu, true);
+														const res = await fetch('/api/admin/club-requests', {
+															method: 'PATCH',
+															headers: {
+																Authorization: `Bearer ${token}`,
+																'Content-Type': 'application/json',
+															},
+															body: JSON.stringify({ id: req.id, status: 'resolved' }),
+														});
+														const data = await res.json();
+														if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+														setClubRequests((prev) => prev.filter((r) => r.id !== req.id));
+													} catch (e: any) {
+														alert(e?.message || 'Error actualizando solicitud');
+													}
+												}}
+											>
+												Marcar como cargado
+											</button>
+										</td>
+									</tr>
+								))}
+								{!clubRequests.length && (
+									<tr>
+										<td className="py-6 px-3 text-gray-500" colSpan={5}>
+											{clubRequestsLoading ? 'Cargando…' : 'Sin solicitudes pendientes'}
+										</td>
+									</tr>
 								)}
-							</div>
-						)}
+							</tbody>
+						</table>
 					</div>
-				)}
-
-				{/* Advertencia */}
-				<div className="mt-6 bg-yellow-50 border border-yellow-200 rounded p-4">
-					<h3 className="font-medium text-yellow-900 mb-2">⚠️ Importante</h3>
-					<ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
-						<li>Los emails se envían a todos los usuarios con estado "activo"</li>
-						<li>Asegúrate de revisar el contenido antes de enviar</li>
-						<li>Esta acción no se puede deshacer</li>
-						<li>Actualmente los emails solo se registran en logs del servidor (ver consola)</li>
-						<li>Para envío real, configura un proveedor de email (SendGrid, AWS SES, etc.)</li>
-					</ul>
+					<ClubAdminForm onClubCreated={refreshClubsList} />
 				</div>
-			</div>
+			)}
 		</div>
 	);
 }
+
 

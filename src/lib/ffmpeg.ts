@@ -1,150 +1,31 @@
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
 
-// Resolver FFmpeg dinámicamente para manejar imports en runtime
-let RESOLVED_FFMPEG: string = 'ffmpeg'; // Default
-
-// Resolver FFmpeg de forma síncrona
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const ffmpegStatic = require('ffmpeg-static');
-  console.log('🔍 [FFmpeg] ffmpeg-static module type:', typeof ffmpegStatic);
-  console.log('🔍 [FFmpeg] ffmpeg-static value:', ffmpegStatic);
-  console.log('🔍 [FFmpeg] process.cwd():', process.cwd());
-  console.log('🔍 [FFmpeg] __dirname:', __dirname);
-  
-  // ffmpeg-static puede retornar string directamente o objeto con .path
-  let possiblePath: string | null = null;
-  if (typeof ffmpegStatic === 'string') {
-    possiblePath = ffmpegStatic;
-    console.log('🔍 [FFmpeg] ffmpeg-static retornó string directamente');
-  } else if (ffmpegStatic && ffmpegStatic.path) {
-    possiblePath = ffmpegStatic.path;
-    console.log('🔍 [FFmpeg] ffmpeg-static retornó objeto con .path');
-  } else if (ffmpegStatic) {
-    possiblePath = ffmpegStatic as string;
-    console.log('🔍 [FFmpeg] ffmpeg-static retornó otro formato');
-  }
-  
-  const path = require('path');
-  const { existsSync, accessSync, constants, chmodSync } = require('fs');
-  
-  // Función para verificar y hacer ejecutable
-  const verifyAndSetExecutable = (filePath: string): boolean => {
+function getFfmpegPath(): string | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('ffmpeg-static');
+    const p = (mod?.path || mod) as string | undefined;
+    if (p && existsSync(p)) return p;
+    const fromEnv = process.env.FFMPEG_BIN;
+    if (fromEnv && existsSync(fromEnv)) return fromEnv;
+    const suffix = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+    const fromCwd = path.join(process.cwd(), 'node_modules', 'ffmpeg-static', suffix);
+    if (existsSync(fromCwd)) return fromCwd;
     try {
-      if (existsSync(filePath)) {
-        accessSync(filePath, constants.F_OK);
-        try {
-          chmodSync(filePath, 0o755);
-        } catch {}
-        RESOLVED_FFMPEG = filePath;
-        console.log('✅ [FFmpeg] Binario encontrado y verificado:', RESOLVED_FFMPEG);
-        return true;
-      }
-    } catch (e: any) {
-      // Ignorar errores de verificación
-    }
-    return false;
-  };
-  
-  // 1. Intentar el path directo de ffmpeg-static
-  if (possiblePath && verifyAndSetExecutable(possiblePath)) {
-    // Ya está resuelto, salir
-    console.log('✅ [FFmpeg] Usando path directo de ffmpeg-static');
-  } else {
-    console.warn('⚠️ [FFmpeg] Path directo no válido, buscando en ubicaciones alternativas...');
-    
-    // 2. Buscar usando require.resolve para encontrar el módulo
-    let ffmpegModuleDir: string | null = null;
-    try {
-      const moduleIndexPath = require.resolve('ffmpeg-static');
-      ffmpegModuleDir = path.dirname(moduleIndexPath);
-      console.log('🔍 [FFmpeg] Módulo resuelto en:', ffmpegModuleDir);
-      
-      // En ffmpeg-static, el binario puede estar en el mismo directorio o en un subdirectorio
-      const modulePossiblePaths = [
-        path.join(ffmpegModuleDir, 'ffmpeg'),
-        path.join(ffmpegModuleDir, 'bin', 'ffmpeg'),
-        path.join(ffmpegModuleDir, '..', 'ffmpeg'),
-        path.join(ffmpegModuleDir, '..', 'bin', 'ffmpeg'),
-      ];
-      
-      for (const testPath of modulePossiblePaths) {
-        if (verifyAndSetExecutable(testPath)) {
-          break;
-        }
-      }
-    } catch (resolveErr: any) {
-      console.warn('⚠️ [FFmpeg] No se pudo resolver ffmpeg-static:', resolveErr.message);
-    }
-    
-    // 3. Si aún no se encontró, buscar en ubicaciones comunes
-    if (RESOLVED_FFMPEG === 'ffmpeg') {
-      const commonPaths = [
-        // Rutas relativas al working directory
-        path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg'),
-        path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'bin', 'ffmpeg'),
-        // Next.js standalone build
-        path.join(process.cwd(), '.next', 'standalone', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
-        path.join(process.cwd(), '.next', 'standalone', 'node_modules', 'ffmpeg-static', 'bin', 'ffmpeg'),
-        // Firebase App Hosting paths
-        '/workspace/node_modules/ffmpeg-static/ffmpeg',
-        '/workspace/node_modules/ffmpeg-static/bin/ffmpeg',
-        '/workspace/.next/standalone/node_modules/ffmpeg-static/ffmpeg',
-        '/workspace/.next/standalone/node_modules/ffmpeg-static/bin/ffmpeg',
-        // Rutas relativas desde __dirname (ubicación del archivo compilado)
-        path.join(__dirname, '..', '..', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
-        path.join(__dirname, '..', '..', 'node_modules', 'ffmpeg-static', 'bin', 'ffmpeg'),
-        path.join(__dirname, '..', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
-        path.join(__dirname, '..', 'node_modules', 'ffmpeg-static', 'bin', 'ffmpeg'),
-        // También buscar recursivamente en el directorio del módulo si lo encontramos
-        ...(ffmpegModuleDir ? [
-          path.join(ffmpegModuleDir, 'ffmpeg'),
-          path.join(ffmpegModuleDir, 'bin', 'ffmpeg'),
-          path.join(ffmpegModuleDir, '..', 'ffmpeg'),
-        ] : []),
-      ];
-      
-      for (const testPath of commonPaths) {
-        if (verifyAndSetExecutable(testPath)) {
-          break;
-        }
-      }
-    }
-    
-    // 4. Último recurso: intentar con el sistema
-    if (RESOLVED_FFMPEG === 'ffmpeg') {
-      console.warn('⚠️ [FFmpeg] Binario no encontrado en node_modules, intentando comando del sistema...');
-      try {
-        const { execSync } = require('child_process');
-        try {
-          execSync('which ffmpeg', { stdio: 'pipe', timeout: 2000 });
-          console.log('✅ [FFmpeg] ffmpeg encontrado en PATH del sistema');
-          RESOLVED_FFMPEG = 'ffmpeg';
-        } catch (whichErr) {
-          try {
-            execSync('ffmpeg -version', { stdio: 'pipe', timeout: 2000 });
-            console.log('✅ [FFmpeg] ffmpeg funciona como comando del sistema');
-            RESOLVED_FFMPEG = 'ffmpeg';
-          } catch (execErr) {
-            console.error('❌ [FFmpeg] ffmpeg no está disponible en el sistema');
-            RESOLVED_FFMPEG = 'ffmpeg'; // Último recurso
-          }
-        }
-      } catch (checkErr: any) {
-        console.error('❌ [FFmpeg] Error verificando ffmpeg del sistema:', checkErr.message);
-        RESOLVED_FFMPEG = 'ffmpeg'; // Último recurso
-      }
-    }
+      const resolved = require.resolve('ffmpeg-static');
+      const dir = path.dirname(resolved);
+      const fromResolve = path.join(dir, suffix);
+      if (existsSync(fromResolve)) return fromResolve;
+    } catch {}
+    return p || null;
+  } catch {
+    return null;
   }
-} catch (e: any) {
-  console.warn('⚠️ [FFmpeg] Error cargando ffmpeg-static:', e?.message || String(e));
-  RESOLVED_FFMPEG = 'ffmpeg';
 }
-
-export const FFMPEG_PATH = RESOLVED_FFMPEG;
+const RESOLVED_FFMPEG = getFfmpegPath() || 'ffmpeg';
 
 export type StandardizeOptions = {
   maxSeconds?: number;
@@ -259,13 +140,10 @@ export async function extractKeyframesFromBuffer(
   inputBuffer: Buffer,
   numFrames: number
 ): Promise<Array<{ index: number; timestamp: number; imageBuffer: Buffer }>> {
-  console.log(`🔍 [extractKeyframesFromBuffer] Iniciando extracción de ${numFrames} frames`);
   const duration = await getVideoDurationSecondsFromBuffer(inputBuffer);
-  console.log(`⏱️ [extractKeyframesFromBuffer] Duración del video: ${duration}s`);
   const frames: Array<{ index: number; timestamp: number; imageBuffer: Buffer }> = [];
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'shot-kf-'));
   const inPath = path.join(tmpDir, 'input.mp4');
-  console.log(`📁 [extractKeyframesFromBuffer] Escribiendo video en: ${inPath}`);
   await fs.writeFile(inPath, inputBuffer);
   try {
     const effectiveDuration = Math.max(0.5, Math.min(duration || 30, 30));
@@ -282,232 +160,11 @@ export async function extractKeyframesFromBuffer(
         '-vf', 'scale=-2:720',
         outPath,
       ];
-      console.log(`🎬 [extractKeyframesFromBuffer] Extrayendo frame ${i}/${numFrames} en ${ts.toFixed(2)}s`);
       await spawnAsync(RESOLVED_FFMPEG, args);
       const buf = await fs.readFile(outPath);
-      console.log(`✅ [extractKeyframesFromBuffer] Frame ${i} extraído exitosamente (${buf.length} bytes)`);
       frames.push({ index: i - 1, timestamp: ts, imageBuffer: buf });
     }
     return frames;
-  } finally {
-    try { await fs.rm(tmpDir, { recursive: true, force: true }); } catch {}
-  }
-}
-
-// Nueva función para extraer keyframes para análisis de IA (16 frames)
-export async function extractKeyframesForAI(
-  inputBuffer: Buffer,
-  numFrames: number = 16
-): Promise<Array<{ index: number; timestamp: number; description: string; imageBuffer: Buffer }>> {
-  const duration = await getVideoDurationSecondsFromBuffer(inputBuffer);
-  const frames: Array<{ index: number; timestamp: number; description: string; imageBuffer: Buffer }> = [];
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'shot-ai-kf-'));
-  const inPath = path.join(tmpDir, 'input.mp4');
-  await fs.writeFile(inPath, inputBuffer);
-  
-  try {
-    const effectiveDuration = Math.max(0.5, Math.min(duration || 30, 30));
-    const interval = effectiveDuration / (numFrames + 1);
-    
-        console.log(`🤖 [AI Keyframes] Duración: ${effectiveDuration.toFixed(2)}s, Intervalo: ${interval.toFixed(2)}s`);
-    
-    for (let i = 1; i <= numFrames; i++) {
-      const ts = i * interval;
-      const outPath = path.join(tmpDir, `ai_kf_${i}.jpg`);
-      
-      // Generar descripción basada en el momento del tiro
-      const shotProgress = (ts / effectiveDuration) * 100;
-      let description = '';
-      
-      if (shotProgress < 20) {
-        description = `Preparación inicial (${ts.toFixed(1)}s)`;
-      } else if (shotProgress < 40) {
-        description = `Carga del tiro (${ts.toFixed(1)}s)`;
-      } else if (shotProgress < 60) {
-        description = `Ascenso del balón (${ts.toFixed(1)}s)`;
-      } else if (shotProgress < 80) {
-        description = `Set point / Liberación (${ts.toFixed(1)}s)`;
-      } else {
-        description = `Follow-through / Aterrizaje (${ts.toFixed(1)}s)`;
-      }
-      
-      const args = [
-        '-y',
-        '-ss', ts.toFixed(2),
-        '-i', inPath,
-        '-frames:v', '1',
-        '-q:v', '2',
-        '-vf', 'scale=-2:720',
-        outPath,
-      ];
-      
-      try {
-        await spawnAsync(RESOLVED_FFMPEG, args);
-        const buf = await fs.readFile(outPath);
-        frames.push({ 
-          index: i - 1, 
-          timestamp: ts, 
-          description,
-          imageBuffer: buf 
-        });
-        console.log(`✅ [AI Keyframes] Frame ${i-1}: ${ts.toFixed(2)}s - ${description}`);
-      } catch (error) {
-        console.warn(`⚠️ [AI Keyframes] Error extrayendo frame ${i}:`, error);
-      }
-    }
-    
-        return frames;
-  } finally {
-    try { await fs.rm(tmpDir, { recursive: true, force: true }); } catch {}
-  }
-}
-
-// Nueva función para extraer frames de múltiples tiros detectados
-export async function extractFramesFromMultipleShots(
-  inputBuffer: Buffer
-): Promise<Array<{ 
-  shotIndex: number; 
-  startTime: number; 
-  endTime: number; 
-  frames: Array<{ index: number; timestamp: number; imageBuffer: Buffer }> 
-}>> {
-    const duration = await getVideoDurationSecondsFromBuffer(inputBuffer);
-  console.log('[extractFramesFromMultipleShots] Duración del video:', duration);
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'shot-multi-'));
-  const inPath = path.join(tmpDir, 'input.mp4');
-  await fs.writeFile(inPath, inputBuffer);
-  
-  try {
-    // 1. Detectar segmentos de tiros usando análisis de movimiento MEJORADO
-        const shotSegments = await segmentAttemptsByMotionFromBuffer(inputBuffer, {
-      downscaleHeight: 480,
-      fps: 30, // Máximo FPS para detección granular
-      minSeparationSec: 0.5, // Separación mínima entre tiros
-      peakStd: 0.8 // Umbral optimizado
-    });
-    
-    console.log('[extractFramesFromMultipleShots] Segmentos detectados por movimiento:', shotSegments.length);
-    
-    console.log(`[extractFramesFromMultipleShots] Detectados ${shotSegments.length} segmentos de tiros`);
-    shotSegments.forEach((seg, i) => {
-      console.log(`  Tiro ${i + 1}: ${seg.start.toFixed(2)}s - ${seg.end.toFixed(2)}s (${(seg.end - seg.start).toFixed(2)}s)`);
-    });
-    
-    // 2. Extraer frames de cada segmento
-    const shotsWithFrames = [];
-    
-    for (let i = 0; i < shotSegments.length; i++) {
-      const segment = shotSegments[i];
-      const shotDuration = segment.end - segment.start;
-      
-      // Extraer solo 1 frame por tiro (máxima velocidad)
-      const framesPerShot = 1;
-      
-      const frames = [];
-      for (let j = 1; j <= framesPerShot; j++) {
-        const ts = segment.start + (j * shotDuration / (framesPerShot + 1));
-        const outPath = path.join(tmpDir, `shot_${i}_frame_${j}.jpg`);
-        
-        const args = [
-          '-y',
-          '-ss', ts.toFixed(2),
-          '-i', inPath,
-          '-frames:v', '1',
-          '-q:v', '2',
-          '-vf', 'scale=-2:1080', // Mejor calidad para análisis
-          outPath,
-        ];
-        
-        try {
-          await spawnAsync(RESOLVED_FFMPEG, args);
-          const buf = await fs.readFile(outPath);
-          frames.push({ 
-            index: j - 1, 
-            timestamp: ts, 
-            imageBuffer: buf 
-          });
-        } catch (e) {
-          console.warn(`[extractFramesFromMultipleShots] Error extrayendo frame ${j} del tiro ${i}:`, e);
-        }
-      }
-      
-      if (frames.length > 0) {
-        shotsWithFrames.push({
-          shotIndex: i,
-          startTime: segment.start,
-          endTime: segment.end,
-          frames
-        });
-      }
-    }
-    
-    // Si no se detectaron tiros, usar método de segmentos fijos
-    if (shotsWithFrames.length === 0) {
-      console.log('[extractFramesFromMultipleShots] No se detectaron tiros por movimiento, usando segmentos fijos');
-      console.log('[extractFramesFromMultipleShots] Duración del video:', duration);
-      
-      // Dividir el video en segmentos más realistas (4-5 segundos por tiro)
-      const segmentDuration = 4.0; // 4 segundos por segmento (más realista para videos largos)
-      const numSegments = Math.max(2, Math.min(6, Math.floor(duration / segmentDuration))); // Máximo 6 tiros
-      console.log(`[extractFramesFromMultipleShots] Dividiendo en ${numSegments} segmentos de ${segmentDuration}s`);
-      
-      const fixedSegments = [];
-      for (let i = 0; i < numSegments; i++) {
-        const start = i * segmentDuration;
-        const end = Math.min((i + 1) * segmentDuration, duration);
-        fixedSegments.push({ start, end });
-      }
-      
-      // Extraer frames de cada segmento fijo
-      for (let i = 0; i < fixedSegments.length; i++) {
-        const segment = fixedSegments[i];
-        const shotDuration = segment.end - segment.start;
-        
-        // Extraer solo 1 frame por segmento (máxima velocidad)
-        const framesPerShot = 1;
-        
-        const frames = [];
-        for (let j = 1; j <= framesPerShot; j++) {
-          const ts = segment.start + (j * shotDuration / (framesPerShot + 1));
-          const outPath = path.join(tmpDir, `fixed_shot_${i}_frame_${j}.jpg`);
-          
-          const args = [
-            '-y',
-            '-ss', ts.toFixed(2),
-            '-i', inPath,
-            '-frames:v', '1',
-            '-q:v', '2',
-            '-vf', 'scale=-2:1080',
-            outPath,
-          ];
-          
-          try {
-            await spawnAsync(RESOLVED_FFMPEG, args);
-            const buf = await fs.readFile(outPath);
-            frames.push({ 
-              index: j - 1, 
-              timestamp: ts, 
-              imageBuffer: buf 
-            });
-          } catch (e) {
-            console.warn(`[extractFramesFromMultipleShots] Error extrayendo frame ${j} del segmento ${i}:`, e);
-          }
-        }
-        
-        if (frames.length > 0) {
-          shotsWithFrames.push({
-            shotIndex: i,
-            startTime: segment.start,
-            endTime: segment.end,
-            frames
-          });
-        }
-      }
-      
-      console.log(`[extractFramesFromMultipleShots] Generados ${shotsWithFrames.length} segmentos fijos`);
-    }
-    
-    return shotsWithFrames;
   } finally {
     try { await fs.rm(tmpDir, { recursive: true, force: true }); } catch {}
   }
@@ -550,32 +207,27 @@ export async function extractFramesBetweenDataUrlsFromBuffer(
   }
 }
 
-// 🏀 SOLUCIÓN MEJORADA PARA DETECCIÓN DE MÚLTIPLES TIROS
 export async function segmentAttemptsByMotionFromBuffer(
   inputBuffer: Buffer,
   options: { downscaleHeight?: number; fps?: number; minSeparationSec?: number; peakStd?: number } = {}
 ): Promise<Array<{ start: number; end: number }>> {
   const downscaleHeight = options.downscaleHeight ?? 240;
-  const fps = options.fps ?? 30; // Más FPS para mejor detección
-  const minSeparationSec = options.minSeparationSec ?? 0.5;
-  const peakStd = options.peakStd ?? 0.8; // Umbral más bajo
+  const fps = options.fps ?? 5;
+  const minSeparationSec = options.minSeparationSec ?? 1.2;
+  const peakStd = options.peakStd ?? 2.0;
 
   const duration = await getVideoDurationSecondsFromBuffer(inputBuffer);
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'shot-scene-'));
   const inPath = path.join(tmpDir, 'input.mp4');
   await fs.writeFile(inPath, inputBuffer);
-  
   try {
-    console.log(`[segmentAttemptsByMotionFromBuffer] Analizando video de ${duration.toFixed(2)}s...`);
-    
-    // 1️⃣ DETECTAR PICOS DE MOVIMIENTO (más granular)
-    const vf = `scale=-2:${downscaleHeight},fps=${fps},select='gt(scene,0.1)',showinfo`;
+    // Use showinfo to get per-frame timestamps and scene score
+    const vf = `scale=-2:${downscaleHeight},fps=${fps},showinfo`;
     const stderr = await spawnCollectStderr(RESOLVED_FFMPEG, ['-i', inPath, '-vf', vf, '-f', 'null', '-']);
     const lines = stderr.split(/\r?\n/);
     const samples: Array<{ t: number; s: number }> = [];
-    
     for (const line of lines) {
-      // Buscar timestamps y scores de escena
+      // Example: showinfo frame:... pts_time:1.234 ... scene:0.123456
       const m = /pts_time:([0-9]+\.[0-9]+).*scene:([0-9]+\.[0-9]+)/.exec(line);
       if (m) {
         const t = parseFloat(m[1]);
@@ -583,62 +235,53 @@ export async function segmentAttemptsByMotionFromBuffer(
         if (!Number.isNaN(t) && !Number.isNaN(s)) samples.push({ t, s });
       }
     }
-    
-    console.log(`[segmentAttemptsByMotionFromBuffer] Muestras de movimiento: ${samples.length}`);
     if (samples.length === 0) return [];
 
-    // 2️⃣ FILTRAR POR DURACIÓN REALISTA DE TIROS
-    const validShots = [];
-    for (let i = 0; i < samples.length - 1; i++) {
-      const duration = samples[i + 1].t - samples[i].t;
-      // Un tiro dura entre 1-4 segundos (no 30+ segundos)
-      if (duration >= 1.0 && duration <= 4.0) {
-        validShots.push({
-          start: samples[i].t,
-          end: samples[i + 1].t,
-          duration: duration
-        });
+    // Smooth scores (moving average)
+    const window = Math.max(1, Math.floor(fps * 0.4));
+    const smoothed: number[] = [];
+    for (let i = 0; i < samples.length; i++) {
+      let sum = 0, cnt = 0;
+      for (let k = Math.max(0, i - window); k <= Math.min(samples.length - 1, i + window); k++) {
+        sum += samples[k].s; cnt++;
       }
-    }
-    
-    console.log(`[segmentAttemptsByMotionFromBuffer] Tiros válidos por duración: ${validShots.length}`);
-
-    // 3️⃣ SEGMENTACIÓN INTELIGENTE SI FFmpeg FALLA
-    if (validShots.length < 2) {
-            const expectedShots = Math.max(2, Math.floor(duration / 8)); // 1 tiro cada 8 segundos
-      const segmentDuration = duration / expectedShots;
-      const shots = [];
-      
-      for (let i = 0; i < expectedShots; i++) {
-        shots.push({
-          start: i * segmentDuration,
-          end: Math.min((i + 1) * segmentDuration, duration),
-          duration: segmentDuration,
-          type: 'estimated'
-        });
-      }
-      
-      console.log(`[segmentAttemptsByMotionFromBuffer] Generados ${shots.length} segmentos estimados`);
-      return shots;
+      smoothed.push(sum / Math.max(1, cnt));
     }
 
-    // 4️⃣ VALIDACIÓN FINAL - Eliminar falsos positivos
-    const finalShots = validShots.filter(shot => {
-      if (shot.duration > 10) {
-        console.warn(`⚠️ Tiro de ${shot.duration.toFixed(2)}s descartado (muy largo)`);
-        return false;
-      }
-      return true;
-    });
+    // Baseline and peaks
+    const mean = smoothed.reduce((a, b) => a + b, 0) / smoothed.length;
+    const variance = smoothed.reduce((a, b) => a + (b - mean) * (b - mean), 0) / smoothed.length;
+    const std = Math.sqrt(Math.max(variance, 1e-8));
+    const threshold = mean + peakStd * std;
 
-    console.log(`[segmentAttemptsByMotionFromBuffer] Tiros finales validados: ${finalShots.length}`);
-    
-    // 5️⃣ CONVERTIR A FORMATO ESPERADO
-    const windows = finalShots.map(shot => ({
-      start: shot.start,
-      end: shot.end
-    }));
-    
+    const peaks: number[] = [];
+    let lastPeakT = -Infinity;
+    for (let i = 1; i < smoothed.length - 1; i++) {
+      if (smoothed[i] > threshold && smoothed[i] > smoothed[i - 1] && smoothed[i] >= smoothed[i + 1]) {
+        const t = samples[i].t;
+        if (t - lastPeakT >= minSeparationSec) {
+          peaks.push(t);
+          lastPeakT = t;
+        }
+      }
+    }
+
+    // Build windows around peaks
+    const windows: Array<{ start: number; end: number }> = [];
+    for (const t of peaks) {
+      const start = Math.max(0, t - 0.6);
+      const end = Math.min(duration || t + 1.0, t + 1.0);
+      if (windows.length === 0) windows.push({ start, end });
+      else {
+        const prev = windows[windows.length - 1];
+        if (start <= prev.end - 0.2) {
+          // merge overlapping windows
+          prev.end = Math.max(prev.end, end);
+        } else {
+          windows.push({ start, end });
+        }
+      }
+    }
     return windows;
   } finally {
     try { await fs.rm(tmpDir, { recursive: true, force: true }); } catch {}

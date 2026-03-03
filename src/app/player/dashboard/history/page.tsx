@@ -79,6 +79,12 @@ export default function HistoryPage() {
     if (user?.uid) run();
   }, [user?.uid]);
 
+  useEffect(() => {
+    if (!loading && (!user || !userProfile)) {
+      router.push('/login');
+    }
+  }, [loading, user, userProfile, router]);
+
   const shotTypeMap: Record<string, string> = {
     three: 'Lanzamiento de Tres',
     jump: 'Lanzamiento de Media Distancia (Jump Shot)',
@@ -158,12 +164,11 @@ export default function HistoryPage() {
     );
   }
   if (!user || !userProfile) {
-    router.push('/login');
     return null;
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-8 min-w-0">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-headline text-2xl font-bold">Historial del Jugador</h1>
@@ -261,4 +266,5 @@ export default function HistoryPage() {
     </div>
   );
 }
+
 

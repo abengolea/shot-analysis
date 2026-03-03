@@ -22,6 +22,21 @@ const SETPOINT_NAME = 'Set point (inicio del empuje de la pelota)';
 const ASCENSO_HAND_ID = 'mano_no_dominante_ascenso';
 const LIBERACION_HAND_ID = 'mano_no_dominante_liberacion';
 
+function removeUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((v) => removeUndefinedDeep(v)).filter((v) => v !== undefined) as unknown as T;
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    Object.entries(value as Record<string, unknown>).forEach(([key, val]) => {
+      const cleaned = removeUndefinedDeep(val);
+      if (cleaned !== undefined) out[key] = cleaned;
+    });
+    return out as T;
+  }
+  return (value === undefined ? undefined : value) as T;
+}
+
 // Pesos exactos por ítem del checklist de Tiro de Tres (default). Suman 100.
 const DEFAULT_ITEM_WEIGHTS_TRES: Record<string, number> = {
   // Fluidez (47.5%)
@@ -137,6 +152,13 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     const decoded = await adminAuth.verifyIdToken(token);
     const uid = decoded.uid;
 
+    const [coachSnap, playerSnap] = await Promise.all([
+      adminDb.collection('coaches').doc(uid).get(),
+      adminDb.collection('players').doc(uid).get(),
+    ]);
+    const role = coachSnap.exists ? (coachSnap.data() as any)?.role : (playerSnap.exists ? (playerSnap.data() as any)?.role : undefined);
+    if (role !== 'coach' && role !== 'admin') return { ok: false, reason: 'Role mismatch' };
+
     const analysisRef = adminDb.collection('analyses').doc(analysisId);
     const analysisSnap = await analysisRef.get();
     if (!analysisSnap.exists) return { ok: false, reason: 'Analysis not found' };
@@ -144,11 +166,16 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     const playerId = analysis?.playerId;
     if (!playerId) return { ok: false, reason: 'Player missing' };
 
-    const playerSnap = await adminDb.collection('players').doc(playerId).get();
-    const player = playerSnap.exists ? playerSnap.data() as any : null;
+    if (role === 'admin') return { ok: true };
+
+    const playerDoc = await adminDb.collection('players').doc(playerId).get();
+    const player = playerDoc.exists ? playerDoc.data() as any : null;
     const assignedCoachId = player?.coachId || null;
+    const coachAccess = (analysis?.coachAccess || {}) as Record<string, any>;
+    const hasPaidCoachAccess = coachAccess?.[uid]?.status === 'paid';
 
     if (assignedCoachId && assignedCoachId === uid) return { ok: true };
+    if (hasPaidCoachAccess) return { ok: true };
     return { ok: false, reason: 'Forbidden' };
   } catch (e) {
     console.error('verifyCoachPermission error', e);
@@ -270,7 +297,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       };
       if (publicCategory) updatePlayerData.publicCategory = publicCategory;
 
-      await playerRef.set(updatePlayerData, { merge: true });
+      await playerRef.set(removeUndefinedDeep(updatePlayerData), { merge: true });
     }
 
     return NextResponse.json({ success: true, score, fluidezScore10 });

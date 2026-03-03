@@ -7,50 +7,30 @@ import {
   createUserWithEmailAndPassword, 
   signOut, 
   onAuthStateChanged,
-  sendPasswordResetEmail,
-  sendEmailVerification,
   updateProfile
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { requestVerificationEmail, requestPasswordReset } from '@/app/actions';
+import { addDoc, collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import type { Player, Coach } from '@/lib/types';
-import { calculateAgeCategoryFromDob, calculateAgeGroupFromDob } from '@/lib/utils';
+import type { Player, Coach, Club } from '@/lib/types';
 
 interface AuthContextType {
   user: User | null;
-  userProfile: Player | Coach | null;
+  userProfile: Player | Coach | Club | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
-  signUp: (email: string, password: string, userData: Partial<Player | Coach>) => Promise<{ success: boolean; message: string }>;
+  signUp: (email: string, password: string, userData: Partial<Player | Coach | Club>) => Promise<{ success: boolean; message: string }>;
   signOutUser: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ success: boolean; message: string }>;
-  updateUserProfile: (data: Partial<Player | Coach>) => Promise<{ success: boolean; message: string }>;
+  updateUserProfile: (data: Partial<Player | Coach | Club>) => Promise<{ success: boolean; message: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [userProfile, setUserProfile] = useState<Player | Coach | null>(null);
+  const [userProfile, setUserProfile] = useState<Player | Coach | Club | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const toDateOrNull = (value: any): Date | null => {
-    try {
-      if (!value) return null;
-      if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
-      if (typeof value === 'string') {
-        const d = new Date(value);
-        return Number.isNaN(d.getTime()) ? null : d;
-      }
-      if (value && typeof value.toDate === 'function') {
-        const d = value.toDate();
-        return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -60,82 +40,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           // Determinar preferencia de rol según ruta y preferencia guardada
           const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
-          const preferredRole = typeof window !== 'undefined' ? (localStorage.getItem('preferredRole') || '') : '';
-          // Mantener rol de entrenador cuando está viendo perfiles de jugadores
-          const isCoachViewingPlayer = pathname.startsWith('/player/players/');
-          const preferCoach = pathname.startsWith('/coach') || preferredRole === 'coach' || isCoachViewingPlayer;
-          
-          // Si estamos viendo perfiles de jugadores y tenemos preferencia de entrenador, mantenerla
-          if (isCoachViewingPlayer && preferredRole === 'coach') {
-            localStorage.setItem('preferredRole', 'coach');
-          }
+          const storedRole = typeof window !== 'undefined'
+            ? (localStorage.getItem('preferredRole') || '')
+            : '';
+          const pathRole = pathname.startsWith('/coach')
+            ? 'coach'
+            : pathname.startsWith('/club')
+              ? 'club'
+              : (
+                pathname.startsWith('/player') ||
+                pathname.startsWith('/dashboard') ||
+                pathname.startsWith('/upload') ||
+                pathname.startsWith('/profile') ||
+                pathname.startsWith('/coaches')
+              )
+                ? 'player'
+                : '';
 
           // Cargar ambos perfiles en paralelo para decidir correctamente cuando existen los dos
-          const [playerSnap, coachSnap] = await Promise.all([
+          const [playerSnap, coachSnap, clubSnap] = await Promise.all([
             getDoc(doc(db, 'players', user.uid)),
             getDoc(doc(db, 'coaches', user.uid)),
+            getDoc(doc(db, 'clubs', user.uid)),
           ]);
 
-          let selected: (Player | Coach) | null = null;
-          if (preferCoach) {
-            if (coachSnap.exists()) {
-              const data = coachSnap.data() as any;
-              selected = { id: user.uid, ...(data as any) } as Coach;
-              if (typeof window !== 'undefined') {
-                localStorage.setItem('preferredRole', 'coach');
-              }
-              // Guardar preferencia de entrenador cuando está viendo perfiles de jugadores
-              if (isCoachViewingPlayer && typeof window !== 'undefined') {
-                localStorage.setItem('preferredRole', 'coach');
-              }
-            } else if (playerSnap.exists()) {
-              const data = playerSnap.data() as any;
-              const dob = toDateOrNull(data?.dob);
-              const derivedPublicCategory = dob ? calculateAgeCategoryFromDob(dob) : undefined;
-              const derivedAgeGroup = dob ? calculateAgeGroupFromDob(dob) : undefined;
-              const updates: any = {};
-              if (derivedPublicCategory && data?.publicCategory !== derivedPublicCategory) {
-                updates.publicCategory = derivedPublicCategory;
-              }
-              if (derivedAgeGroup && data?.ageGroup !== derivedAgeGroup) {
-                updates.ageGroup = derivedAgeGroup;
-              }
-              if (Object.keys(updates).length > 0) {
-                updates.updatedAt = new Date();
-                await setDoc(doc(db, 'players', user.uid), updates, { merge: true });
-                selected = { id: user.uid, ...(data as any), ...updates } as Player;
-              } else {
-                selected = { id: user.uid, ...(data as any) } as Player;
-              }
-            }
-          } else {
-            if (playerSnap.exists()) {
-              const data = playerSnap.data() as any;
-              const dob = toDateOrNull(data?.dob);
-              const derivedPublicCategory = dob ? calculateAgeCategoryFromDob(dob) : undefined;
-              const derivedAgeGroup = dob ? calculateAgeGroupFromDob(dob) : undefined;
-              const updates: any = {};
-              if (derivedPublicCategory && data?.publicCategory !== derivedPublicCategory) {
-                updates.publicCategory = derivedPublicCategory;
-              }
-              if (derivedAgeGroup && data?.ageGroup !== derivedAgeGroup) {
-                updates.ageGroup = derivedAgeGroup;
-              }
-              if (Object.keys(updates).length > 0) {
-                updates.updatedAt = new Date();
-                await setDoc(doc(db, 'players', user.uid), updates, { merge: true });
-                selected = { id: user.uid, ...(data as any), ...updates } as Player;
-              } else {
-                selected = { id: user.uid, ...(data as any) } as Player;
-              }
-            } else if (coachSnap.exists()) {
-              const data = coachSnap.data() as any;
-              selected = { id: user.uid, ...(data as any) } as Coach;
-            }
+          const hasCoach = coachSnap.exists();
+          const hasPlayer = playerSnap.exists();
+          const hasClub = clubSnap.exists();
+          const requestedRole = (storedRole || pathRole) as 'coach' | 'player' | 'club' | '';
+          let resolvedRole: 'coach' | 'player' | 'club' | '' = '';
+          let selected: (Player | Coach | Club) | null = null;
+
+          if (requestedRole === 'coach') {
+            resolvedRole = hasCoach ? 'coach' : (hasPlayer ? 'player' : '');
+          } else if (requestedRole === 'club') {
+            resolvedRole = hasClub ? 'club' : (hasCoach ? 'coach' : (hasPlayer ? 'player' : ''));
+          } else if (requestedRole === 'player') {
+            resolvedRole = hasPlayer ? 'player' : (hasCoach ? 'coach' : (hasClub ? 'club' : ''));
+          } else if (hasClub) {
+            // Si no hay preferencia explícita y existe rol de club, usar club por defecto
+            resolvedRole = 'club';
+          } else if (hasCoach && hasPlayer) {
+            // Si tiene doble rol y no hay preferencia explícita, quedarse en coach por defecto
+            resolvedRole = 'coach';
+          } else if (hasCoach) {
+            resolvedRole = 'coach';
+          } else if (hasPlayer) {
+            resolvedRole = 'player';
+          }
+
+          if (resolvedRole === 'coach' && hasCoach) {
+            const data = coachSnap.data() as any;
+            selected = { id: user.uid, ...(data as any) } as Coach;
+          } else if (resolvedRole === 'club' && hasClub) {
+            const data = clubSnap.data() as any;
+            selected = { id: user.uid, ...(data as any) } as Club;
+          } else if (resolvedRole === 'player' && hasPlayer) {
+            const data = playerSnap.data() as any;
+            selected = { id: user.uid, ...(data as any) } as Player;
           }
 
           const selectedRole = (selected as any)?.role as string | undefined;
           if (selected && (user.emailVerified || selectedRole === 'admin')) {
+            try {
+              if (typeof window !== 'undefined' && (selectedRole === 'coach' || selectedRole === 'player' || selectedRole === 'club')) {
+                localStorage.setItem('preferredRole', selectedRole);
+              }
+            } catch (e) {}
             setUserProfile(selected);
           } else {
             setUserProfile(null);
@@ -168,10 +139,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const cSnap = await getDoc(doc(db, 'coaches', user.uid));
             if (cSnap.exists()) role = (cSnap.data() as any)?.role;
           }
-        } catch {}
-        if (role !== 'admin') {
-          // Enviar email de verificación nuevamente si no es admin
-          await sendEmailVerification(user);
+          if (!role) {
+            const clubSnap = await getDoc(doc(db, 'clubs', user.uid));
+            if (clubSnap.exists()) role = (clubSnap.data() as any)?.role;
+          }
+        } catch (e) {}
+        if (role !== 'admin' && user.email) {
+          await requestVerificationEmail(user.email);
           return {
             success: false,
             message: 'Tu email no está verificado. Revisa tu bandeja de entrada o spam. Te hemos enviado un nuevo email de verificación.'
@@ -191,6 +165,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const coachSnap = await getDoc(coachRef);
           if (coachSnap.exists()) {
             await setDoc(coachRef, { status: 'active', updatedAt: new Date() }, { merge: true });
+          } else {
+            const clubRef = doc(db, 'clubs', user.uid);
+            const clubSnap = await getDoc(clubRef);
+            if (clubSnap.exists()) {
+              await setDoc(clubRef, { status: 'active', updatedAt: new Date() }, { merge: true });
+            }
           }
         }
       } catch (e) {
@@ -226,7 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signUp = async (email: string, password: string, userData: Partial<Player | Coach>) => {
+  const signUp = async (email: string, password: string, userData: Partial<Player | Coach | Club>) => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const newUser = userCredential.user;
@@ -236,12 +216,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await updateProfile(newUser, { displayName: userData.name });
       }
 
-      // Enviar email de verificación
-      await sendEmailVerification(newUser);
+      // Enviar email de verificación (template + redirect al entorno actual)
+      await requestVerificationEmail(email);
 
       // Determinar la colección basada en el rol
       const role = userData.role || 'player';
-      const collection = role === 'coach' ? 'coaches' : 'players';
       
       // Preparar los datos base del usuario (status: pending hasta verificar email)
       const baseUserData = {
@@ -261,6 +240,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ...baseUserData,
           ...(typeof (userData as any).publicRankingOptIn === 'boolean'
             ? { publicRankingOptIn: Boolean((userData as any).publicRankingOptIn) }
+            : {}),
+          ...(typeof (userData as any).club === 'string' && (userData as any).club.trim()
+            ? { club: (userData as any).club.trim() }
+            : {}),
+          ...(typeof (userData as any).country === 'string' && (userData as any).country.trim()
+            ? { country: (userData as any).country.trim() }
+            : {}),
+          ...(typeof (userData as any).province === 'string' && (userData as any).province.trim()
+            ? { province: (userData as any).province.trim() }
+            : {}),
+          ...(typeof (userData as any).city === 'string' && (userData as any).city.trim()
+            ? { city: (userData as any).city.trim() }
+            : {}),
+        });
+        const clubName = typeof (userData as any).club === 'string' ? (userData as any).club.trim() : '';
+        if (clubName) {
+          const normalizedName = normalizeClubName(clubName);
+          let clubExists = false;
+          try {
+            const byNormalized = query(collection(db, 'clubs'), where('nameLower', '==', normalizedName));
+            const byNormalizedSnap = await getDocs(byNormalized);
+            clubExists = !byNormalizedSnap.empty;
+          } catch (e) {}
+          if (!clubExists) {
+            try {
+              const byExact = query(collection(db, 'clubs'), where('name', '==', clubName));
+              const byExactSnap = await getDocs(byExact);
+              clubExists = !byExactSnap.empty;
+            } catch (e) {}
+          }
+          if (!clubExists) {
+            try {
+              const pendingReq = query(
+                collection(db, 'club_requests'),
+                where('normalizedName', '==', normalizedName),
+                where('status', '==', 'pending')
+              );
+              const pendingSnap = await getDocs(pendingReq);
+              if (pendingSnap.empty) {
+                await addDoc(collection(db, 'club_requests'), {
+                  proposedName: clubName,
+                  normalizedName,
+                  playerId: newUser.uid,
+                  playerEmail: email,
+                  playerName: userData.name || '',
+                  status: 'pending',
+                  createdAt: new Date().toISOString(),
+                });
+              }
+            } catch (e) {}
+          }
+        }
+      } else if (role === 'club') {
+        // Es un club - datos básicos
+        await setDoc(doc(db, 'clubs', newUser.uid), {
+          ...baseUserData,
+          ...(typeof (userData as any).city === 'string' && (userData as any).city.trim()
+            ? { city: (userData as any).city.trim() }
             : {}),
         });
       } else {
@@ -309,47 +346,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
-    try {
-      await sendPasswordResetEmail(auth, email);
-      return { success: true, message: 'Email de restablecimiento enviado' };
-    } catch (error: any) {
-      console.error('Error al enviar email de restablecimiento:', error);
-      let message = 'Error al enviar email de restablecimiento';
-      
-      if (error.code === 'auth/user-not-found') {
-        message = 'Usuario no encontrado';
-      }
-      
-      return { success: false, message };
-    }
+    const res = await requestPasswordReset(email);
+    return res;
   };
 
-  const updateUserProfile = async (data: Partial<Player | Coach>) => {
+  const updateUserProfile = async (data: Partial<Player | Coach | Club>) => {
     try {
       if (!user) {
         return { success: false, message: 'Usuario no autenticado' };
       }
 
       // Determinar la colección basada en el rol del usuario actual
-      const collection = userProfile?.role === 'coach' ? 'coaches' : 'players';
-      const mergedData = { ...data } as any;
-      if (collection === 'players') {
-        const dob = toDateOrNull((data as any)?.dob ?? (userProfile as any)?.dob);
-        if (dob) {
-          const derivedPublicCategory = calculateAgeCategoryFromDob(dob);
-          const derivedAgeGroup = calculateAgeGroupFromDob(dob);
-          if (derivedPublicCategory) mergedData.publicCategory = derivedPublicCategory;
-          if (derivedAgeGroup) mergedData.ageGroup = derivedAgeGroup;
-        }
-      }
-      await setDoc(doc(db, collection, user.uid), mergedData, { merge: true });
+      const collection = userProfile?.role === 'coach'
+        ? 'coaches'
+        : userProfile?.role === 'club'
+          ? 'clubs'
+          : 'players';
+      await setDoc(doc(db, collection, user.uid), data, { merge: true });
       
       // Recargar el perfil del usuario
       if (userProfile) {
         const userDoc = await getDoc(doc(db, collection, user.uid));
         if (userDoc.exists()) {
           const updatedData = userDoc.data();
-          setUserProfile({ id: user.uid, ...updatedData } as Player | Coach);
+          setUserProfile({ id: user.uid, ...updatedData } as Player | Coach | Club);
         }
       }
       
@@ -377,6 +397,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   );
 }
+
+const normalizeClubName = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
 export function useAuth() {
   const context = useContext(AuthContext);

@@ -1,8 +1,6 @@
-/**
- * Tipos para sistema de timeline con keyframes y comentarios
- */
+import type { Keypoint } from './pose-detection';
 
-import { Keypoint } from '@/lib/pose-detection';
+export type KeyframeAnchor = 'elbow' | 'hip' | 'wrist' | 'knee' | 'shoulder' | 'none';
 
 export type KeyframeNote = {
   id: string;
@@ -10,28 +8,27 @@ export type KeyframeNote = {
   text: string;
   tags?: string[];
   createdAt: string;
-  anchor?: 'elbow' | 'hip' | 'wrist' | 'knee' | 'shoulder' | 'none';
+  anchor?: KeyframeAnchor;
 };
 
 export type KeyframePose = {
   keypoints: Keypoint[];
-  // Coordenadas de keypoints específicos para anclaje rápido
   anchors?: {
-    elbow?: { x: number; y: number };      // right_elbow
-    hip?: { x: number; y: number };      // right_hip
-    wrist?: { x: number; y: number };    // right_wrist
-    knee?: { x: number; y: number };    // right_knee
-    shoulder?: { x: number; y: number }; // right_shoulder
+    elbow?: { x: number; y: number };
+    hip?: { x: number; y: number };
+    wrist?: { x: number; y: number };
+    knee?: { x: number; y: number };
+    shoulder?: { x: number; y: number };
   };
 };
 
 export type Keyframe = {
-  id: string;           // uuid
-  tMs: number;          // timestamp en ms
-  thumbUrl: string;     // URL miniatura
-  pose?: KeyframePose;  // opcional: keypoints/ángulos en ese instante
-  notes: KeyframeNote[];
-  eventType?: 't0_start' | 'set_point' | 'release' | 'onset_piernas' | 'onset_cadera' | 'onset_brazo' | 'peak_velocity' | 'manual';
+  id: string;
+  tMs: number;
+  thumbUrl?: string;
+  notes?: KeyframeNote[];
+  eventType?: string;
+  pose?: KeyframePose;
 };
 
 export type Timeline = {
@@ -41,11 +38,3 @@ export type Timeline = {
   keyframes: Keyframe[];
   analysisId: string;
 };
-
-export type CommentRequest = {
-  tMs: number;
-  text: string;
-  tag?: string;
-  anchor?: 'elbow' | 'hip' | 'wrist' | 'knee' | 'shoulder' | 'none';
-};
-

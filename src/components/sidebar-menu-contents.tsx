@@ -3,8 +3,10 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import {
   LayoutDashboard,
   PlusSquare,
@@ -12,10 +14,8 @@ import {
   Users,
   Shield,
   ShieldCheck,
-  Settings,
+  Trophy,
   MessageSquare,
-  FileText,
-  Sparkles,
 } from 'lucide-react';
 import {
   SidebarMenuItem,
@@ -36,7 +36,55 @@ export function SidebarMenuContents() {
   const pathname = usePathname();
   const { userProfile } = useAuth();
   const router = useRouter();
+  const [hasCoachProfile, setHasCoachProfile] = useState(false);
+  const [hasPlayerProfile, setHasPlayerProfile] = useState(false);
   const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
+  const [preferredRole, setPreferredRole] = useState<string>('');
+
+  useEffect(() => {
+    const checkProfiles = async () => {
+      try {
+        const uid = (userProfile as any)?.id;
+        if (!uid) {
+          setHasCoachProfile(false);
+          setHasPlayerProfile(false);
+          return;
+        }
+        const [coachDoc, playerDoc] = await Promise.all([
+          getDoc(doc(db as any, 'coaches', uid)),
+          getDoc(doc(db as any, 'players', uid)),
+        ]);
+        setHasCoachProfile(coachDoc.exists());
+        setHasPlayerProfile(playerDoc.exists());
+      } catch (e) {
+        console.warn('No se pudo verificar perfiles coach/player:', e);
+      }
+    };
+    checkProfiles();
+  }, [userProfile]);
+
+  useEffect(() => {
+    const readPreferredRole = () => {
+      try {
+        const stored = typeof window !== 'undefined' ? (localStorage.getItem('preferredRole') || '') : '';
+        setPreferredRole(stored);
+      } catch {}
+    };
+    readPreferredRole();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'preferredRole') {
+        readPreferredRole();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', onStorage);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('storage', onStorage);
+      }
+    };
+  }, [pathname, userProfile]);
 
   const isActive = (path: string, exact: boolean = false) => {
     if (exact) return pathname === path;
@@ -44,7 +92,8 @@ export function SidebarMenuContents() {
     return path === '/' ? pathname === path : pathname.startsWith(path);
   };
   
-  const isCoachView = pathname === '/coach' || pathname.startsWith('/coach/');
+  const prefersCoach = preferredRole === 'coach' || (hasCoachProfile && !hasPlayerProfile);
+  const isCoachView = pathname === '/coach' || pathname.startsWith('/coach/') || (prefersCoach && hasCoachProfile);
   const isAdminView = pathname === '/admin' || pathname.startsWith('/admin/');
   const isPlayerView = !isCoachView && !isAdminView;
 
@@ -64,10 +113,18 @@ export function SidebarMenuContents() {
   const PlayerMenu = () => (
     <>
       <SidebarMenuItem>
-        <SidebarMenuButton asChild isActive={isActive("/player/dashboard")} tooltip="Mi Panel">
-          <Link href="/player/dashboard">
+        <SidebarMenuButton asChild isActive={isActive("/dashboard")} tooltip="Mi Panel">
+          <Link href="/dashboard">
             <LayoutDashboard />
             Mi Panel
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuButton asChild isActive={isActive("/support")} tooltip="Soporte">
+          <Link href="/support">
+            <Shield />
+            Soporte
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -80,21 +137,13 @@ export function SidebarMenuContents() {
         </SidebarMenuButton>
       </SidebarMenuItem>
       <SidebarMenuItem>
-        <SidebarMenuButton asChild isActive={isActive("/player/support")} tooltip="Soporte">
-          <Link href="/player/support">
-            <Shield />
-            Soporte
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-      <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={isActive("/player/upload")}
+          isActive={isActive("/upload")}
           tooltip="Analizar Lanzamiento"
         >
           <Link
-            href="/player/upload"
+            href="/upload"
             onClick={(e) => {
               if (!isPlayerProfileComplete(userProfile)) {
                 e.preventDefault();
@@ -110,15 +159,27 @@ export function SidebarMenuContents() {
       <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={isActive("/coach/coaches")}
+          isActive={isActive("/coaches")}
           tooltip="Buscar Entrenadores"
         >
-          <Link href="/coach/coaches">
+          <Link href="/coaches">
             <Search />
             Buscar Entrenadores
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
+      {hasCoachProfile && (
+        <SidebarMenuItem>
+          <SidebarMenuButton asChild isActive={false} tooltip="Cambiar a Entrenador">
+            <Link href="/coach/dashboard" onClick={() => {
+              try { localStorage.setItem('preferredRole', 'coach'); } catch {}
+            }}>
+              <Users />
+              Cambiar a Entrenador
+            </Link>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      )}
     </>
   );
 
@@ -148,6 +209,18 @@ export function SidebarMenuContents() {
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
+      {hasPlayerProfile && (
+        <SidebarMenuItem>
+          <SidebarMenuButton asChild isActive={false} tooltip="Cambiar a Jugador">
+            <Link href="/dashboard" onClick={() => {
+              try { localStorage.setItem('preferredRole', 'player'); } catch {}
+            }}>
+              <Users />
+              Cambiar a Jugador
+            </Link>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      )}
     </>
   );
 
@@ -174,18 +247,6 @@ export function SidebarMenuContents() {
           <Link href="/admin/revision-ia">
             <Shield />
             Revisión IA
-          </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          asChild
-          isActive={pathname.startsWith("/admin/prompts")}
-          tooltip="Configurar Prompts IA"
-        >
-          <Link href="/admin/prompts">
-            <Sparkles />
-            Prompts IA
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -228,12 +289,12 @@ export function SidebarMenuContents() {
       <SidebarMenuItem>
         <SidebarMenuButton
           asChild
-          isActive={pathname.startsWith("/admin/maintenance")}
-          tooltip="Configuración de Mantenimiento"
+          isActive={isActive("/rankings")}
+          tooltip="Rankings Públicos"
         >
-          <Link href="/admin/maintenance">
-            <Settings />
-            Mantenimiento
+          <Link href="/rankings">
+            <Trophy />
+            Rankings
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -255,7 +316,7 @@ export function SidebarMenuContents() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setProfileIncompleteOpen(false)}>Cerrar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setProfileIncompleteOpen(false); router.push('/player/profile'); }}>Ir a mi perfil</AlertDialogAction>
+            <AlertDialogAction onClick={() => { setProfileIncompleteOpen(false); router.push('/profile'); }}>Ir a mi perfil</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

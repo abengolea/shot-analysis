@@ -21,7 +21,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       try { void signOutUser(); } catch {}
       window.location.href = "/admin/login";
     }
-  }, [user, userProfile, loading, pathname]);
+  }, [user, userProfile, loading, pathname, signOutUser]);
 
   if (loading) {
     return null;

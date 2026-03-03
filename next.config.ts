@@ -9,10 +9,12 @@ const nextConfig: NextConfig = {
   // Asegurar que ffmpeg-static se incluya en el build standalone
   serverExternalPackages: ['ffmpeg-static'],
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   eslint: {
-    ignoreDuringBuilds: true,
+    // ESLint corre durante build; solo hay warnings (no errors) por lo que el build pasa
+    // ~933 warnings pendientes: mayoría son no-explicit-any (691) y no-unused-vars (193)
+    ignoreDuringBuilds: false,
   },
   turbopack: {
     resolveAlias: {
@@ -21,7 +23,7 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     serverActions: {
-      bodySizeLimit: '100mb',
+      bodySizeLimit: '300mb',
     },
   },
   webpack: (config, { isServer }) => {
@@ -55,6 +57,21 @@ const nextConfig: NextConfig = {
       };
     }
     
+    if (isServer) {
+      config.externals = [
+        ...(config.externals || []),
+        { "onnxruntime-node": "commonjs onnxruntime-node" },
+      ];
+    }
+
+    config.ignoreWarnings = [
+      ...(config.ignoreWarnings || []),
+      {
+        module: /@opentelemetry\/instrumentation/,
+        message: /Critical dependency: the request of a dependency is an expression/,
+      },
+    ];
+
     // Resolver problemas con Konva
     config.resolve.alias = {
       ...config.resolve.alias,

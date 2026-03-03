@@ -138,13 +138,13 @@ export async function POST(request: NextRequest) {
     };
     await adminDb.collection('tickets').doc(ref.id).collection('messages').add(msg);
 
-    // Email de notificación (placeholder)
+    // Email de notificación (admin)
     try {
-      const { sendCustomEmail } = await import('@/lib/email-service');
-      await sendCustomEmail({
-        to: 'abengolea@hotmail.com',
+      const { sendAdminNotification } = await import('@/lib/email-service');
+      await sendAdminNotification({
         subject: `Nuevo ticket: ${subject}`,
-        html: `<p>Categoría: ${category}</p><p>Descripción: ${description}</p><p>Usuario: ${userEmail || who.uid}</p>`
+        html: `<p>Categoría: ${category}</p><p>Descripción: ${description}</p><p>Usuario: ${userEmail || who.uid}</p>`,
+        fallbackTo: 'abengolea@hotmail.com',
       });
     } catch {}
 

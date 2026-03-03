@@ -1,414 +1,425 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { collection, onSnapshot, query, where, addDoc, serverTimestamp, updateDoc, doc, getDoc } from "firebase/firestore";
+import { useAuth } from "@/hooks/use-auth";
+import { db } from "@/lib/firebase";
+import type { Message } from "@/lib/types";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { MessageSquare, Send } from "lucide-react";
-import type { Message } from "@/lib/types";
-import { useAuth } from "@/hooks/use-auth";
-import { db } from "@/lib/firebase";
-import { collection, onSnapshot, orderBy, query, where, updateDoc, doc, addDoc, serverTimestamp } from "firebase/firestore";
-import Link from "next/link";
+import { buildConversationId, getMessageType } from "@/lib/message-utils";
+import { resolveMessageLinkToCurrentEnv } from "@/lib/app-url";
 
-export default function MessagesPage() {
+export default function PlayerMessagesPage() {
   const { user, userProfile } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [analyses, setAnalyses] = useState<any[]>([]);
-  const [unreadOnly, setUnreadOnly] = useState(false);
-  const [hiddenMessageIds, setHiddenMessageIds] = useState<string[]>([]);
-  const [replyFor, setReplyFor] = useState<Message | null>(null);
-  const [replyText, setReplyText] = useState<string>("");
-  const [sendingReply, setSendingReply] = useState<boolean>(false);
   const { toast } = useToast();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [replyFor, setReplyFor] = useState<Message | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
+  const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
+  const [activeTab, setActiveTab] = useState<"messages" | "launches" | "system">("messages");
+
+  const toDate = (value: any) => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (typeof value === "string" || typeof value === "number") {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    if (typeof value?.toDate === "function") return value.toDate();
+    if (typeof value?._seconds === "number") {
+      return new Date(value._seconds * 1000 + Math.round((value._nanoseconds || 0) / 1e6));
+    }
+    return null;
+  };
+  const getTime = (value: any) => toDate(value)?.getTime() ?? 0;
+  const formatDate = (value: any) => {
+    const d = toDate(value);
+    return d ? d.toLocaleString() : "Fecha desconocida";
+  };
+  const getConversationKey = (m: Message) =>
+    m.conversationId || buildConversationId({ fromId: m.fromId, toId: m.toId, analysisId: m.analysisId || null });
+  const groupMessages = (list: Message[]) => {
+    const grouped = new Map<string, { latest: Message; count: number }>();
+    for (const m of list) {
+      const key = getConversationKey(m) || m.id;
+      const existing = grouped.get(key);
+      if (!existing) {
+        grouped.set(key, { latest: m, count: 1 });
+        continue;
+      }
+      const next = getTime(m.createdAt) > getTime(existing.latest.createdAt) ? m : existing.latest;
+      grouped.set(key, { latest: next, count: existing.count + 1 });
+    }
+    return Array.from(grouped.values()).sort((a, b) => getTime(b.latest.createdAt) - getTime(a.latest.createdAt));
+  };
+  const renderMessageText = (text: string) => {
+    if (!text) return null;
+    const urlPattern = /https?:\/\/\S+/g;
+    const segments: Array<{ type: "text" | "link"; value: string }> = [];
+    let lastIndex = 0;
+    for (const match of text.matchAll(urlPattern)) {
+      const matchText = match[0];
+      const matchIndex = match.index ?? 0;
+      if (matchIndex > lastIndex) {
+        segments.push({ type: "text", value: text.slice(lastIndex, matchIndex) });
+      }
+      segments.push({ type: "link", value: matchText });
+      lastIndex = matchIndex + matchText.length;
+    }
+    if (lastIndex < text.length) {
+      segments.push({ type: "text", value: text.slice(lastIndex) });
+    }
+    return segments.map((segment, idx) => {
+      if (segment.type === "link") {
+        const href = resolveMessageLinkToCurrentEnv(segment.value);
+        return (
+          <a
+            key={`link-${idx}`}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline break-all"
+          >
+            {href}
+          </a>
+        );
+      }
+      return <span key={`text-${idx}`}>{segment.value}</span>;
+    });
+  };
+  const getOriginLabel = (m: Message) => {
+    if (m.fromId === "system") return "Sistema";
+    return "Entrenador";
+  };
+  const isKeyframeMessage = (m: Message) =>
+    Boolean(m.keyframeUrl || m.angle || typeof m.index === "number");
 
   useEffect(() => {
     if (!user) return;
     try {
-      // Los jugadores solo deben ver mensajes donde toId == user.uid
-      // No deben ver mensajes con toCoachDocId (esos son solo para entrenadores)
-      const q1 = query(collection(db as any, 'messages'), where('toId', '==', user.uid), orderBy('createdAt', 'desc'));
-      const unsubs: Array<() => void> = [];
-      const apply = (snap: any) => {
-        setMessages(prev => {
-          const incoming = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })) as Message[];
-          const merged = [...incoming, ...prev].reduce((acc: Record<string, Message>, m: Message) => { acc[m.id] = m; return acc; }, {} as any);
-          return Object.values(merged).sort((a, b) => (new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
-        });
-      };
-      unsubs.push(onSnapshot(q1, apply, (error) => {
-        console.error('Error en listener de mensajes player:', error);
-      }));
-      return () => { unsubs.forEach(u => u()); };
+      const q = query(
+        collection(db as any, "messages"),
+        where("toId", "==", user.uid)
+      );
+      const unsub = onSnapshot(q, (snap) => {
+        const incoming = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })) as Message[];
+        const merged = [...incoming].reduce((acc: Record<string, Message>, m: Message) => {
+          acc[m.id] = m;
+          return acc;
+        }, {} as Record<string, Message>);
+        setMessages(Object.values(merged).sort((a, b) => getTime(b.createdAt) - getTime(a.createdAt)));
+      });
+      return () => unsub();
     } catch (e) {
-      console.error('Error cargando mensajes:', e);
+      console.error("Error cargando mensajes del jugador:", e);
     }
   }, [user]);
 
-  // Cargar análisis del jugador para poder encontrar el análisis relacionado con mensajes de revisión
   useEffect(() => {
-    if (!user?.uid) return;
-    const fetchAnalyses = async () => {
+    let cancelled = false;
+    const resolveNames = async () => {
+      const targets = messages
+        .filter((m) => m.fromId && !resolvedNames[m.fromId] && (!m.fromName || m.fromName === "Entrenador"))
+        .map((m) => m.fromId);
+      const unique = Array.from(new Set(targets));
+      if (unique.length === 0) return;
       try {
-        const response = await fetch(`/api/analyses?userId=${user.uid}`);
-        if (response.ok) {
-          const data = await response.json();
-          const arr = Array.isArray(data.analyses) ? data.analyses : [];
-          setAnalyses(arr);
+        const updates: Record<string, string> = {};
+        await Promise.all(unique.map(async (id) => {
+          try {
+            const snap = await getDoc(doc(db as any, "coaches", id));
+            if (snap.exists()) {
+              const data = snap.data() as any;
+              if (data?.name) updates[id] = data.name;
+            }
+          } catch {}
+        }));
+        if (!cancelled && Object.keys(updates).length > 0) {
+          setResolvedNames((prev) => ({ ...prev, ...updates }));
         }
-      } catch (error) {
-        console.error('Error fetching analyses:', error);
-      }
+      } catch {}
     };
-    fetchAnalyses();
-  }, [user?.uid]);
+    resolveNames();
+    return () => { cancelled = true; };
+  }, [messages, resolvedNames]);
 
-  // Cargar mensajes ocultos desde localStorage al iniciar
-  useEffect(() => {
-    try {
-      if (typeof window === 'undefined') return;
-      const stored = window.localStorage.getItem('playerHiddenMessageIds');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          const validIds = parsed.filter((id) => typeof id === 'string');
-          if (validIds.length > 0) {
-            setHiddenMessageIds(validIds);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('No se pudieron recuperar mensajes ocultos:', e);
+  const visibleMessages = useMemo(
+    () => (unreadOnly ? messages.filter((m) => !m.read) : messages),
+    [messages, unreadOnly]
+  );
+  const tabMessages = useMemo(() => {
+    if (activeTab === "launches") {
+      return visibleMessages.filter((m) => !!m.analysisId);
     }
-  }, []);
-
-  // Guardar mensajes ocultos en localStorage cuando cambien
-  useEffect(() => {
-    try {
-      if (typeof window === 'undefined') return;
-      if (hiddenMessageIds.length > 0) {
-        window.localStorage.setItem('playerHiddenMessageIds', JSON.stringify(hiddenMessageIds));
-      } else {
-        // Si no hay mensajes ocultos, limpiar el localStorage para mantenerlo limpio
-        window.localStorage.removeItem('playerHiddenMessageIds');
-      }
-    } catch (e) {
-      console.warn('No se pudieron guardar mensajes ocultos:', e);
+    if (activeTab === "system") {
+      return visibleMessages.filter((m) => m.fromId === "system" || m.toId === "system");
     }
-  }, [hiddenMessageIds]);
-
-  const unreadCount = useMemo(() => messages.filter(m => !m.read).length, [messages]);
-  const visibleMessages = useMemo(() => {
-    // Filtrar mensajes que están dirigidos al entrenador (tienen toCoachDocId o texto del coach)
-    const isCoachMessage = (m: Message) => {
-      const hasToCoachDocId = (m as any).toCoachDocId && (m as any).toCoachDocId !== user?.uid;
-      const isCoachText = m.text?.includes('ya abonó la revisión manual') && m.text?.includes('Podés ingresar y dejar tu devolución');
-      return hasToCoachDocId || isCoachText;
-    };
-    
-    let filtered = messages.filter(m => !isCoachMessage(m));
-    filtered = unreadOnly ? filtered.filter(m => !m.read) : filtered;
-    if (hiddenMessageIds.length === 0) return filtered;
-    const hiddenSet = new Set(hiddenMessageIds);
-    return filtered.filter((m) => !hiddenSet.has(m.id));
-  }, [messages, unreadOnly, hiddenMessageIds, user?.uid]);
-
-  // Función helper para normalizar el nombre del remitente de mensajes del sistema
-  const getDisplayName = (message: Message) => {
-    const fromName = message.fromName || message.fromId;
-    if (message.fromId === 'system' || fromName === 'Shot Analysis' || fromName === 'msjs del sistema' || fromName === 'Chaaaas.com') {
-      return 'Chaaaas.com';
-    }
-    return fromName;
-  };
-
-  const hideMessage = (id: string) => {
-    setHiddenMessageIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-  };
-
-  const restoreHiddenMessages = () => {
-    setHiddenMessageIds([]);
-  };
+    return visibleMessages.filter((m) => m.fromId !== "system" && m.toId !== "system");
+  }, [activeTab, visibleMessages]);
+  const groupedTabMessages = useMemo(() => groupMessages(tabMessages), [tabMessages]);
 
   const markAsRead = async (m: Message) => {
     try {
-      if (!m.read) {
-        await updateDoc(doc(db as any, 'messages', m.id), { read: true, readAt: new Date().toISOString() });
-        toast({
-          title: "Mensaje marcado como leído",
-          description: "El mensaje se ha marcado como leído.",
-        });
-      }
+      const key = getConversationKey(m);
+      const toMark = messages.filter((msg) => !msg.read && getConversationKey(msg) === key);
+      await Promise.all(toMark.map((msg) =>
+        updateDoc(doc(db as any, "messages", msg.id), { read: true, readAt: new Date().toISOString() })
+      ));
     } catch (e) {
-      console.error('No se pudo marcar como leído:', e);
-      toast({
-        title: "Error",
-        description: "No se pudo marcar el mensaje como leído.",
-        variant: "destructive",
-      });
+      console.error("No se pudo marcar como leído:", e);
     }
   };
 
   const sendReply = async () => {
     if (!user || !replyFor || !replyText.trim()) return;
+    const analysisId = replyFor.analysisId || null;
     try {
       setSendingReply(true);
-      const colRef = collection(db as any, 'messages');
-      const payload = {
-        fromId: user.uid,
-        fromName: userProfile?.name || user.displayName || 'Jugador',
-        toId: replyFor.fromId,
-        toName: replyFor.fromName || replyFor.fromId,
-        text: replyText.trim(),
-        createdAt: serverTimestamp(),
-        read: false,
-      } as any;
-      await addDoc(colRef, payload);
+      if (analysisId) {
+        const token = await user.getIdToken();
+        const res = await fetch(`/api/analyses/${analysisId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ text: replyText.trim() }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err?.error || `Error ${res.status}`);
+        }
+      } else {
+        const colRef = collection(db as any, "messages");
+        const payload = {
+          fromId: user.uid,
+          fromName: (userProfile as any)?.name || user.displayName || "Jugador",
+          fromAvatarUrl: (userProfile as any)?.avatarUrl || "",
+          toId: replyFor.fromId,
+          toCoachDocId: replyFor.fromId,
+          toName: replyFor.fromName || replyFor.fromId,
+          text: replyText.trim(),
+          analysisId: null,
+          createdAt: serverTimestamp(),
+          read: false,
+          messageType: getMessageType({ fromId: user.uid, analysisId: null }),
+          conversationId: buildConversationId({
+            fromId: user.uid,
+            toId: replyFor.fromId,
+            analysisId: null,
+          }),
+        } as any;
+        await addDoc(colRef, payload);
+      }
       setReplyText("");
       setReplyFor(null);
-      toast({
-        title: "Respuesta enviada",
-        description: "Tu mensaje se ha enviado correctamente.",
-      });
+      toast({ title: "Mensaje enviado", description: "Tu respuesta fue enviada al entrenador." });
     } catch (e) {
-      console.error('Error enviando respuesta:', e);
-      toast({
-        title: "Error",
-        description: "No se pudo enviar el mensaje.",
-        variant: "destructive",
-      });
+      console.error("Error enviando respuesta:", e);
+      toast({ title: "Error", description: "No se pudo enviar tu mensaje.", variant: "destructive" });
     } finally {
       setSendingReply(false);
     }
   };
 
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <MessageSquare className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          <h3 className="text-lg font-semibold mb-2">Inicia sesión</h3>
-          <p className="text-muted-foreground">
-            Necesitas iniciar sesión para ver tus mensajes.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold">Mensajes</h1>
-          <p className="text-muted-foreground">
-            Conversaciones con entrenadores y otros usuarios.
-          </p>
+          <h1 className="text-2xl font-semibold">Mensajes con entrenadores</h1>
+          <p className="text-muted-foreground">Revisá las respuestas y continuá la conversación.</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="text-sm text-muted-foreground">
-            {unreadCount} mensaje{unreadCount !== 1 ? 's' : ''} no leído{unreadCount !== 1 ? 's' : ''}
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <label className="flex items-center gap-2 text-sm">
-              <input 
-                type="checkbox" 
-                checked={unreadOnly} 
-                onChange={(e) => setUnreadOnly(e.target.checked)} 
-                className="rounded"
-              />
-              Solo no leídos
-            </label>
-            {hiddenMessageIds.length > 0 && (
-              <button
-                className="text-xs text-muted-foreground underline hover:text-foreground"
-                onClick={restoreHiddenMessages}
-              >
-                Mostrar ocultos ({hiddenMessageIds.length})
-              </button>
-            )}
-          </div>
-        </div>
+        <Button asChild variant="outline">
+          <Link href="/coaches">Buscar entrenadores</Link>
+        </Button>
       </div>
 
-      <div className="grid gap-4">
-        {visibleMessages.length === 0 && (
-          <Card>
-            <CardContent className="py-8 text-center">
-              <MessageSquare className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Sin mensajes</h3>
-              <p className="text-muted-foreground">
-                {unreadOnly 
-                  ? "No tienes mensajes no leídos." 
-                  : "Aún no tienes mensajes. Los entrenadores te contactarán aquí."
-                }
-              </p>
-            </CardContent>
-          </Card>
-        )}
-        
-        {visibleMessages.map((m) => (
-          <Card key={m.id} className="hover:shadow-sm transition-shadow">
-            <CardHeader className="pb-2 flex flex-row items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={m.fromAvatarUrl} alt={getDisplayName(m)} />
-                  <AvatarFallback>
-                    {getDisplayName(m).charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div>
-                  <CardTitle className="text-base">
-                    {getDisplayName(m)}
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    {new Date(m.createdAt || Date.now()).toLocaleString()}
-                  </CardDescription>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                {!m.read && <Badge variant="secondary">Nuevo</Badge>}
-                {!m.read && (
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => markAsRead(m)}
-                  >
-                    Marcar leído
-                  </Button>
-                )}
-                {!(m.fromId === 'system' || m.fromName === 'Shot Analysis' || m.fromName === 'msjs del sistema' || m.fromName === 'Chaaaas.com') && (
-                  <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
-                    <DialogTrigger asChild>
-                      <Button size="sm" variant="default">
-                        Responder
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Responder a {getDisplayName(m)}</DialogTitle>
-                        <DialogDescription>
-                          Escribe tu mensaje de respuesta.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div className="p-3 bg-muted rounded-lg">
-                          <p className="text-sm text-muted-foreground mb-1">Mensaje original:</p>
-                          <p className="text-sm">{m.text}</p>
-                        </div>
-                        <Textarea 
-                          value={replyText} 
-                          onChange={(e) => setReplyText(e.target.value)} 
-                          placeholder="Escribe tu respuesta aquí..."
-                          rows={4}
-                        />
-                      </div>
-                      <DialogFooter>
-                        <Button variant="outline" onClick={() => { setReplyFor(null); setReplyText(""); }}>
-                          Cancelar
-                        </Button>
-                        <Button 
-                          onClick={sendReply} 
-                          disabled={sendingReply || !replyText.trim()}
-                        >
-                          {sendingReply ? (
-                            <>
-                              <Send className="mr-2 h-4 w-4 animate-spin" />
-                              Enviando...
-                            </>
-                          ) : (
-                            <>
-                              <Send className="mr-2 h-4 w-4" />
-                              Enviar
-                            </>
-                          )}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                )}
-                <button 
-                  className="text-xs text-muted-foreground hover:text-foreground" 
-                  onClick={() => hideMessage(m.id)}
-                >
-                  Ocultar
-                </button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm whitespace-pre-wrap">{m.text}</p>
-              {/* Mostrar botón para ir al análisis si el mensaje tiene analysisId o es sobre revisión completada */}
-              {(() => {
-                // Detectar si el mensaje es sobre una revisión completada
-                const isReviewComplete = m.text?.includes('fue revisado por el entrenador') || m.text?.includes('disponible la devolución');
-                
-                // Usar analysisId del mensaje si está disponible, sino intentar extraerlo del texto
-                let analysisId = (m as any).analysisId || m.text?.match(/(analysis_[a-zA-Z0-9_-]+)/i)?.[1];
-                
-                // Si es mensaje de revisión completada pero no tiene analysisId, buscar el análisis más reciente con coachCompleted
-                if (isReviewComplete && !analysisId && analyses.length > 0) {
-                  // Buscar análisis completados por el entrenador, ordenados por fecha de completado
-                  const completedAnalyses = analyses
-                    .filter((a: any) => a.coachCompleted === true && a.coachCompletedAt)
-                    .sort((a: any, b: any) => {
-                      const dateA = new Date(a.coachCompletedAt || 0).getTime();
-                      const dateB = new Date(b.coachCompletedAt || 0).getTime();
-                      return dateB - dateA;
-                    });
-                  
-                  // Si hay análisis completados, tomar el más reciente que esté cerca de la fecha del mensaje
-                  if (completedAnalyses.length > 0) {
-                    const messageDate = new Date(m.createdAt || 0).getTime();
-                    // Buscar el análisis completado más cercano a la fecha del mensaje (dentro de 24 horas)
-                    const matchingAnalysis = completedAnalyses.find((a: any) => {
-                      const completedDate = new Date(a.coachCompletedAt || 0).getTime();
-                      const diff = Math.abs(messageDate - completedDate);
-                      return diff < 24 * 60 * 60 * 1000; // 24 horas en milisegundos
-                    });
-                    
-                    if (matchingAnalysis) {
-                      analysisId = matchingAnalysis.id;
-                    } else if (completedAnalyses.length > 0) {
-                      // Si no hay coincidencia exacta, usar el más reciente
-                      analysisId = completedAnalyses[0].id;
-                    }
-                  }
-                }
-                
-                if (analysisId) {
-                  const linkHref = isReviewComplete 
-                    ? `/analysis/${analysisId}#coach-checklist` 
-                    : `/analysis/${analysisId}`;
-                  const linkText = isReviewComplete 
-                    ? 'Ver revisión del entrenador' 
-                    : 'Ver análisis';
-                  
-                  return (
-                    <div className="mt-3 pt-3 border-t">
-                      <Button asChild size="sm" variant="default">
-                        <Link href={linkHref}>
-                          {linkText}
-                        </Link>
-                      </Button>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-            </CardContent>
-          </Card>
-        ))}
+      <div className="flex items-center justify-between">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} />
+          Solo no leídos
+        </label>
       </div>
+
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "messages" | "launches" | "system")}>
+        <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap">
+          <TabsTrigger value="messages" className="whitespace-nowrap flex-shrink-0">
+            Mensajes
+          </TabsTrigger>
+          <TabsTrigger value="launches" className="whitespace-nowrap flex-shrink-0">
+            Lanzamientos
+          </TabsTrigger>
+          <TabsTrigger value="system" className="whitespace-nowrap flex-shrink-0">
+            Sistema
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="messages" className="mt-4">
+          <div className="grid gap-4">
+            {groupedTabMessages.length === 0 && (
+              <div className="py-10 text-center text-muted-foreground">No hay mensajes todavía.</div>
+            )}
+            {groupedTabMessages.map(({ latest: m, count }) => (
+              <Card key={m.id} className="hover:shadow-sm">
+                <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                  <CardTitle className="text-base">
+                    {`Chat con ${resolvedNames[m.fromId] || m.fromName || m.fromId}`}
+                    {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
+                  </CardTitle>
+                  <div className="flex items-center gap-3">
+                    {m.analysisId && (
+                      <Link
+                        className="text-xs text-primary"
+                        href={`/analysis/${m.analysisId}#messages`}
+                      >
+                        Ir al lanzamiento
+                      </Link>
+                    )}
+                    {!m.read && (
+                      <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
+                    )}
+                    <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
+                      <DialogTrigger asChild>
+                        <button className="text-xs text-primary">Responder</button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Responder a {m.fromName || m.fromId}</DialogTitle>
+                          <DialogDescription>Escribí tu mensaje y se enviará al entrenador.</DialogDescription>
+                        </DialogHeader>
+                        <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={4} />
+                        <DialogFooter>
+                          <Button onClick={sendReply} disabled={sendingReply || !replyText.trim()}>
+                            {sendingReply ? "Enviando…" : "Enviar"}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-2">
+                    <Badge variant="outline">{getOriginLabel(m)}</Badge>
+                    {m.analysisId && <Badge variant="secondary">Lanzamiento</Badge>}
+                    {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                    {count > 1 && <Badge variant="outline">{count} mensajes</Badge>}
+                  </div>
+                  <div className="text-sm text-muted-foreground mb-1">
+                    {formatDate(m.createdAt)}
+                  </div>
+                  <div className="text-sm whitespace-pre-wrap">{renderMessageText(m.text)}</div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+        <TabsContent value="launches" className="mt-4">
+          <div className="grid gap-4">
+            {groupedTabMessages.length === 0 && (
+              <div className="py-10 text-center text-muted-foreground">No hay mensajes de lanzamientos todavía.</div>
+            )}
+            {groupedTabMessages.map(({ latest: m, count }) => (
+              <Card key={m.id} className="hover:shadow-sm">
+                <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                  <CardTitle className="text-base">
+                    {`Chat con ${resolvedNames[m.fromId] || m.fromName || m.fromId}`}
+                    {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
+                  </CardTitle>
+                  <div className="flex items-center gap-3">
+                    {m.analysisId && (
+                      <Link
+                        className="text-xs text-primary"
+                        href={`/analysis/${m.analysisId}#messages`}
+                      >
+                        Ir al lanzamiento
+                      </Link>
+                    )}
+                    {!m.read && (
+                      <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
+                    )}
+                    <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
+                      <DialogTrigger asChild>
+                        <button className="text-xs text-primary">Responder</button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Responder a {m.fromName || m.fromId}</DialogTitle>
+                          <DialogDescription>Escribí tu mensaje y se enviará al entrenador.</DialogDescription>
+                        </DialogHeader>
+                        <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={4} />
+                        <DialogFooter>
+                          <Button onClick={sendReply} disabled={sendingReply || !replyText.trim()}>
+                            {sendingReply ? "Enviando…" : "Enviar"}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-2">
+                    <Badge variant="outline">{getOriginLabel(m)}</Badge>
+                    {m.analysisId && <Badge variant="secondary">Lanzamiento</Badge>}
+                    {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                    {count > 1 && <Badge variant="outline">{count} mensajes</Badge>}
+                  </div>
+                  <div className="text-sm text-muted-foreground mb-1">
+                    {formatDate(m.createdAt)}
+                  </div>
+                  <div className="text-sm whitespace-pre-wrap">{renderMessageText(m.text)}</div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+        <TabsContent value="system" className="mt-4">
+          <div className="grid gap-4">
+            {groupedTabMessages.length === 0 && (
+              <div className="py-10 text-center text-muted-foreground">No hay mensajes de sistema todavía.</div>
+            )}
+            {groupedTabMessages.map(({ latest: m, count }) => (
+              <Card key={m.id} className="hover:shadow-sm">
+                <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                  <CardTitle className="text-base">
+                    {m.fromName || "Chaaaas.com"}
+                    {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
+                  </CardTitle>
+                  <div className="flex items-center gap-3">
+                    {m.analysisId && (
+                      <Link
+                        className="text-xs text-primary"
+                        href={`/analysis/${m.analysisId}#messages`}
+                      >
+                        Ir al lanzamiento
+                      </Link>
+                    )}
+                    {!m.read && (
+                      <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-2">
+                    <Badge variant="outline">{getOriginLabel(m)}</Badge>
+                    {m.analysisId && <Badge variant="secondary">Lanzamiento</Badge>}
+                    {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                    {count > 1 && <Badge variant="outline">{count} mensajes</Badge>}
+                  </div>
+                  <div className="text-sm text-muted-foreground mb-1">
+                    {formatDate(m.createdAt)}
+                  </div>
+                  <div className="text-sm whitespace-pre-wrap">{renderMessageText(m.text)}</div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

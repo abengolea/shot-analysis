@@ -273,7 +273,8 @@ export function computeFinalScoreWithTransparency(categories: ChecklistCategory[
   }
   
   const totalWeight = evaluableWeight + (nonEvaluableCount * 0); // Solo contar peso de evaluables
-  const finalScore = evaluableWeight > 0 ? (totalScore / evaluableWeight) * 100 : 0;
+  // totalScore ya está en escala 0..100 ponderada por peso
+  const finalScore = evaluableWeight > 0 ? (totalScore / evaluableWeight) : 0;
   
   // Determinar confianza basada en porcentaje de parámetros evaluables
   const evaluabilityRatio = evaluableCount / (evaluableCount + nonEvaluableCount);
@@ -290,6 +291,49 @@ export function computeFinalScoreWithTransparency(categories: ChecklistCategory[
     totalWeight,
     confidence,
     nonEvaluableReasons
+  };
+}
+
+export type ScoreMetadata = {
+  weightedScore: number;
+  evaluableCount: number;
+  nonEvaluableCount: number;
+  evaluableWeight: number;
+  totalWeight: number;
+  confidence: 'alta' | 'media' | 'baja';
+  nonEvaluableReasons: string[];
+  shotTypeKey: string;
+  calculatedAt: string;
+};
+
+export function normalizeShotTypeKey(shotType?: string): string {
+  const st = String(shotType || '').toLowerCase();
+  if (!st) return 'tres';
+  if (st.includes('libre') || st.includes('free') || st.includes('ft')) return 'libre';
+  if (st.includes('media') || st.includes('jump')) return 'media';
+  if (st.includes('tres') || st.includes('3')) return 'tres';
+  return st;
+}
+
+export function buildScoreMetadata(
+  categories: ChecklistCategory[],
+  shotType?: string,
+  weights?: Record<string, number>
+): ScoreMetadata {
+  const shotTypeKey = normalizeShotTypeKey(shotType);
+  const resolvedWeights = weights && Object.keys(weights).length > 0 ? weights : getDefaultWeights(shotTypeKey);
+  const summary = computeFinalScoreWithTransparency(categories, resolvedWeights);
+
+  return {
+    weightedScore: summary.score,
+    evaluableCount: summary.evaluableCount,
+    nonEvaluableCount: summary.nonEvaluableCount,
+    evaluableWeight: summary.evaluableWeight,
+    totalWeight: summary.totalWeight,
+    confidence: summary.confidence,
+    nonEvaluableReasons: summary.nonEvaluableReasons,
+    shotTypeKey,
+    calculatedAt: new Date().toISOString(),
   };
 }
 

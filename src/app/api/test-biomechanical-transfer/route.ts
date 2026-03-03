@@ -824,7 +824,7 @@ export async function POST(request: NextRequest) {
       // Detectar orientación de cámara
       if (poseAnalysis && poseAnalysis.frames.length > 0) {
         const framesWithPose = poseAnalysis.frames.filter(frame =>
-          frame.keypoints?.some(kp => kp.score >= 0.3)
+          frame.keypoints?.some(kp => (kp.score ?? 0) >= 0.3)
         ).length;
         const poseCoverage = poseAnalysis.frames.length > 0
           ? ((framesWithPose / poseAnalysis.frames.length) * 100).toFixed(1)

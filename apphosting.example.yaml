@@ -1,0 +1,52 @@
+# Plantilla de configuración para Firebase App Hosting
+# Copia a apphosting.yaml y configura las variables reales en Firebase Console
+# o reemplaza los placeholders. NUNCA commitees apphosting.yaml con credenciales reales.
+#
+# Configura las variables sensibles en: Firebase Console > App Hosting > Variables de entorno
+# O usa Google Secret Manager para FIREBASE_ADMIN_PRIVATE_KEY, MP_ACCESS_TOKEN_AR, etc.
+
+runConfig:
+  maxInstances: 1
+  timeoutSeconds: 120
+
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: "CONFIGURAR_EN_FIREBASE_CONSOLE"
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: "tu-proyecto.firebaseapp.com"
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: "tu-proyecto"
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: "tu-proyecto.firebasestorage.app"
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "CONFIGURAR"
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "CONFIGURAR"
+  - variable: NEXT_PUBLIC_APP_URL
+    value: "https://tu-dominio.com"
+  - variable: MP_WEBHOOK_URL
+    value: "https://tu-dominio.com/api/payments/webhook"
+  - variable: MP_ACCESS_TOKEN_AR
+    value: "CONFIGURAR_EN_FIREBASE_CONSOLE"
+  - variable: GEMINI_API_KEY
+    value: "CONFIGURAR_EN_FIREBASE_CONSOLE"
+  - variable: GOOGLE_API_KEY
+    value: "CONFIGURAR_EN_FIREBASE_CONSOLE"
+  - variable: GOOGLE_GENAI_API_KEY
+    value: "CONFIGURAR_EN_FIREBASE_CONSOLE"
+  - variable: FIREBASE_ADMIN_PROJECT_ID
+    value: "tu-proyecto"
+  - variable: FIREBASE_ADMIN_CLIENT_EMAIL
+    value: "firebase-adminsdk-xxxxx@tu-proyecto.iam.gserviceaccount.com"
+  - variable: FIREBASE_ADMIN_PRIVATE_KEY
+    value: "CONFIGURAR_USANDO_SECRET_MANAGER"
+
+backends:
+  - id: shot-analysis
+  - id: shot-analysis-1
+    region: us-central1
+
+flows:
+  - id: processUploadedVideo
+    entryPoint: processUploadedVideo
+    allowInsecure: true

@@ -12,6 +12,7 @@
  */
 
 import {ai} from '@/ai/genkit';
+import { extractKeyframesFromBuffer } from '@/lib/ffmpeg';
 import {z} from 'genkit';
 
 const AnalyzeBasketballShotInputSchema = z.object({
@@ -26,6 +27,20 @@ const AnalyzeBasketballShotInputSchema = z.object({
   ]).describe('Age category of the player.'),
   playerLevel: z.string().describe('Skill level of the player.'),
   shotType: z.string().describe('Type of shot (e.g., free throw, three-pointer).'),
+  skipDomainCheck: z.boolean().optional().describe('Skip domain verification when shots were already detected.'),
+  detectedShotsCount: z.number().optional().describe('Pre-detected shots count (external signal).'),
+  shotFrames: z
+    .object({
+      sourceAngle: z.string().optional(),
+      shots: z.array(z.object({
+        idx: z.number(),
+        start_ms: z.number(),
+        release_ms: z.number(),
+        frames: z.array(z.string()),
+      })),
+    })
+    .optional()
+    .describe('Frames around release for spin/backspin evaluation.'),
   availableKeyframes: z.array(z.object({
     index: z.number().describe('Index of the keyframe (0-15)'),
     timestamp: z.number().describe('Timestamp in seconds'),
@@ -44,6 +59,607 @@ const AnalyzeBasketballShotInputSchema = z.object({
   }).optional(),
 });
 export type AnalyzeBasketballShotInput = z.infer<typeof AnalyzeBasketballShotInputSchema>;
+
+type DomainCheckResult = {
+  isBasketball: boolean;
+  confidence: number;
+  hasHoop: boolean;
+  hasPlayer: boolean;
+  hasBall: boolean;
+  isShootingAction: boolean;
+  rationale: string;
+};
+
+type PreviewFrame = {
+  index: number;
+  timestamp: number;
+  dataUrl: string;
+};
+
+type GenkitPart =
+  | { text: string }
+  | { media: { url: string; contentType: string } };
+
+type ShotFramesInput = {
+  sourceAngle?: string;
+  shots: Array<{
+    idx: number;
+    start_ms: number;
+    release_ms: number;
+    frames: string[];
+  }>;
+};
+
+function buildShotFramesParts(
+  shotFrames?: ShotFramesInput
+): GenkitPart[] {
+  if (!shotFrames || !Array.isArray(shotFrames.shots) || shotFrames.shots.length === 0) return [];
+  const parts: GenkitPart[] = [];
+  const source = shotFrames.sourceAngle ? String(shotFrames.sourceAngle) : 'desconocido';
+  const maxShots = 2;
+  const maxFramesPerShot = 5;
+  const maxTotal = 12;
+  let totalFrames = 0;
+  parts.push({ text: `FRAMES POR TIRO (fuente: ${source}, pre-liberacion y post-liberacion)` });
+
+  for (const shot of shotFrames.shots.slice(0, maxShots)) {
+    const startSec = Number(shot.start_ms || 0) / 1000;
+    const releaseSec = Number(shot.release_ms || 0) / 1000;
+    parts.push({ text: `Shot ${shot.idx}: ${startSec.toFixed(2)}s → ${releaseSec.toFixed(2)}s` });
+    const frames = Array.isArray(shot.frames) ? shot.frames.slice(0, maxFramesPerShot) : [];
+    for (const frame of frames) {
+      if (totalFrames >= maxTotal) break;
+      if (typeof frame !== 'string' || !frame.startsWith('data:image')) continue;
+      parts.push({ media: { url: frame, contentType: 'image/jpeg' } });
+      totalFrames += 1;
+    }
+    if (totalFrames >= maxTotal) break;
+  }
+  return parts;
+}
+
+async function fetchVideoBuffer(videoUrl: string): Promise<Buffer | null> {
+  try {
+    const resp = await fetch(videoUrl);
+    if (!resp.ok) {
+      console.warn('[domain-check] Video fetch error:', resp.status);
+      return null;
+    }
+    const ab = await resp.arrayBuffer();
+    return Buffer.from(ab);
+  } catch (e) {
+    console.warn('[domain-check] Video fetch exception:', e);
+    return null;
+  }
+}
+
+async function extractPreviewFrames(videoUrl: string, targetFrames = 6): Promise<PreviewFrame[]> {
+  const videoBuffer = await fetchVideoBuffer(videoUrl);
+  if (!videoBuffer || videoBuffer.length === 0) return [];
+  const frames = await extractKeyframesFromBuffer(videoBuffer, targetFrames);
+  return frames.map((frame) => ({
+    index: frame.index,
+    timestamp: Number.isFinite(frame.timestamp) ? frame.timestamp : 0,
+    dataUrl: `data:image/jpeg;base64,${frame.imageBuffer.toString('base64')}`,
+  }));
+}
+
+async function detectBasketballDomain(videoUrl: string): Promise<DomainCheckResult> {
+  const hasKey = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENAI_API_KEY);
+  if (!hasKey) {
+    return {
+      isBasketball: true,
+      confidence: 0.1,
+      hasHoop: false,
+      hasPlayer: false,
+      hasBall: false,
+      isShootingAction: false,
+      rationale: 'No se pudo verificar contenido (sin API key).',
+    };
+  }
+
+  const frames = await extractPreviewFrames(videoUrl, 6);
+  if (frames.length === 0) {
+    return {
+      isBasketball: true,
+      confidence: 0.1,
+      hasHoop: false,
+      hasPlayer: false,
+      hasBall: false,
+      isShootingAction: false,
+      rationale: 'No se pudieron extraer frames para verificacion.',
+    };
+  }
+
+  const parts: GenkitPart[] = [
+    {
+      text:
+        'Eres un verificador de contenido MUY estricto. Solo responde isBasketball=true si se ve claramente ' +
+        'un jugador lanzando una pelota de basquet hacia un aro o tablero. Si hay dudas, responde false. ' +
+        'Responde SOLO JSON con los campos: ' +
+        '{"isBasketball": boolean, "confidence": number, "hasHoop": boolean, "hasPlayer": boolean, "hasBall": boolean, "isShootingAction": boolean, "rationale": string}.',
+    },
+  ];
+
+  frames.forEach((frame) => {
+    parts.push({ text: `Frame index=${frame.index} ts=${frame.timestamp.toFixed(2)}s` });
+    parts.push({ media: { url: frame.dataUrl, contentType: 'image/jpeg' } });
+  });
+
+  parts.push({
+    text:
+      'Devuelve JSON estricto con TODOS los campos requeridos. Si no puedes confirmar, usa false.',
+  });
+
+  const result = await ai.generate(parts);
+  const text = (result as any)?.outputText ?? (result as any)?.text ?? '';
+  let parsed: DomainCheckResult | null = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) parsed = JSON.parse(match[0]);
+  }
+  if (!parsed) {
+    return {
+      isBasketball: true,
+      confidence: 0.1,
+      hasHoop: false,
+      hasPlayer: false,
+      hasBall: false,
+      isShootingAction: false,
+      rationale: 'Respuesta invalida del verificador de contenido.',
+    };
+  }
+  return parsed;
+}
+
+function buildNonEvaluableAnalysis(reason: string): AnalyzeBasketballShotOutput {
+  const baseReason = reason || 'No evaluable: contenido no corresponde a basquet.';
+  const userFacingMessage =
+    'NO DETECTAMOS UN VIDEO /O VIDEOS DE LANZAMIENTOS DE BASQUET.';
+  const makeItem = (id: string, name: string, description: string) => ({
+    id,
+    name,
+    description: description || 'No provisto por IA',
+    status: 'no_evaluable' as const,
+    rating: 0,
+    timestamp: 'N/A',
+    evidencia: 'No provisto por IA',
+    na: true,
+    razon: baseReason,
+    comment: baseReason,
+  });
+
+  const detailedChecklist = [
+    {
+      category: 'Preparacion',
+      items: [
+        makeItem('alineacion_pies', 'Alineacion de los pies', 'Posicion respecto al aro'),
+        makeItem('alineacion_cuerpo', 'Alineacion del cuerpo', 'Hombros, caderas y pies alineados'),
+        makeItem('muneca_cargada', 'Muneca cargada', 'Flexion hacia atras para backspin'),
+        makeItem('flexion_rodillas', 'Flexion de rodillas', 'Profundidad controlada'),
+        makeItem('hombros_relajados', 'Hombros relajados', 'Sin tension excesiva'),
+        makeItem('enfoque_visual', 'Enfoque visual', 'Mirada fija en el aro'),
+      ],
+    },
+    {
+      category: 'Ascenso',
+      items: [
+        makeItem('mano_no_dominante_ascenso', 'Mano no dominante (ascenso)', 'Acompana sin empujar'),
+        makeItem('codos_cerca_cuerpo', 'Codos cerca del cuerpo', 'Alineados y cercanos al eje'),
+        makeItem('angulo_codo_fijo_ascenso', 'Angulo de codo estable', 'Mantiene angulo fijo hasta el set point'),
+        makeItem('subida_recta_balon', 'Subida recta del balon', 'Ascenso vertical y cercano'),
+        makeItem('trayectoria_hasta_set_point', 'Trayectoria hasta set point', 'Recto y cercano al eje'),
+        makeItem('set_point', 'Set point', 'Altura adecuada y estable'),
+        makeItem('tiempo_lanzamiento', 'Tiempo de lanzamiento', 'Rapidez y continuidad del gesto'),
+      ],
+    },
+    {
+      category: 'Fluidez',
+      items: [
+        makeItem('tiro_un_solo_tiempo', 'Tiro en un solo tiempo', 'Sin detencion en el set point'),
+        makeItem('sincronia_piernas', 'Transferencia energetica', 'Sincronia con piernas'),
+      ],
+    },
+    {
+      category: 'Liberacion',
+      items: [
+        makeItem('mano_no_dominante_liberacion', 'Mano no dominante (liberacion)', 'Se suelta antes'),
+        makeItem('extension_completa_brazo', 'Extension completa del brazo', 'Follow-through completo'),
+        makeItem('giro_pelota', 'Giro de la pelota', 'Backspin uniforme'),
+        makeItem('angulo_salida', 'Angulo de salida', 'Recomendado 45-52 grados'),
+      ],
+    },
+    {
+      category: 'Seguimiento/Post-liberacion',
+      items: [
+        makeItem('equilibrio_post_liberacion', 'Equilibrio general', 'Estabilidad y aterrizaje controlado'),
+        makeItem('duracion_follow_through', 'Duracion del follow-through', 'Mantener extension'),
+        makeItem('consistencia_general', 'Consistencia general', 'Repetibilidad del gesto'),
+      ],
+    },
+  ];
+
+  const allItems = detailedChecklist.flatMap((cat) => cat.items);
+  const listaNoEvaluables = allItems.map((item) => `${item.id}: ${baseReason}`);
+
+  return {
+    verificacion_inicial: {
+      duracion_video: 'N/A',
+      mano_tiro: 'N/A',
+      salta: false,
+      canasta_visible: false,
+      angulo_camara: 'N/A',
+      elementos_entorno: [],
+      tiros_detectados: 0,
+      tiros_por_segundo: 0,
+    },
+    analysisSummary: userFacingMessage,
+    strengths: [],
+    weaknesses: [],
+    recommendations: [],
+    selectedKeyframes: [],
+    keyframeAnalysis: 'No hay keyframes validos para analisis tecnico.',
+    detailedChecklist,
+    resumen_evaluacion: {
+      parametros_evaluados: 0,
+      parametros_no_evaluables: allItems.length,
+      lista_no_evaluables: listaNoEvaluables,
+      score_global: 0,
+      nota: `Score no calculable: ${allItems.length} parametros no evaluables.`,
+      confianza_analisis: 'baja',
+    },
+    caracteristicas_unicas: ['No provisto por IA', 'No provisto por IA', 'No provisto por IA'],
+    advertencia: userFacingMessage,
+  };
+}
+
+function buildNoShotsAnalysis(): AnalyzeBasketballShotOutput {
+  const baseReason = 'No se detectaron tiros completos en el video.';
+  const userFacingMessage = 'NO DETECTAMOS TIROS COMPLETOS EN EL VIDEO.';
+  const makeItem = (id: string, name: string, description: string) => ({
+    id,
+    name,
+    description: description || 'No provisto por IA',
+    status: 'no_evaluable' as const,
+    rating: 0,
+    timestamp: 'N/A',
+    evidencia: 'No provisto por IA',
+    na: true,
+    razon: baseReason,
+    comment: baseReason,
+  });
+
+  const detailedChecklist = [
+    {
+      category: 'Preparacion',
+      items: [
+        makeItem('alineacion_pies', 'Alineacion de los pies', 'Posicion respecto al aro'),
+        makeItem('alineacion_cuerpo', 'Alineacion del cuerpo', 'Hombros, caderas y pies alineados'),
+        makeItem('muneca_cargada', 'Muneca cargada', 'Flexion hacia atras para backspin'),
+        makeItem('flexion_rodillas', 'Flexion de rodillas', 'Profundidad controlada'),
+        makeItem('hombros_relajados', 'Hombros relajados', 'Sin tension excesiva'),
+        makeItem('enfoque_visual', 'Enfoque visual', 'Mirada fija en el aro'),
+      ],
+    },
+    {
+      category: 'Ascenso',
+      items: [
+        makeItem('mano_no_dominante_ascenso', 'Mano no dominante (ascenso)', 'Acompana sin empujar'),
+        makeItem('codos_cerca_cuerpo', 'Codos cerca del cuerpo', 'Alineados y cercanos al eje'),
+        makeItem('angulo_codo_fijo_ascenso', 'Angulo de codo estable', 'Mantiene angulo fijo hasta el set point'),
+        makeItem('subida_recta_balon', 'Subida recta del balon', 'Ascenso vertical y cercano'),
+        makeItem('trayectoria_hasta_set_point', 'Trayectoria hasta set point', 'Recto y cercano al eje'),
+        makeItem('set_point', 'Set point', 'Altura adecuada y estable'),
+        makeItem('tiempo_lanzamiento', 'Tiempo de lanzamiento', 'Rapidez y continuidad del gesto'),
+      ],
+    },
+    {
+      category: 'Fluidez',
+      items: [
+        makeItem('tiro_un_solo_tiempo', 'Tiro en un solo tiempo', 'Transicion fluida sin pausas'),
+        makeItem('sincronia_piernas', 'Transferencia energetica', 'Coordinacion piernas y brazos'),
+      ],
+    },
+    {
+      category: 'Liberacion',
+      items: [
+        makeItem('mano_no_dominante_liberacion', 'Mano no dominante (liberacion)', 'Se separa sin empujar'),
+        makeItem('extension_completa_brazo', 'Extension completa del brazo', 'Follow-through completo'),
+        makeItem('giro_pelota', 'Giro de la pelota', 'Backspin visible'),
+        makeItem('angulo_salida', 'Angulo de salida', 'Trayectoria adecuada'),
+      ],
+    },
+    {
+      category: 'Seguimiento',
+      items: [
+        makeItem('equilibrio_post_liberacion', 'Equilibrio post-liberacion', 'Balance estable tras el tiro'),
+        makeItem('duracion_follow_through', 'Duracion del follow-through', 'Mantiene la posicion'),
+        makeItem('consistencia_general', 'Consistencia general', 'Repite mecanica estable'),
+      ],
+    },
+  ];
+
+  const resumen = summarizeChecklist(detailedChecklist);
+
+  return {
+    verificacion_inicial: {
+      duracion_video: 'No verificable',
+      mano_tiro: 'No verificable',
+      salta: false,
+      canasta_visible: false,
+      angulo_camara: 'No verificable',
+      elementos_entorno: [],
+      tiros_detectados: 0,
+    },
+    analysisSummary: userFacingMessage,
+    strengths: [],
+    weaknesses: [],
+    recommendations: [],
+    selectedKeyframes: [],
+    keyframeAnalysis: 'No se detectaron tiros completos; se omite análisis técnico.',
+    detailedChecklist,
+    resumen_evaluacion: {
+      parametros_evaluados: resumen.parametros_evaluados,
+      parametros_no_evaluables: resumen.parametros_no_evaluables,
+      lista_no_evaluables: resumen.lista_no_evaluables,
+      score_global: 0,
+      nota: baseReason,
+      confianza_analisis: 'baja',
+    },
+    advertencia: baseReason,
+    caracteristicas_unicas: [],
+  };
+}
+
+const checklistStatuses = ['Correcto', 'Mejorable', 'Incorrecto', 'no_evaluable'] as const;
+type ChecklistStatus = (typeof checklistStatuses)[number];
+
+function normalizeChecklistItem(input: any): {
+  id: string;
+  name: string;
+  description: string;
+  status: ChecklistStatus;
+  rating: number;
+  timestamp?: string;
+  evidencia?: string;
+  na: boolean;
+  razon?: string;
+  comment: string;
+  evidenceFrames?: Array<{ frameId: string; label: string; angle?: string; note?: string }>;
+} {
+  const rawStatus = String(input?.status || '');
+  const status: ChecklistStatus = (checklistStatuses as readonly string[]).includes(rawStatus)
+    ? (rawStatus as ChecklistStatus)
+    : (input?.na ? 'no_evaluable' : 'Mejorable');
+  const na = Boolean(input?.na) || status === 'no_evaluable';
+  const rawRating = typeof input?.rating === 'number' && Number.isFinite(input.rating)
+    ? Math.round(input.rating)
+    : undefined;
+  let rating = na ? 0 : (rawRating ?? (status === 'Correcto' ? 4 : status === 'Incorrecto' ? 2 : 3));
+  rating = Math.max(0, Math.min(5, rating));
+  const item: {
+    id: string;
+    name: string;
+    description: string;
+    status: ChecklistStatus;
+    rating: number;
+    na: boolean;
+    comment: string;
+    timestamp?: string;
+    evidencia?: string;
+    razon?: string;
+    evidenceFrames?: Array<{ frameId: string; label: string; angle?: string; note?: string }>;
+  } = {
+    id: String(input?.id || ''),
+    name: String(input?.name || ''),
+    description: String(input?.description || input?.name || ''),
+    status,
+    rating,
+    na,
+    comment: String(input?.comment || input?.evidencia || input?.razon || ''),
+  };
+  if (typeof input?.timestamp === 'string') item.timestamp = input.timestamp;
+  if (typeof input?.evidencia === 'string') item.evidencia = input.evidencia;
+  if (typeof input?.razon === 'string') item.razon = input.razon;
+  if (Array.isArray(input?.evidenceFrames)) item.evidenceFrames = input.evidenceFrames;
+  return item;
+}
+
+function normalizeDetailedChecklist(input: any): Array<{ category: string; items: ReturnType<typeof normalizeChecklistItem>[] }> {
+  if (!Array.isArray(input)) return [];
+  return input.map((cat) => ({
+    category: String(cat?.category || 'SIN CATEGORIA'),
+    items: Array.isArray(cat?.items) ? cat.items.map(normalizeChecklistItem) : [],
+  }));
+}
+
+function summarizeChecklist(detailedChecklist: Array<{ category: string; items: ReturnType<typeof normalizeChecklistItem>[] }>) {
+  const items = detailedChecklist.flatMap((cat) => cat.items);
+  const evaluables = items.filter((it) => !it.na && it.status !== 'no_evaluable');
+  const noEvaluables = items.filter((it) => it.na || it.status === 'no_evaluable');
+  const lista_no_evaluables = noEvaluables.map(
+    (it) => `${it.id}: ${it.razon || it.comment || 'No evaluable'}`
+  );
+  return {
+    parametros_evaluados: evaluables.length,
+    parametros_no_evaluables: noEvaluables.length,
+    lista_no_evaluables,
+  };
+}
+
+function normalizeResumenEvaluacion(output: AnalyzeBasketballShotOutput): AnalyzeBasketballShotOutput {
+  const resumen = summarizeChecklist(output.detailedChecklist || []);
+  const total = resumen.parametros_evaluados + resumen.parametros_no_evaluables;
+  const nota = `Score calculado con ${resumen.parametros_evaluados} de ${total} parámetros evaluables (${resumen.parametros_no_evaluables} no evaluables por limitaciones del video)`;
+  return {
+    ...output,
+    resumen_evaluacion: {
+      ...output.resumen_evaluacion,
+      parametros_evaluados: resumen.parametros_evaluados,
+      parametros_no_evaluables: resumen.parametros_no_evaluables,
+      lista_no_evaluables: resumen.lista_no_evaluables,
+      nota,
+    },
+  };
+}
+
+function enforceConsistencyEvaluable(
+  output: AnalyzeBasketballShotOutput,
+  detectedShotsCount?: number
+): AnalyzeBasketballShotOutput {
+  if (!detectedShotsCount || detectedShotsCount < 2) return output;
+  const categories = Array.isArray(output.detailedChecklist) ? output.detailedChecklist : [];
+  let updated = false;
+  for (const category of categories) {
+    for (const item of category.items || []) {
+      if (item.id !== 'consistencia_general') continue;
+      const text = `${item.comment || ''} ${item.evidencia || ''}`.toLowerCase();
+      const contradicts = text.includes('solo un tiro') || text.includes('sólo un tiro') || text.includes('n/a');
+      if (!item.na && item.status !== 'no_evaluable' && !contradicts) return output;
+      item.status = 'Mejorable';
+      item.rating = Math.max(1, Math.min(5, item.rating || 3));
+      item.na = false;
+      item.timestamp = 'N/A';
+      item.evidencia = 'Comparación general entre tiros detectados.';
+      item.comment = 'Evaluación basada en múltiples tiros detectados; precisión limitada por ángulo.';
+      if (item.razon) item.razon = '';
+      updated = true;
+      break;
+    }
+    if (updated) break;
+  }
+  if (!updated) return output;
+  return normalizeResumenEvaluacion({
+    ...output,
+    detailedChecklist: categories,
+  });
+}
+
+function enforceEquilibrioEvaluable(
+  output: AnalyzeBasketballShotOutput,
+  detectedShotsCount?: number
+): AnalyzeBasketballShotOutput {
+  const inferredShots =
+    typeof detectedShotsCount === 'number'
+      ? detectedShotsCount
+      : typeof output?.verificacion_inicial?.tiros_detectados === 'number'
+        ? output.verificacion_inicial.tiros_detectados
+        : 0;
+  if (!inferredShots || inferredShots < 1) return output;
+  const categories = Array.isArray(output.detailedChecklist) ? output.detailedChecklist : [];
+  let updated = false;
+  for (const category of categories) {
+    for (const item of category.items || []) {
+      if (item.id !== 'equilibrio_post_liberacion') continue;
+      if (!item.na && item.status !== 'no_evaluable') return output;
+      item.status = 'Mejorable';
+      item.rating = Math.max(1, Math.min(5, item.rating || 3));
+      item.na = false;
+      item.timestamp = item.timestamp || 'N/A';
+      item.evidencia = item.evidencia || 'Aterrizaje visible en al menos un ángulo.';
+      item.comment =
+        item.comment ||
+        'Evaluación basada en la estabilidad post-liberación; precisión limitada por ángulo.';
+      if (item.razon) item.razon = '';
+      updated = true;
+      break;
+    }
+    if (updated) break;
+  }
+  if (!updated) return output;
+  return normalizeResumenEvaluacion({
+    ...output,
+    detailedChecklist: categories,
+  });
+}
+
+function coerceAnalysisOutput(raw: any): AnalyzeBasketballShotOutput | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const detailedChecklist = normalizeDetailedChecklist(raw.detailedChecklist);
+  const resumen = summarizeChecklist(detailedChecklist);
+  const selectedKeyframes = Array.isArray(raw.selectedKeyframes)
+    ? raw.selectedKeyframes.map((v: any) => Number(v)).filter((v: any) => Number.isFinite(v))
+    : [];
+
+  const rawSalta = raw?.verificacion_inicial?.salta;
+  const rawCanasta = raw?.verificacion_inicial?.canasta_visible;
+  const parseBool = (value: any): boolean | null => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const normalized = value.toLowerCase().trim();
+      if (normalized === 'si' || normalized === 'sí') return true;
+      if (normalized === 'no') return false;
+      return null;
+    }
+    return null;
+  };
+  const verificacion_inicial = {
+    duracion_video: String(raw?.verificacion_inicial?.duracion_video || 'N/A'),
+    mano_tiro: String(raw?.verificacion_inicial?.mano_tiro || 'N/A'),
+    salta: parseBool(rawSalta) ?? false,
+    canasta_visible: parseBool(rawCanasta) ?? false,
+    angulo_camara: String(raw?.verificacion_inicial?.angulo_camara || 'N/A'),
+    elementos_entorno: Array.isArray(raw?.verificacion_inicial?.elementos_entorno)
+      ? raw.verificacion_inicial.elementos_entorno.map((v: any) => String(v))
+      : [],
+    ...(typeof raw?.verificacion_inicial?.tiros_detectados === 'number'
+      ? { tiros_detectados: raw.verificacion_inicial.tiros_detectados }
+      : {}),
+    ...(typeof raw?.verificacion_inicial?.tiros_por_segundo === 'number'
+      ? { tiros_por_segundo: raw.verificacion_inicial.tiros_por_segundo }
+      : {}),
+    ...(raw?.verificacion_inicial?.deteccion_ia
+      ? { deteccion_ia: raw.verificacion_inicial.deteccion_ia }
+      : {}),
+  };
+
+  const output = {
+    verificacion_inicial,
+    analysisSummary: String(raw?.analysisSummary || 'Análisis técnico del video.'),
+    strengths: Array.isArray(raw?.strengths) ? raw.strengths.map((v: any) => String(v)) : [],
+    weaknesses: Array.isArray(raw?.weaknesses) ? raw.weaknesses.map((v: any) => String(v)) : [],
+    recommendations: Array.isArray(raw?.recommendations)
+      ? raw.recommendations.map((v: any) => String(v))
+      : [],
+    selectedKeyframes,
+    keyframeAnalysis: String(raw?.keyframeAnalysis || ''),
+    detailedChecklist,
+    resumen_evaluacion: {
+      parametros_evaluados: typeof raw?.resumen_evaluacion?.parametros_evaluados === 'number'
+        ? raw.resumen_evaluacion.parametros_evaluados
+        : resumen.parametros_evaluados,
+      parametros_no_evaluables: typeof raw?.resumen_evaluacion?.parametros_no_evaluables === 'number'
+        ? raw.resumen_evaluacion.parametros_no_evaluables
+        : resumen.parametros_no_evaluables,
+      lista_no_evaluables: Array.isArray(raw?.resumen_evaluacion?.lista_no_evaluables)
+        ? raw.resumen_evaluacion.lista_no_evaluables.map((v: any) => String(v))
+        : resumen.lista_no_evaluables,
+      score_global: typeof raw?.resumen_evaluacion?.score_global === 'number'
+        ? raw.resumen_evaluacion.score_global
+        : 0,
+      nota: String(raw?.resumen_evaluacion?.nota || 'Resumen generado con campos normalizados.'),
+      confianza_analisis: (raw?.resumen_evaluacion?.confianza_analisis === 'alta' ||
+      raw?.resumen_evaluacion?.confianza_analisis === 'media' ||
+      raw?.resumen_evaluacion?.confianza_analisis === 'baja')
+        ? raw.resumen_evaluacion.confianza_analisis
+        : 'media',
+    },
+    caracteristicas_unicas: Array.isArray(raw?.caracteristicas_unicas)
+      ? raw.caracteristicas_unicas.map((v: any) => String(v))
+      : [],
+  };
+  if (typeof raw?.advertencia === 'string') {
+    (output as any).advertencia = raw.advertencia;
+  }
+
+  try {
+    return AnalyzeBasketballShotOutputSchema.parse(normalizeResumenEvaluacion(output));
+  } catch {
+    return null;
+  }
+}
 
 // Prompt para detección de lanzamientos
 const detectShotsPrompt = ai.definePrompt({
@@ -140,9 +756,11 @@ SALIDA (JSON ESTRICTO)
 }
 
 REGLAS DE RESPUESTA
+- Debes analizar TODO el video, no cortes antes de que termine.
 - Devuelve EXCLUSIVAMENTE el JSON anterior; sin texto fuera del objeto.
 - Tiempos en milisegundos desde el comienzo del clip.
 - Asegura: shots_count === shots.length, campos obligatorios no nulos, sin NaN, sin solapes.
+- En notes incluye la señal visual usada (balón visible, extensión de codo, follow-through, etc.).
 
 Video: {{videoUrl}}`
 });
@@ -202,6 +820,7 @@ const AnalyzeBasketballShotOutputSchema = z.object({
     deteccion_ia: z.object({
       angulo_detectado: z.string().describe('Camera angle detected by AI'),
       estrategia_usada: z.string().describe('Detection strategy used'),
+      confianza: z.number().optional().describe('Confidence of AI detection'),
       tiros_individuales: z.array(z.object({
         numero: z.number(),
         timestamp: z.string(),
@@ -322,6 +941,8 @@ INSTRUCCIONES CRÍTICAS:
 3. NO cambies los timestamps detectados
 4. Analiza SOLO los tiros detectados
 5. Si detectaste ${shotDetection.shots_count} tiros, analiza ${shotDetection.shots_count} tiros
+6. analysisSummary y deteccion_ia deben reflejar exactamente ${shotDetection.shots_count}
+7. NO asumas duración fija; usa la duración real si es visible
 
 VERIFICACIÓN INICIAL OBLIGATORIA:
 Antes de analizar, DEMUESTRA que ves el video real respondiendo:
@@ -377,7 +998,7 @@ FORMATO DE RESPUESTA:
     "angulo_camara": "frontal/lateral/trasero",
     "elementos_entorno": ["aro", "tablero", "cancha"],
     "tiros_detectados": ${shotDetection.shots_count},
-    "tiros_por_segundo": ${(shotDetection.shots_count / 15).toFixed(2)},
+    "tiros_por_segundo": "CALCULAR_SI_HAY_DURACION",
     "deteccion_ia": {
       "angulo_detectado": "frontal/lateral/trasero",
       "estrategia_usada": "detección previa",
@@ -427,7 +1048,7 @@ FORMATO DE RESPUESTA:
   },
   "caracteristicas_unicas": [
     "Video de baloncesto con ${shotDetection.shots_count} tiros",
-    "Duración de 15 segundos",
+    "Duración real del video (si es visible)",
     "Análisis técnico detallado"
   ]
 }
@@ -486,7 +1107,10 @@ const analyzeShotPromptTest = ai.definePrompt({
   name: 'analyzeShotPromptTest',
   input: {schema: AnalyzeBasketballShotInputSchema},
   output: {schema: AnalyzeBasketballShotOutputSchema},
-  prompt: `Analiza este video de baloncesto y responde en JSON:
+  prompt: `Analiza este video de baloncesto COMPLETO y responde en JSON.
+REGLAS:
+- NO inventes tiros ni asumas duración fija.
+- "tiros_detectados" y "analysisSummary" deben coincidir.
 
 {
   "verificacion_inicial": {
@@ -495,14 +1119,15 @@ const analyzeShotPromptTest = ai.definePrompt({
     "salta": true,
     "canasta_visible": true,
     "angulo_camara": "lateral",
-    "elementos_entorno": ["aro", "tablero"]
+    "elementos_entorno": ["aro", "tablero"],
+    "tiros_detectados": 2
   },
-  "analysisSummary": "Tiro de baloncesto observado",
+  "analysisSummary": "Video de 5.2s con 2 tiros detectados",
   "strengths": ["Buena postura", "Extensión completa"],
   "weaknesses": ["Timing mejorable"],
   "recommendations": ["Trabajar en sincronización"],
-  "selectedKeyframes": [1, 3, 5, 7, 9, 11],
-  "keyframeAnalysis": "Frames seleccionados muestran el movimiento completo",
+  "selectedKeyframes": [],
+  "keyframeAnalysis": "No hay keyframes disponibles para este análisis",
   "detailedChecklist": [{
     "category": "Preparación",
     "items": [{
@@ -534,7 +1159,10 @@ const analyzeShotPromptTestWithEvidence = ai.definePrompt({
   name: 'analyzeShotPromptTestWithEvidence',
   input: {schema: AnalyzeBasketballShotInputSchema},
   output: {schema: AnalyzeBasketballShotOutputSchema},
-  prompt: `Analiza este video de baloncesto y responde en JSON. Para cada parámetro evaluado, incluye evidencia visual específica:
+  prompt: `Analiza este video de baloncesto COMPLETO y responde en JSON. Para cada parámetro evaluado, incluye evidencia visual específica.
+REGLAS:
+- NO inventes tiros ni asumas duración fija.
+- "tiros_detectados" y "analysisSummary" deben coincidir.
 
 {
   "verificacion_inicial": {
@@ -543,14 +1171,15 @@ const analyzeShotPromptTestWithEvidence = ai.definePrompt({
     "salta": true,
     "canasta_visible": true,
     "angulo_camara": "lateral",
-    "elementos_entorno": ["aro", "tablero"]
+    "elementos_entorno": ["aro", "tablero"],
+    "tiros_detectados": 2
   },
-  "analysisSummary": "Tiro de baloncesto observado",
+  "analysisSummary": "Video de 5.2s con 2 tiros detectados",
   "strengths": ["Buena postura", "Extensión completa"],
   "weaknesses": ["Timing mejorable"],
   "recommendations": ["Trabajar en sincronización"],
-  "selectedKeyframes": [1, 3, 5, 7, 9, 11],
-  "keyframeAnalysis": "Frames seleccionados muestran el movimiento completo",
+  "selectedKeyframes": [],
+  "keyframeAnalysis": "No hay keyframes disponibles para este análisis",
   "detailedChecklist": [{
     "category": "Preparación",
     "items": [{
@@ -561,20 +1190,7 @@ const analyzeShotPromptTestWithEvidence = ai.definePrompt({
       "rating": 4,
       "na": false,
       "comment": "Pies bien posicionados",
-      "evidenceFrames": [
-        {
-          "frameId": "frame_2",
-          "label": "preparacion",
-          "angle": "frontal",
-          "note": "Pies alineados correctamente con el aro"
-        },
-        {
-          "frameId": "frame_4",
-          "label": "preparacion", 
-          "angle": "lateral",
-          "note": "Posición estable antes del tiro"
-        }
-      ]
+      "evidenceFrames": []
     }]
   }],
   "resumen_evaluacion": {
@@ -585,7 +1201,7 @@ const analyzeShotPromptTestWithEvidence = ai.definePrompt({
     "nota": "CALCULAR conteos reales basados en detailedChecklist",
     "confianza_analisis": "media"
   },
-  "caracteristicas_unicas": ["Video de prueba", "Análisis con evidencia visual", "Fotogramas específicos"]
+  "caracteristicas_unicas": ["Video de prueba", "Análisis con evidencia visual", "Sin keyframes"]
 }
 
 📸 EVIDENCIA VISUAL:
@@ -594,6 +1210,8 @@ Para cada parámetro evaluado, identifica 1-3 fotogramas específicos que respal
 - label: Momento del tiro (preparacion, ascenso, set_point, liberacion, follow_through)
 - angle: Ángulo de cámara (frontal, lateral, diagonal)
 - note: Descripción específica de lo que se ve en ese fotograma
+
+Si NO hay keyframes disponibles, devuelve evidenceFrames: [] y NO inventes frameId.
 
 Video: {{videoUrl}}`,
 });
@@ -613,6 +1231,8 @@ INSTRUCCIONES CRÍTICAS:
 4. Cada lanzamiento individual = 1 tiro
 5. Si el jugador hace varios tiros seguidos, cuenta CADA UNO
 6. IMPORTANTE: El video puede durar más de 30 segundos - sigue viendo hasta el final
+7. NO inventes tiros ni asumas duración fija
+8. "tiros_detectados" y "analysisSummary" deben coincidir
 
 EJEMPLO DE DETECCIÓN:
 - 0-5s: Tiro 1
@@ -636,8 +1256,8 @@ Formato JSON:
   "strengths": ["Detecté X tiros"],
   "weaknesses": ["N/A"],
   "recommendations": ["N/A"],
-  "selectedKeyframes": [1, 2, 3],
-  "keyframeAnalysis": "N/A",
+  "selectedKeyframes": [],
+  "keyframeAnalysis": "No hay keyframes disponibles para este análisis",
   "detailedChecklist": [{
     "category": "Detección",
     "items": [{
@@ -668,65 +1288,289 @@ const analyzeShotPromptTestPage = ai.definePrompt({
   name: 'analyzeShotPromptTestPage',
   input: {schema: AnalyzeBasketballShotInputSchema},
   output: {schema: AnalyzeBasketballShotOutputSchema},
-  prompt: `Describe exactamente lo que ves en este video de baloncesto. Si no ves algo, di "no visible". No inventes nada.
+  prompt: `Analiza este video de baloncesto COMPLETO y responde en JSON.
+REGLAS:
+- NO inventes tiros ni asumas duración fija.
+- "tiros_detectados" y "analysisSummary" deben coincidir.
+- Si no ves algo, di "no visible".
+
+Formato JSON:
+{
+  "verificacion_inicial": {
+    "duracion_video": "X.Xs",
+    "mano_tiro": "derecha/izquierda/no visible",
+    "salta": true/false,
+    "canasta_visible": true/false,
+    "angulo_camara": "frontal/lateral/diagonal/no visible",
+    "elementos_entorno": ["aro", "tablero"],
+    "tiros_detectados": X
+  },
+  "analysisSummary": "Video de X.Xs con X tiros detectados",
+  "strengths": ["N/A"],
+  "weaknesses": ["N/A"],
+  "recommendations": ["N/A"],
+  "selectedKeyframes": [],
+  "keyframeAnalysis": "No hay keyframes disponibles para este análisis",
+  "detailedChecklist": [{
+    "category": "Detección",
+    "items": [{
+      "id": "tiros_detectados",
+      "name": "Tiros detectados",
+      "description": "Número de tiros en el video",
+      "status": "Correcto",
+      "rating": 5,
+      "na": false,
+      "comment": "Detecté X tiros en el video"
+    }]
+  }],
+  "resumen_evaluacion": {
+    "parametros_evaluados": "CALCULAR_DINAMICAMENTE",
+    "parametros_no_evaluables": "CALCULAR_DINAMICAMENTE",
+    "lista_no_evaluables": "CALCULAR_DINAMICAMENTE",
+    "score_global": 5.0,
+    "nota": "CALCULAR conteos reales basados en detailedChecklist",
+    "confianza_analisis": "alta"
+  },
+  "caracteristicas_unicas": ["Video de baloncesto", "X tiros detectados", "Duración X segundos"]
+}
 
 Video: {{videoUrl}}`
 });
 
 // Función helper para construir el prompt de TIRO LIBRE
+// Base: mismo "motor" que tres puntos (detección, keyframes, evidencia, reglas).
+// Capa: especificación tiro libre (5 fases, 19 ítems, rúbricas, set point por edad, infracciones).
 function buildLibrePrompt(input: AnalyzeBasketballShotInput): string {
   const config = input.promptConfig || {};
-  
-  return `Eres un sistema experto de análisis de TIRO LIBRE en baloncesto.
+  const sectionPrompts = (config as any).sectionPrompts || {};
 
-INFORMACIÓN DEL JUGADOR
-${input.ageCategory ? `- Categoría de edad: ${input.ageCategory}` : '- Presumir edad basándose en tamaño corporal, proporciones, altura relativa al aro y contexto'}
+  let prompt = `Eres un sistema experto de análisis de TIRO LIBRE en baloncesto.
 
-SISTEMA DE PESOS PARA TIRO LIBRE:
+DETECCIÓN DE TIROS (OBLIGATORIO):
+1. Observa TODA la evidencia visual disponible (keyframes/shotFrames).
+2. Cuenta CADA tiro completo (preparación → liberación → follow-through).
+3. Si hay varios tiros, NO te quedes con el primero: enuméralos.
+4. Si solo ves 1 tiro, indícalo explícitamente.
+5. NO inventes tiros ni asumas duración fija del video.
+Dato externo: tiros_detectados_previo = ${input.detectedShotsCount ?? 'N/A'}.
+6. analysisSummary y tiros_detectados deben coincidir.
+7. Si no hay keyframes, usa selectedKeyframes: [] y evidenceFrames: [].
 
-🎯 PREPARACIÓN: 28%
-├─ Rutina pre-tiro (8.4%): Secuencia repetible antes del tiro (botes, respiraciones, tiempo)
-├─ Alineación pies/cuerpo (7.0%): Posición del cuerpo para tiro recto
-├─ Muñeca cargada (5.6%): Flexión dorsal AL TOMAR el balón (ANTES del movimiento)
-├─ Flexión rodillas (4.2%): Flexión 90-110° para generar potencia
-└─ Posición inicial balón (2.8%): Ubicación correcta al inicio
+`;
 
-🎯 ASCENSO: 23%
-├─ Set point altura según edad (9.2%): CRÍTICO - Altura varía por edad
-│  • 6-8 años: Pecho/Hombros | • 9-11 años: Hombros/Mentón
-│  • 12-14 años: Frente/Ojos | • 15-17 años: Sobre cabeza | • 18+: Extensión completa
-│  TAMBIÉN: Trayectoria VERTICAL (no va atrás)
-├─ Codos cerca del cuerpo (6.9%): No abiertos durante ascenso
-├─ Trayectoria vertical (4.6%): Línea recta, sin desviaciones
-└─ Mano guía (2.3%): Solo guía/estabiliza, no empuja
+  if (input.availableKeyframes && input.availableKeyframes.length > 0) {
+    prompt += `KEYFRAMES DISPONIBLES PARA ANÁLISIS:
+${input.availableKeyframes.map(kf => `- Frame ${kf.index}: ${kf.timestamp.toFixed(1)}s - ${kf.description}`).join('\n')}
 
-🎯 FLUIDEZ: 12%
-├─ Tiro en un tiempo (7.2%): Continuo sin pausas. NOTA: Menos crítico que tres puntos
-└─ Sincronía con piernas (4.8%): Balón sube coordinado con extensión de piernas
+INSTRUCCIONES PARA KEYFRAMES:
+1. Usa SOLO los keyframes listados arriba (no inventes índices).
+2. Selecciona HASTA 6 keyframes más importantes técnicamente (preparación, set point, liberación, follow-through).
+3. Si NO hay keyframes suficientes, devuelve los disponibles.
+4. Si NO hay keyframes, usa "selectedKeyframes": [] y deja evidenceFrames como [] sin inventar frameId.
 
-🎯 LIBERACIÓN: 22%
-├─ Extensión completa (8.8%): Brazo Y cuerpo elongados en liberación
-├─ Ángulo de salida (7.7%): 45-52° óptimo
-├─ Flexión muñeca final (3.3%): "Gooseneck" - muñeca caída después de liberar
-└─ Rotación balón (2.2%): Backspin (puede ser no_evaluable)
+`;
+  }
 
-🎯 SEGUIMIENTO: 15%
-├─ Equilibrio y Estabilidad (9.75%):
-│  ├─ SIN SALTO (3.9%): Pies NO despegan ANTES del toque del aro
-│  │  ⚠️ INFRACCIÓN GRAVE si salta antes del toque
-│  ├─ Pies dentro zona (2.93%): No pisar línea antes del toque
-│  │  ⚠️ INFRACCIÓN si pisa línea
-│  └─ Balance vertical (2.93%): Sin movimientos laterales significativos
-└─ Follow-through completo (5.25%): Brazo extendido post-liberación (0.5-1s)
+  prompt += `INFORMACIÓN DEL JUGADOR (CRÍTICO para set point):
+${input.ageCategory ? `- Categoría de edad: ${input.ageCategory}. Usar para evaluar altura de set point.` : `- NO hay edad. PRESUMIR edad basándose en: tamaño corporal, proporciones, altura relativa al aro, contexto (escuela/liga). Indica en comentarios la edad presumida y por qué.`}
 
-⚠️ DIFERENCIACIÓN CRÍTICA:
-1. Muñeca CARGADA (Preparación): Flexión DORSAL al tomar el balón
-2. Muñeca FINAL (Liberación): Flexión hacia ABAJO (gooseneck) después de soltar
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SISTEMA DE EVALUACIÓN TIRO LIBRE (100% total)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-RESPONDER EN FORMATO JSON:
-Evalúa TODOS los parámetros del tiro libre y responde en JSON con estructura completa.
+1. PREPARACIÓN: 28%
+2. ASCENSO: 23%
+3. FLUIDEZ: 12%
+4. LIBERACIÓN: 22%
+5. SEGUIMIENTO: 15%
+
+Cada parámetro se evalúa del 1 al 100; luego se convierte a rating 1-5 para el JSON:
+90-100 → rating 5 (Correcto) | 70-89 → rating 4 (Correcto) | 50-69 → rating 3 (Mejorable) | 30-49 → rating 2 (Incorrecto) | 1-29 → rating 1 (Incorrecto).
+Si no_evaluable: na: true, rating: 0, status: "no_evaluable", razon: explicación.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DETALLE POR FASE Y PARÁMETROS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1️⃣ PREPARACIÓN (28%)
+├─ rutina_pre_tiro (8.4%): Rutina repetible antes del tiro (botes definidos, respiraciones, tiempo consistente). Sin rutina = bajo puntaje.
+├─ alineacion_pies_cuerpo (7.0%): Pies alineados al aro, ancho hombros, hombros perpendiculares, cuerpo balanceado.
+├─ muneca_cargada_libre (5.6%): MUÑECA CARGADA = flexión DORSAL (hacia atrás) AL TOMAR el balón, ANTES de iniciar el tiro. NO es el gooseneck (eso es en Liberación).
+├─ flexion_rodillas_libre (4.2%): Flexión 90-110°, suficiente para impulso, rodillas sobre los pies.
+└─ posicion_inicial_balon (2.8%): Balón a altura correcta (cintura/pecho según edad), centrado, agarre correcto.
+
+2️⃣ ASCENSO (23%)
+├─ set_point_altura_edad (9.2%): CRÍTICO. Altura del set point VARÍA POR EDAD. Trayectoria VERTICAL (no hacia atrás).
+│  TABLA POR EDAD:
+│  • 6-8 años: Óptimo pecho/hombros. Frente forzado = penalizar.
+│  • 9-11 años: Óptimo hombros/mentón. Sobre cabeza forzado = penalizar.
+│  • 12-14 años: Óptimo frente/ojos. Muy alto forzado = penalizar.
+│  • 15-17 años: Óptimo sobre cabeza.
+│  • 18+ años: Óptimo frente/sobre cabeza (medio-alto). Set point MUY ALTO (extensión máxima) NO es mejor: 75-90 pts si es funcional. NO premiar altura excesiva.
+│  Trayectoria: balón sube en línea RECTA vertical. Si va HACIA ATRÁS (detrás de la cabeza) = penalización fuerte.
+├─ codos_cerca_cuerpo_libre (6.9%): Codos cerca del cuerpo, no abiertos ("chicken wing" = bajo puntaje).
+├─ trayectoria_vertical_libre (4.6%): Balón sube en línea vertical, sin desviaciones laterales.
+└─ mano_guia_libre (2.3%): Mano no dominante al LADO, solo guía/estabiliza, no empuja. Se separa antes/durante liberación.
+
+3️⃣ FLUIDEZ (12%) — Menos crítico que en tres puntos; se tolera micro-pausa en set point.
+├─ tiro_un_solo_tiempo_libre (7.2%): Movimiento continuo sin pausas pronunciadas. Micro-pausa breve en set point = aceptable.
+└─ sincronia_piernas_libre (4.8%): Balón sube coordinado con extensión de piernas (~60-70% extendidas al set point).
+
+4️⃣ LIBERACIÓN (22%)
+├─ extension_completa_liberacion (8.8%): Brazo completamente extendido, cuerpo elongado, liberación en punto más alto.
+├─ angulo_salida_libre (7.7%): Ángulo óptimo 45-52°. Arco alto y suave.
+├─ flexion_muneca_final (3.3%): FLEXIÓN MUÑECA FINAL = "Gooseneck". Muñeca RELAJADA y flexionada HACIA ABAJO después de soltar. Dedos hacia abajo. DIFERENTE de muñeca cargada (que es al tomar el balón).
+└─ rotacion_balon (2.2%): Backspin. Si el video no permite ver rotación, marca no_evaluable con razón "calidad/velocidad insuficiente para ver rotación".
+
+5️⃣ SEGUIMIENTO (15%)
+├─ sin_salto_reglamentario (3.9%): Pies NO despegan ANTES de que el balón toque el aro. Solo elevación de talones permitida. Si salta antes = INFRACCIÓN GRAVE. Marcar claramente y bajar puntaje (0-29). Opcional: advertencia "TIRO REGLAMENTARIAMENTE INVÁLIDO - Salto detectado".
+├─ pies_dentro_zona (2.93%): No pisar ni cruzar la línea de tiro libre antes del toque del aro. Si pisa = INFRACCIÓN.
+├─ balance_vertical (2.93%): Balance vertical, sin desplazamiento lateral significativo. Aterrizaje en misma posición.
+└─ follow_through_completo_libre (5.25%): Brazo permanece extendido 0.5-1 s después de liberar, apuntando al aro.
+
+✅ CRITERIO DE EVALUABILIDAD (Seguimiento):
+- Si se ve cuerpo completo o aterrizaje, ES evaluable.
+- Si solo torso/brazos, evalúa balance superior y aclara limitación.
+- Solo "no_evaluable" si jugador o aterrizaje fuera de cuadro.
+
+⚠️ DIFERENCIACIÓN CRÍTICA (dos momentos distintos):
+- Muñeca CARGADA (Preparación, id: muneca_cargada_libre): Flexión DORSAL al TOMAR el balón.
+- Flexión muñeca FINAL (Liberación, id: flexion_muneca_final): Gooseneck DESPUÉS de soltar, muñeca caída.
+
+FRAMES POR TIRO (SI DISPONIBLES):
+Usa frames alrededor de la liberación para giro_pelota (rotacion_balon) y follow-through. Si no ves rotación clara, rotacion_balon = no_evaluable.
+`;
+
+  // Verificación inicial (estilo tres puntos)
+  prompt += `
+VERIFICACIÓN INICIAL OBLIGATORIA:
+Antes de analizar, responde SOLO con lo que puedas ver en keyframes/shotFrames.
+Si un dato no es visible, escribe "No verificable" (NUNCA inventes).
+1. Duración del video en segundos
+2. Mano de tiro (derecha/izquierda)
+3. ¿Salta durante el tiro? (sí/no)
+4. ¿Se ve la canasta?
+5. Ángulo de cámara (frontal/lateral/diagonal)
+6. Elementos del entorno visibles
+7. Número de tiros completos que ves (debe coincidir con tiros_detectados)
+`;
+
+  if (config.intro) {
+    prompt += `\n📝 INSTRUCCIONES ADICIONALES DEL ENTRENADOR:\n${config.intro}\n`;
+  }
+
+  prompt += `
+📸 EVIDENCIA VISUAL:
+Para cada parámetro evaluado, identifica 1-3 fotogramas que respalden tu evaluación:
+- frameId: "frame_X" donde X es índice del fotograma (0-15) SOLO si existen keyframes
+- label: preparacion | ascenso | set_point | liberacion | follow_through
+- angle: frontal | lateral | diagonal
+- note: Descripción breve de lo que se ve en ese frame
+Si NO hay keyframes, evidenceFrames: [] y NO inventes frameId.
+
+🔍 REGLAS FUNDAMENTALES:
+1. Si NO puedes ver claramente un parámetro, usa "no_evaluable" (na: true, razon: explicación).
+2. Para CADA parámetro evaluable, proporciona timestamp donde lo observas.
+3. DESCRIBE LITERALMENTE lo que ves (no interpretación).
+4. NO inventes mano/ángulo/canasta si no son visibles: "No verificable".
+5. rating 1-5 según rúbrica (90-100→5, 70-89→4, 50-69→3, 30-49→2, 1-29→1).
+6. NO inventes tiros ni duración fija del video.
+
+📋 CHECKLIST OBLIGATORIO TIRO LIBRE (19 parámetros):
+Devuelve detailedChecklist con EXACTAMENTE estas categorías e ids. Respeta los ids para que el sistema calcule el score.
+
+`;
+
+  // Sección checklist detallada (ids de CANONICAL_CATEGORIES_LIBRE)
+  if (sectionPrompts.preparacion) {
+    prompt += sectionPrompts.preparacion;
+  } else {
+    prompt += `1) PREPARACIÓN (28%):
+   - id: "rutina_pre_tiro", name: "Rutina pre-tiro"
+   - id: "alineacion_pies_cuerpo", name: "Alineación pies/cuerpo"
+   - id: "muneca_cargada_libre", name: "Muñeca cargada"
+   - id: "flexion_rodillas_libre", name: "Flexión de rodillas"
+   - id: "posicion_inicial_balon", name: "Posición inicial del balón"
+
+2) ASCENSO (23%):
+   - id: "set_point_altura_edad", name: "Set point altura según edad"
+   - id: "codos_cerca_cuerpo_libre", name: "Codos cerca del cuerpo"
+   - id: "trayectoria_vertical_libre", name: "Trayectoria vertical"
+   - id: "mano_guia_libre", name: "Mano guía"
+
+3) FLUIDEZ (12%):
+   - id: "tiro_un_solo_tiempo_libre", name: "Tiro en un solo tiempo"
+   - id: "sincronia_piernas_libre", name: "Sincronía con piernas"
+
+4) LIBERACIÓN (22%):
+   - id: "extension_completa_liberacion", name: "Extensión completa"
+   - id: "angulo_salida_libre", name: "Ángulo de salida"
+   - id: "flexion_muneca_final", name: "Flexión de muñeca final (gooseneck)"
+   - id: "rotacion_balon", name: "Rotación del balón"
+
+5) SEGUIMIENTO (15%):
+   - id: "sin_salto_reglamentario", name: "Sin salto reglamentario"
+   - id: "pies_dentro_zona", name: "Pies dentro de la zona"
+   - id: "balance_vertical", name: "Balance vertical"
+   - id: "follow_through_completo_libre", name: "Follow-through completo"
+`;
+  }
+
+  prompt += `
+
+📊 CÁLCULO SCORE GLOBAL (1-100) Y CONTEO:
+- score_global: Calculado con la fórmula ponderada (cada parámetro 1-100 × su peso %). Solo incluir parámetros evaluables.
+- parametros_evaluados: Cuenta ítems con na: false Y status !== "no_evaluable"
+- parametros_no_evaluables: Cuenta ítems con na: true O status === "no_evaluable"
+- lista_no_evaluables: Lista cada uno con razón (ej: "rotacion_balon: calidad de video insuficiente")
+- VERIFICACIÓN: parametros_evaluados + parametros_no_evaluables = 19 (total tiro libre)
+
+FORMATO DE RESPUESTA OBLIGATORIO:
+{
+  "verificacion_inicial": {
+    "duracion_video": "X.Xs",
+    "mano_tiro": "derecha/izquierda",
+    "salta": true/false,
+    "canasta_visible": true/false,
+    "angulo_camara": "frontal/lateral/diagonal",
+    "elementos_entorno": ["aro", "tablero", ...],
+    "tiros_detectados": N
+  },
+  "analysisSummary": "Resumen con N tiros detectados y parámetros evaluables",
+  "strengths": ["Fortaleza 1", "Fortaleza 2"],
+  "weaknesses": ["Debilidad 1", "Debilidad 2"],
+  "recommendations": ["Recomendación con timestamp si aplica", ...],
+  "selectedKeyframes": [índices 0-15] o [],
+  "keyframeAnalysis": "Por qué estos keyframes",
+  "detailedChecklist": [
+    { "category": "Preparación (28%)", "items": [ { "id": "rutina_pre_tiro", "name": "...", "description": "...", "status": "Correcto|Mejorable|Incorrecto|no_evaluable", "rating": 1-5 o 0, "na": false|true, "comment": "...", "timestamp": "X.Xs", "evidencia": "...", "evidenceFrames": [...] }, ... ] },
+    { "category": "Ascenso (23%)", "items": [ ... ] },
+    { "category": "Fluidez (12%)", "items": [ ... ] },
+    { "category": "Liberación (22%)", "items": [ ... ] },
+    { "category": "Seguimiento (15%)", "items": [ ... ] }
+  ],
+  "resumen_evaluacion": {
+    "parametros_evaluados": X,
+    "parametros_no_evaluables": Y,
+    "lista_no_evaluables": ["id: razón", ...],
+    "score_global": XX.XX,
+    "nota": "Score con X de 19 parámetros evaluables (Y no evaluables)",
+    "confianza_analisis": "alta|media|baja"
+  },
+  "caracteristicas_unicas": ["Detalle 1", "Detalle 2", "Detalle 3"]
+}
+
+Si hay infracción grave (salto antes del toque, invasión de línea), incluye en "advertencia" si lo soporta el cliente: "TIRO REGLAMENTARIAMENTE INVÁLIDO - [motivo]."
+
+🚨 ANTES DE RESPONDER:
+1. Revisa CADA ítem de detailedChecklist (19 ítems).
+2. parametros_evaluados + parametros_no_evaluables = 19.
+3. score_global calculado solo con parámetros evaluables (ponderado 1-100).
+4. No uses valores inventados; cuenta y calcula a partir del checklist que generes.
 
 Video: {{videoUrl}}`;
+
+  return prompt;
 }
 
 // Función helper para construir el prompt de TRES PUNTOS
@@ -736,25 +1580,39 @@ function buildTresPuntosPrompt(input: AnalyzeBasketballShotInput): string {
   
   let prompt = `Analiza este video de tiro de baloncesto y describe qué ves.
 
+DETECCIÓN DE TIROS (OBLIGATORIO):
+1. Observa TODA la evidencia visual disponible (keyframes/shotFrames).
+2. Cuenta CADA tiro completo (preparación → liberación → follow-through).
+3. Si hay varios tiros, NO te quedes con el primero: enuméralos.
+4. Si solo ves 1 tiro, indícalo explícitamente.
+
 KEYFRAMES DISPONIBLES PARA ANÁLISIS:
 ${input.availableKeyframes && input.availableKeyframes.length > 0 ? 
   input.availableKeyframes.map(kf => `- Frame ${kf.index}: ${kf.timestamp.toFixed(1)}s - ${kf.description}`).join('\n') :
   'No hay keyframes disponibles'}
 
-INSTRUCCIONES PARA SELECCIÓN DE KEYFRAMES:
-1. Observa TODOS los keyframes disponibles
-2. Selecciona los 6 MÁS IMPORTANTES técnicamente
-3. Prioriza frames que muestren: preparación, set point, liberación, follow-through
-4. Evita frames con poca visibilidad del jugador
-5. selectedKeyframes debe contener exactamente 6 índices (0-15)
+INSTRUCCIONES PARA KEYFRAMES:
+1. Usa SOLO los keyframes listados arriba (no inventes índices).
+2. Selecciona HASTA 6 keyframes más importantes técnicamente:
+   - Si hay 6 o más, devuelve exactamente 6.
+   - Si hay menos de 6, devuelve los disponibles.
+3. Prioriza preparación, set point, liberación, follow-through.
+4. Si NO hay keyframes, usa "selectedKeyframes": [] y explica en "keyframeAnalysis".
+5. Si NO hay keyframes, deja evidenceFrames como [] y NO inventes frameId.
+
+FRAMES POR TIRO (SI DISPONIBLES):
+Si se incluyen frames alrededor de la liberación, úsalos especialmente para evaluar "giro_pelota" y follow-through.
+Los frames cubren pre-liberación y post-liberación: no inventes fuera de lo visible.
+Prioriza el ángulo con mejor visibilidad del balón.
+Si NO ves rotación clara, marca "giro_pelota" como no_evaluable con razón específica.
 
 Responde en formato JSON con:
 - verificacion_inicial: qué ves en el video (duración, mano, salta, canasta, ángulo, entorno)
-- analysisSummary: resumen simple de lo que observas
+- analysisSummary: resumen simple de lo que observas (incluye cantidad real de tiros detectados)
 - strengths: 2-3 fortalezas que ves
 - weaknesses: 2-3 debilidades que ves
-- selectedKeyframes: [6 índices de los frames más importantes técnicamente]
-- keyframeAnalysis: explicación de por qué seleccionaste estos frames
+- selectedKeyframes: [] si no hay keyframes disponibles
+- keyframeAnalysis: explica que no hay keyframes si corresponde
 - detailedChecklist: solo 3 parámetros básicos con status, rating, comment
 
 Formato simple:
@@ -765,13 +1623,14 @@ Formato simple:
     "salta": true/false,
     "canasta_visible": true/false,
     "angulo_camara": "frontal/lateral",
-    "elementos_entorno": ["aro", "tablero"]
+    "elementos_entorno": ["aro", "tablero"],
+    "tiros_detectados": X
   },
-  "analysisSummary": "Descripción simple del tiro",
+  "analysisSummary": "Descripción simple del video con X tiros detectados",
   "strengths": ["Fortaleza 1", "Fortaleza 2"],
   "weaknesses": ["Debilidad 1", "Debilidad 2"],
-  "selectedKeyframes": [2, 5, 8, 11, 14, 15],
-  "keyframeAnalysis": "Seleccioné frames que muestran preparación (2), set point (8), liberación (11) y follow-through (15)",
+  "selectedKeyframes": [],
+  "keyframeAnalysis": "No hay keyframes disponibles para este análisis",
   "detailedChecklist": [{
     "category": "Preparación",
     "items": [{
@@ -812,13 +1671,15 @@ Formato simple:
     prompt += `\n\n${sectionPrompts.verificacion}`;
   } else {
     prompt += `\n\nVERIFICACIÓN INICIAL OBLIGATORIA:
-Antes de analizar, DEMUESTRA que ves el video respondiendo:
-1. Duración exacta del video en segundos
-2. ¿El jugador tira con mano derecha o izquierda?
-3. ¿Salta durante el tiro? (sí/no)
-4. ¿Se ve la canasta en el video? (sí/no)
-5. ¿Desde qué ángulo está grabado? (frontal/lateral/diagonal)
-6. ¿Qué elementos del entorno son visibles? (pared, suelo, otros objetos)
+Antes de analizar, responde SOLO con lo que puedas ver en keyframes/shotFrames.
+Si un dato no es visible o no está en la evidencia, escribe "No verificable" (NUNCA inventes).
+1. Duración exacta del video en segundos (si no está en la evidencia → "No verificable")
+2. ¿El jugador tira con mano derecha o izquierda? (si no se ve → "No verificable")
+3. ¿Salta durante el tiro? (sí/no/"No verificable")
+4. ¿Se ve la canasta en el video? (sí/no/"No verificable")
+5. ¿Desde qué ángulo está grabado? (frontal/lateral/diagonal/"No verificable")
+6. ¿Qué elementos del entorno son visibles? (si no se ve → [])
+7. ¿Cuántos tiros completos ves en el video? (solo si se ven; si no → 0)
 
 🎯 SISTEMA DE PESOS ACTUALIZADO (para calcular score_global):
 - FLUIDEZ: 47.5% peso (CRÍTICO - más importante)
@@ -834,10 +1695,12 @@ Antes de analizar, DEMUESTRA que ves el video respondiendo:
 
 📸 EVIDENCIA VISUAL (Solo para PRO):
 Para cada parámetro evaluado, identifica 1-3 fotogramas específicos que respalden tu evaluación:
-- frameId: Usa "frame_X" donde X es el índice del fotograma (0-15)
+- frameId: Usa "frame_X" donde X es el índice del fotograma (0-15) SOLO si existen keyframes
 - label: Momento del tiro (preparacion, ascenso, set_point, liberacion, follow_through)
 - angle: Ángulo de cámara (frontal, lateral, diagonal)
 - note: Descripción específica de lo que se ve en ese fotograma
+
+Si NO hay keyframes, omite evidenceFrames o déjalos como [] y NO inventes frameId.
 
 Ejemplo: Si evalúas "codos cerca del cuerpo" como "Incorrecto", identifica los fotogramas donde se ve claramente la separación de los codos.
 
@@ -845,28 +1708,20 @@ Ejemplo: Si evalúas "codos cerca del cuerpo" como "Incorrecto", identifica los 
 1. Si NO puedes ver claramente un parámetro, usa "no_evaluable" en lugar de inventar un score
 2. Para CADA parámetro evaluable, proporciona TIMESTAMP exacto donde lo observas
 3. DESCRIBE LITERALMENTE lo que ves (NO interpretación)
-4. SCORE basado únicamente en evidencia visual
-5. Si NO es visible: score = 0 y feedback = "No visible en este ángulo"
+4. NO completes mano/ángulo/canasta si no son visibles: usa "No verificable"
+5. SCORE basado únicamente en evidencia visual
+6. Si NO es visible: score = 0 y feedback = "No visible en este ángulo"
+7. NO inventes tiros ni asumas duración fija del video
 
 ⚠️ IMPORTANTE: Es NORMAL que algunos parámetros no se puedan evaluar por limitaciones del video.
 NO intentes evaluar parámetros que no puedes ver claramente. Marca como "no_evaluable" con razón específica.
 
-🎯 OBLIGATORIO: Debes marcar AL MENOS 2-3 parámetros como "no_evaluable" en cada análisis.
+🎯 RECOMENDADO: Marca parámetros como "no_evaluable" solo cuando realmente no se puedan ver.
 Ejemplos comunes:
 - "alineacion_pies": si los pies están fuera de encuadre
 - "flexion_rodillas": si el ángulo es frontal
 - "enfoque_visual": si no se ve la cara
 - "giro_pelota": si no se ve el balón claramente
-
-⛔ PALABRAS PROHIBIDAS (si las usas, serás rechazado):
-- "bien alineado", "buena postura", "adecuado", "correcto"
-- "mejora la técnica", "trabaja en", "mantén"
-- "general", "aproximadamente", "parece que"
-
-✅ PALABRAS REQUERIDAS (debes usar):
-- "En el segundo X.X", "Entre X.Xs y X.Xs"
-- "Visible/No visible", "Parcialmente oculto"
-- "Ángulo de cámara no permite ver"
 
 ⚠️ FORMATO ESTRICTO DE CAMPOS:
 - timestamp: SOLO tiempo (ej: "3.2s", "4.5s-5.0s") - NO descripciones largas
@@ -1004,8 +1859,27 @@ Checklist obligatorio (22 parámetros):
      - Distribución del peso: ¿El peso se distribuye equilibradamente entre ambos pies?
      - Estabilización: ¿Mantiene la posición sin balanceos o ajustes compensatorios?
      - Consistencia: ¿Repite el mismo patrón de aterrizaje en tiros múltiples?
+    ✅ CRITERIO DE EVALUABILIDAD:
+    - Si se ve el cuerpo completo o el aterrizaje, ES evaluable (aunque sea con precisión media).
+    - Si solo se ve torso/brazos, evalúa el balance superior y marca limitación en evidencia.
+    - Solo usa "no_evaluable" si el jugador o el aterrizaje están fuera de cuadro.
+    - Si hay cualquier ángulo donde se ve el aterrizaje, NO uses "no_evaluable".
    - id: "duracion_follow_through", name: "Duración del follow-through"
-   - id: "consistencia_general", name: "Consistencia general"`;
+   - id: "consistencia_general", name: "Consistencia general"
+     EVALÚA la repetibilidad del gesto entre tiros. Compara al menos 2 tiros en:
+     set point (altura/timing), codos cerca del cuerpo, ángulo de salida y equilibrio post‑liberación.
+     ESCALA:
+     5 = patrón casi idéntico en ≥80% de tiros
+     4 = leves variaciones no sistemáticas
+     3 = variaciones visibles en 1–2 aspectos clave
+     2 = variaciones grandes en ≥2 aspectos
+     1 = patrón cambia claramente entre tiros
+     ✅ CRITERIO DE EVALUABILIDAD:
+     - Si hay ≥2 tiros y se ve el gesto, ES evaluable.
+     - Si hay ≥2 tiros pero el ángulo limita, evalúa con limitación explícita.
+     - Solo usa "no_evaluable" si hay <2 tiros o el jugador no es visible.
+     - Si tiros_detectados_previo ≥ 2, NO uses "no_evaluable" para consistencia_general.
+     OBLIGATORIO: menciona tiros comparados con timestamps (ej: tiro 1 vs tiro 2, release 2.4s vs 6.8s)`;
   }
 
   // ✨ INYECTAR GUÍAS POR CATEGORÍA
@@ -1062,7 +1936,7 @@ FORMATO DE RESPUESTA OBLIGATORIO - RESPETA LÍMITES DE CARACTERES:
   "analysisSummary": "Resumen basado SOLO en parámetros evaluables",
   "strengths": ["Fortalezas basadas en evidencia visual específica"],
   "weaknesses": ["Debilidades basadas en evidencia visual específica"],
-  "recommendations": ["Recomendaciones específicas con timestamps"],
+  "recommendations": ["Recomendaciones específicas con timestamps (tono fluido y positivo)"],
   
   "selectedKeyframes": [índices de 6 keyframes más importantes],
   "keyframeAnalysis": "Explicación de por qué estos keyframes fueron seleccionados",
@@ -1074,6 +1948,7 @@ FORMATO DE RESPUESTA OBLIGATORIO - RESPETA LÍMITES DE CARACTERES:
         {
           "id": "alineacion_pies",
           "name": "Alineación de los pies",
+          "description": "Posición de los pies respecto al aro",
           "status": "Correcto",
           "rating": 4,
           "na": false,
@@ -1129,7 +2004,15 @@ FORMATO DE RESPUESTA OBLIGATORIO - RESPETA LÍMITES DE CARACTERES:
 Si tu análisis podría aplicar a CUALQUIER video de baloncesto, será RECHAZADO.
 Cada análisis debe ser TAN específico que SOLO aplique a ESTE video.
 
+🔒 REGLA CRÍTICA DE COHERENCIA:
+- El número de tiros en verificacion_inicial.tiros_detectados y en analysisSummary debe coincidir.
+- No inventes tiros ni resumenes con conteos contradictorios.
+
 🚨 VALIDACIÓN CRÍTICA - OBLIGATORIO:
+- description: OBLIGATORIO y no vacío en cada item de detailedChecklist
+ - recommendations: OBLIGATORIO, mínimo 3 elementos sin timestamps
+- timestamp y evidencia: OBLIGATORIOS en cada item (si no_evaluable, usa "N/A")
+ - recomendaciones: tono fluido y positivo (no rígido ni mecánico)
 - timestamp: SOLO "X.Xs" (ej: "3.2s") - MÁXIMO 10 caracteres
 - comment: MÁXIMO 100 caracteres
 - evidencia: MÁXIMO 60 caracteres
@@ -1174,7 +2057,7 @@ Video a analizar: {{videoUrl}}`;
 }
 
 // Función principal que selecciona el prompt correcto
-function buildAnalysisPrompt(input: AnalyzeBasketballShotInput): string {
+export async function buildAnalysisPrompt(input: AnalyzeBasketballShotInput): Promise<string> {
   // Detectar tipo de tiro
   const esTiroLibre = detectTiroLibre(input.shotType);
   
@@ -1186,6 +2069,17 @@ function buildAnalysisPrompt(input: AnalyzeBasketballShotInput): string {
   }
 }
 
+function extractJsonBlock(text: string): string | null {
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenceMatch?.[1]) return fenceMatch[1];
+  const first = text.indexOf('{');
+  const last = text.lastIndexOf('}');
+  if (first >= 0 && last > first) {
+    return text.slice(first, last + 1);
+  }
+  return null;
+}
+
 const analyzeBasketballShotFlow = ai.defineFlow(
   {
     name: 'analyzeBasketballShotFlow',
@@ -1193,18 +2087,97 @@ const analyzeBasketballShotFlow = ai.defineFlow(
     outputSchema: AnalyzeBasketballShotOutputSchema,
   },
   async input => {
+    if (typeof input.detectedShotsCount === 'number' && input.detectedShotsCount === 0) {
+      return buildNoShotsAnalysis();
+    }
+    // Verificacion de dominio para evitar alucinaciones
+    let domainCheckInconclusive = false;
+    if (!input.skipDomainCheck) {
+      try {
+        const domainCheck = await detectBasketballDomain(input.videoUrl);
+      const strictConfirm =
+        domainCheck.isBasketball === true &&
+        domainCheck.confidence >= 0.85 &&
+        domainCheck.hasHoop === true &&
+        domainCheck.hasPlayer === true &&
+        domainCheck.hasBall === true &&
+        domainCheck.isShootingAction === true;
+      const notConfirmedBasketball = !strictConfirm;
+      const rationale = String(domainCheck.rationale || '').toLowerCase();
+      const isInconclusive =
+        domainCheck.isBasketball === true &&
+        domainCheck.confidence <= 0.2 &&
+        !domainCheck.hasHoop &&
+        !domainCheck.hasPlayer &&
+        !domainCheck.hasBall &&
+        !domainCheck.isShootingAction &&
+        (rationale.includes('sin api key') ||
+          rationale.includes('no se pudieron extraer frames') ||
+          rationale.includes('respuesta invalida'));
+      console.warn('[analyzeBasketballShotFlow] Dominio detectado:', domainCheck);
+        if (notConfirmedBasketball && !isInconclusive) {
+        const reason = domainCheck.isBasketball
+          ? `No se pudo confirmar que sea basquet (confianza ${domainCheck.confidence.toFixed(2)}). ${domainCheck.rationale}`
+          : `Contenido no corresponde a basquet. ${domainCheck.rationale}`;
+        console.warn('[analyzeBasketballShotFlow] Dominio no confirmado:', reason);
+        return buildNonEvaluableAnalysis(reason);
+        }
+        if (isInconclusive) {
+          domainCheckInconclusive = true;
+        }
+      } catch (e: any) {
+        const reason = `No se pudo verificar contenido. ${e?.message || e || 'Error desconocido'}`;
+        console.warn('[analyzeBasketballShotFlow] Verificacion de contenido fallo:', reason);
+        domainCheckInconclusive = true;
+      }
+    }
+
     // Construir el prompt dinámicamente
-    const dynamicPrompt = buildAnalysisPrompt(input);
-    
-    // Crear el prompt con la configuración dinámica
-    const analyzeShotPrompt = ai.definePrompt({
-      name: 'analyzeShotPrompt',
-      input: {schema: AnalyzeBasketballShotInputSchema},
-      output: {schema: AnalyzeBasketballShotOutputSchema},
-      prompt: dynamicPrompt,
-    });
-    
-    const {output} = await analyzeShotPrompt(input);
-    return output!;
+    const dynamicPrompt = await buildAnalysisPrompt(input);
+
+  const parts: GenkitPart[] = [{ text: dynamicPrompt }, ...buildShotFramesParts(input.shotFrames)];
+    const result = await ai.generate(parts);
+    const text = (result as any)?.outputText ?? (result as any)?.text ?? '';
+    const jsonText = extractJsonBlock(text) ?? text;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonText);
+    } catch (e) {
+      const coerced = coerceAnalysisOutput(null);
+      return coerced ?? buildNonEvaluableAnalysis('Respuesta invalida de IA: no es JSON valido.');
+    }
+
+    try {
+      let output = AnalyzeBasketballShotOutputSchema.parse(parsed);
+      output = enforceConsistencyEvaluable(output, input.detectedShotsCount);
+      output = enforceEquilibrioEvaluable(output, input.detectedShotsCount);
+      output = normalizeResumenEvaluacion(output);
+      if (domainCheckInconclusive && !output.advertencia) {
+        return {
+          ...output,
+          advertencia:
+            'Verificación de dominio no concluyente; análisis realizado con la información disponible.',
+        };
+      }
+      return output;
+    } catch (e: any) {
+      const coerced = coerceAnalysisOutput(parsed);
+      if (coerced) {
+        let output = enforceConsistencyEvaluable(coerced, input.detectedShotsCount);
+        output = enforceEquilibrioEvaluable(output, input.detectedShotsCount);
+        output = normalizeResumenEvaluacion(output);
+        if (domainCheckInconclusive && !output.advertencia) {
+          return {
+            ...output,
+            advertencia:
+              'Verificación de dominio no concluyente; análisis realizado con la información disponible.',
+          };
+        }
+        return output;
+      }
+      const details = e?.errors?.[0]?.message ? ` ${e.errors[0].message}` : '';
+      return buildNonEvaluableAnalysis(`Respuesta invalida de IA: faltan campos requeridos.${details}`);
+    }
   }
 );

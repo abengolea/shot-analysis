@@ -6,8 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { requestVerificationEmail } from '@/app/actions';
 import { Mail, CheckCircle, AlertCircle } from 'lucide-react';
 
 export default function VerifyEmailPage() {
@@ -27,23 +26,16 @@ export default function VerifyEmailPage() {
 
     setLoading(true);
     try {
-      // Intentar enviar email de restablecimiento (Firebase automáticamente verifica si es un usuario válido)
-      await sendPasswordResetEmail(auth, email);
-      toast({
-        title: "Email enviado",
-        description: "Si tu email está registrado, recibirás un enlace de verificación",
-      });
-    } catch (error: any) {
-      if (error.code === 'auth/user-not-found') {
+      const res = await requestVerificationEmail(email);
+      if (res.success) {
         toast({
-          title: "Usuario no encontrado",
-          description: "Este email no está registrado en nuestro sistema",
-          variant: "destructive",
+          title: "Email enviado",
+          description: res.message,
         });
       } else {
         toast({
-          title: "Error",
-          description: "Error al enviar email. Intenta más tarde",
+          title: res.message === "Este email no está registrado." ? "Usuario no encontrado" : "Error",
+          description: res.message,
           variant: "destructive",
         });
       }

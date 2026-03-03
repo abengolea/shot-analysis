@@ -23,15 +23,13 @@ interface VideoPlayerProps {
   onFrameChange?: (currentTime: number, currentFrame: number) => void;
   onBookmarkAdd?: (time: number, label: string) => void;
   bookmarks?: Array<{ time: number; label: string; id: string }>;
-  analysisId?: string; // Opcional: ID del análisis para refrescar URLs expiradas
 }
 
 export function VideoPlayer({ 
   src, 
   onFrameChange, 
   onBookmarkAdd, 
-  bookmarks = [],
-  analysisId 
+  bookmarks = [] 
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -42,9 +40,7 @@ export function VideoPlayer({
   const [bookmarkLabel, setBookmarkLabel] = useState("");
   const [currentFrame, setCurrentFrame] = useState(0);
   const [fps, setFps] = useState(30);
-  const [videoError, setVideoError] = useState<string | null>(null);
-  const [isVideoReady, setIsVideoReady] = useState(false);
-  const [isRefreshingUrl, setIsRefreshingUrl] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -54,12 +50,7 @@ export function VideoPlayer({
       setDuration(video.duration);
       // Fallback seguro: usar 30fps por defecto para evitar CORS/tainted canvas
       setFps(30);
-      setVideoError(null); // Limpiar error cuando el video se carga correctamente
-      setIsVideoReady(true); // Marcar video como listo
-    };
-
-    const handleCanPlay = () => {
-      setIsVideoReady(true);
+      setLoadError(null);
     };
 
     const handleTimeUpdate = () => {
@@ -71,45 +62,42 @@ export function VideoPlayer({
     };
 
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
-    video.addEventListener('canplay', handleCanPlay);
     video.addEventListener('timeupdate', handleTimeUpdate);
 
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      video.removeEventListener('canplay', handleCanPlay);
       video.removeEventListener('timeupdate', handleTimeUpdate);
     };
   }, [fps, onFrameChange]);
 
-  // Limpiar error cuando cambie la fuente del video
   useEffect(() => {
-    setVideoError(null);
-    setIsVideoReady(false);
+    setLoadError(null);
+    setIsPlaying(false);
   }, [src]);
 
-  const togglePlay = async () => {
-    if (!videoRef.current || !isVideoReady) return;
-    
-    try {
+  const getErrorMessage = (code?: number) => {
+    switch (code) {
+      case 1:
+        return "La carga fue interrumpida.";
+      case 2:
+        return "Error de red al cargar el video.";
+      case 3:
+        return "El video está corrupto o no puede decodificarse.";
+      case 4:
+        return "Formato de video no soportado.";
+      default:
+        return "No se pudo cargar el video.";
+    }
+  };
+
+  const togglePlay = () => {
+    if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
-        setIsPlaying(false);
       } else {
-        // Usar await para manejar la promesa de play()
-        await videoRef.current.play();
-        setIsPlaying(true);
+        videoRef.current.play();
       }
-    } catch (error) {
-      // Manejar errores de reproducción (incluyendo interrupciones)
-      console.warn('Error en reproducción:', error);
-      setIsPlaying(false);
-      
-      // Si es un error de interrupción, no mostrar como error crítico
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.log('Reproducción interrumpida (normal)');
-      } else {
-        setVideoError('Error al reproducir el video');
-      }
+      setIsPlaying(!isPlaying);
     }
   };
 
@@ -156,25 +144,6 @@ export function VideoPlayer({
     return `Frame ${frame}`;
   };
 
-  // Validar que src sea válido antes de renderizar
-  if (!src || (typeof src === 'string' && src.trim() === '')) {
-    return (
-      <Card className="w-full">
-        <CardHeader>
-          <CardTitle>Reproductor de Video</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-            <div className="text-center">
-              <p className="text-muted-foreground mb-2">No hay video disponible</p>
-              <p className="text-sm text-muted-foreground">La URL del video no está disponible</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <Card className="w-full">
       <CardHeader>
@@ -194,141 +163,38 @@ export function VideoPlayer({
             src={src}
             className="w-full h-auto max-h-96"
             playsInline
-            onPlay={() => {
-              setIsPlaying(true);
-              setVideoError(null); // Limpiar errores al reproducir exitosamente
-            }}
+            preload="metadata"
+            onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
             onEnded={() => setIsPlaying(false)}
-            onLoadStart={() => setIsVideoReady(false)}
-            onCanPlay={() => setIsVideoReady(true)}
-            onError={async (e) => {
+            onError={(e) => {
               const el = e.currentTarget as HTMLVideoElement;
-              const err = el?.error;
-              
-              // Validar src primero
-              if (!src || (typeof src === 'string' && src.trim() === '')) {
-                console.warn('[VideoPlayer] No video source provided');
-                setVideoError('No se proporcionó una URL de video válida');
-                return;
-              }
-              
-              // Construir información de error filtrando valores nulos
-              const errorInfo: Record<string, any> = {};
-              if (err) {
-                if (err.code !== null && err.code !== undefined) errorInfo.code = err.code;
-                if (err.message) errorInfo.message = err.message;
-              }
-              if (el?.networkState !== null && el?.networkState !== undefined) errorInfo.networkState = el.networkState;
-              if (el?.readyState !== null && el?.readyState !== undefined) errorInfo.readyState = el.readyState;
-              if (src) {
-                errorInfo.src = src.length > 100 ? src.substring(0, 100) + '...' : src;
-                errorInfo.srcLength = src.length;
-              }
-              
-              // Loggear solo si hay información útil o un error real
-              // Usar console.warn en lugar de console.error para evitar stack traces en Next.js
-              if (err && err.code) {
-                const errorParts = [
-                  '[VideoPlayer] Error loading video',
-                  `Code: ${err.code}`,
-                  err.message ? `Message: ${err.message}` : null,
-                  `NetworkState: ${el?.networkState ?? 'unknown'}`,
-                  `ReadyState: ${el?.readyState ?? 'unknown'}`,
-                  src ? `URL length: ${src.length}` : null
-                ].filter(Boolean);
-                // Usar console.warn para evitar que Next.js lo trate como error crítico
-                console.warn(errorParts.join(' | '));
-              } else if (Object.keys(errorInfo).length > 0) {
-                console.warn('[VideoPlayer] Video error event (partial info):', errorInfo);
-              } else {
-                console.warn('[VideoPlayer] Video error event triggered but no detailed information available');
-              }
-              
-              // Intentar refrescar la URL si parece ser un problema de URL expirada o inválida
-              const shouldTryRefresh = err?.code === 4 || err?.code === 2 || err?.code === 3;
-              
-              if (shouldTryRefresh && src && analysisId && !isRefreshingUrl) {
-                console.warn('[VideoPlayer] Intentando refrescar URL del video para análisis:', analysisId);
-                setIsRefreshingUrl(true);
-                
-                try {
-                  const refreshResponse = await fetch(`/api/analyses/${analysisId}/refresh-video-url`);
-                  if (refreshResponse.ok) {
-                    const { url: newUrl } = await refreshResponse.json();
-                    console.log('[VideoPlayer] ✅ URL refrescada exitosamente, recargando video...');
-                    // Actualizar el src del video con la nueva URL
-                    if (videoRef.current) {
-                      videoRef.current.src = newUrl;
-                      videoRef.current.load();
-                      setVideoError(null);
-                      setIsRefreshingUrl(false);
-                      return; // Salir temprano si el refresh funcionó
-                    }
-                  } else {
-                    const errorData = await refreshResponse.json().catch(() => ({}));
-                    console.warn('[VideoPlayer] No se pudo refrescar la URL:', errorData);
-                  }
-                } catch (refreshError) {
-                  console.warn('[VideoPlayer] Error al refrescar la URL:', refreshError);
-                }
-                
-                setIsRefreshingUrl(false);
-              }
-              
-              // Establecer mensaje de error apropiado para el usuario
-              // Código 4 puede ser CORS o Format error, verificar el mensaje
-              if (err?.code === 4) {
-                const message = err.message?.toLowerCase() || '';
-                if (message.includes('format') || message.includes('decodificación')) {
-                  setVideoError('Error de formato: El formato del video no es compatible con el navegador o el archivo está corrupto. Si la URL ha expirado, intenta recargar la página.');
-                } else if (message.includes('cors') || message.includes('cross-origin')) {
-                  setVideoError('Error de CORS: El video no se puede cargar debido a restricciones de seguridad del navegador');
-                } else {
-                  setVideoError('Error al cargar el video: La URL puede haber expirado o el formato no es compatible. Intenta recargar la página.');
-                }
-              } else if (err?.code === 3) {
-                setVideoError('Error de decodificación: El formato del video no es compatible con este navegador');
-              } else if (err?.code === 2) {
-                setVideoError('Error de red: No se pudo descargar el video. La URL puede haber expirado o hay un problema de conexión.');
-              } else if (err?.code === 1) {
-                setVideoError('Error al obtener el video: La solicitud fue abortada');
-              } else if (err && err.code) {
-                setVideoError(`Error al cargar el video (Código ${err.code}). Por favor, intenta recargar la página.`);
-              } else {
-                setVideoError('Error al cargar el video. La URL puede haber expirado o el archivo no está disponible.');
+              const err = (el && (el.error as any)) || {};
+              const message = getErrorMessage(err?.code);
+              setLoadError(message);
+              if (process.env.NODE_ENV !== 'production') {
+                console.warn('Error loading video:', {
+                  code: err?.code,
+                  message: err?.message,
+                  networkState: el?.networkState,
+                  readyState: el?.readyState,
+                  src,
+                });
               }
             }}
             controls
           />
-          {videoError && (
-            <div className="absolute inset-0 flex items-center justify-center text-white bg-red-900/80">
-              <div className="text-center p-4">
-                <p className="text-lg font-medium text-red-100">Error al cargar el video</p>
-                <p className="text-sm opacity-80 text-red-200">{videoError}</p>
-                <button 
-                  onClick={() => {
-                    setVideoError(null);
-                    if (videoRef.current) {
-                      videoRef.current.load();
-                    }
-                  }}
-                  className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-                >
-                  Reintentar
-                </button>
+          {loadError && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
+              <div className="text-center px-4">
+                <p className="text-sm font-medium">{loadError}</p>
+                <p className="text-xs opacity-80 mt-1">
+                  Verifica permisos del archivo o intenta abrir el video en otra pestaña.
+                </p>
               </div>
             </div>
           )}
-          {src && !isVideoReady && !videoError && (
-            <div className="absolute inset-0 flex items-center justify-center text-white bg-black/50">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
-                <p className="text-sm opacity-80">Cargando video...</p>
-              </div>
-            </div>
-          )}
-          {!src && !videoError && (
+          {!src && (
             <div className="absolute inset-0 flex items-center justify-center text-white">
               <div className="text-center">
                 <p className="text-lg font-medium">No hay video seleccionado</p>

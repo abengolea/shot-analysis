@@ -1,4 +1,4 @@
-export type UserRole = 'player' | 'coach' | 'admin';
+export type UserRole = 'player' | 'coach' | 'club' | 'admin';
 
 export type BaseUser = {
   id: string;
@@ -35,6 +35,8 @@ export type Player = BaseUser & {
   publicShowCountry?: boolean;
   publicShowClub?: boolean;
   club?: string;
+  province?: string;
+  city?: string;
   // Agregados públicos para rankings
   publicCategory?: 'U11' | 'U13' | 'U15' | 'U17' | 'U21' | 'Mayores';
   publicHighestScore?: number; // mejor puntuación histórica (0..100)
@@ -134,7 +136,14 @@ export type ShotAnalysis = {
     frontalShots?: number;
     additionalShots?: number;
   };
+  coachCompleted?: boolean;
   shots?: any[];
+  keyframesStatus?: 'pending' | 'ready' | 'error';
+  keyframesUpdatedAt?: string;
+  /** Acceso pagado por coach: { [coachId]: { status: 'paid', ... } } - usado para canEditCoachChecklist */
+  coachAccess?: Record<string, { status?: string; [k: string]: unknown }>;
+  /** Coach asignado a este análisis (si aplica) */
+  coachId?: string;
 };
 
 export type Drill = {
@@ -164,6 +173,7 @@ export type Comment = {
 
 export type Coach = BaseUser & {
   role: 'coach';
+  photoUrl?: string | null;
   // Campos opcionales que se pueden completar después
   experience?: string;
   ratePerAnalysis?: number; // rate per analysis in USD
@@ -190,6 +200,14 @@ export type Coach = BaseUser & {
   paymentAccountOwnerId?: string;
   paymentAccountOwnerEmail?: string | null;
   paymentAccountOwnerName?: string | null;
+};
+
+export type Club = BaseUser & {
+  role: 'club';
+  city?: string;
+  country?: string;
+  playerIds?: string[];
+  coachIds?: string[];
 };
 
 export type ConnectionRequest = {
@@ -221,6 +239,13 @@ export type Message = {
   createdAt: string; // ISO
   read: boolean;
   readAt?: string; // ISO
+  analysisId?: string | null;
+  messageType?: 'system' | 'analysis' | 'direct';
+  conversationId?: string;
+  keyframeUrl?: string;
+  angle?: 'front' | 'back' | 'left' | 'right';
+  index?: number;
+  link?: string;
   // Archivado por el coach (ocultar en su panel)
   archivedForCoach?: boolean;
   archivedAt?: string; // ISO

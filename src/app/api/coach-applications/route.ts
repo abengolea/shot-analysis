@@ -95,13 +95,13 @@ export async function POST(request: NextRequest) {
       console.warn('No se pudo crear el ticket para la solicitud de entrenador', e);
     }
 
-    // Notificación admin (placeholder via email-service)
+    // Notificación admin
     try {
-      const { sendCustomEmail } = await import('@/lib/email-service');
-      await sendCustomEmail({
-        to: 'abengolea1@gmail.com',
+      const { sendAdminNotification } = await import('@/lib/email-service');
+      await sendAdminNotification({
         subject: `Nueva solicitud de entrenador: ${name}`,
-        html: `<p>Usuario: ${who.email || email}</p><p>Nombre: ${name}</p><p>Bio: ${bio || '-'}</p><p>Foto: ${photoUrl || '-'}</p><p>ID: ${ref.id}</p>`
+        html: `<p>Usuario: ${who.email || email}</p><p>Nombre: ${name}</p><p>Bio: ${bio || '-'}</p><p>Foto: ${photoUrl || '-'}</p><p>ID: ${ref.id}</p>`,
+        fallbackTo: 'abengolea1@gmail.com',
       });
     } catch {}
 

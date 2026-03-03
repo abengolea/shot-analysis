@@ -34,10 +34,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import type { Message } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
+import { getClientAppBaseUrl } from "@/lib/app-url";
+import { buildConversationId, getMessageType } from "@/lib/message-utils";
 
 export default function CoachesPage() {
   const router = useRouter();
@@ -60,9 +72,13 @@ export default function CoachesPage() {
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [creatingUnlock, setCreatingUnlock] = useState(false);
   const [simulatingPayment, setSimulatingPayment] = useState(false);
+  const [usingFreeReview, setUsingFreeReview] = useState(false);
   const [isAlreadyPaid, setIsAlreadyPaid] = useState(false);
   const [paymentProvider, setPaymentProvider] = useState<'mercadopago' | 'dlocal'>('mercadopago');
   const [paidCoachIds, setPaidCoachIds] = useState<string[]>([]);
+  const [freeCoachReviews, setFreeCoachReviews] = useState<number>(0);
+  const [reviewNoticeOpen, setReviewNoticeOpen] = useState(false);
+  const [reviewNoticeCoachName, setReviewNoticeCoachName] = useState("");
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -116,6 +132,28 @@ export default function CoachesPage() {
   }, []);
 
   useEffect(() => {
+    if (!user) {
+      setFreeCoachReviews(0);
+      return;
+    }
+    let cancelled = false;
+    const fetchWallet = async () => {
+      try {
+        const res = await fetch(`/api/wallet?userId=${user.uid}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) {
+          setFreeCoachReviews(Number(data?.freeCoachReviews || 0));
+        }
+      } catch {
+        if (!cancelled) setFreeCoachReviews(0);
+      }
+    };
+    fetchWallet();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  useEffect(() => {
     if (!analysisIdFromQuery) {
       setAnalysisInfo(null);
       setAnalysisInfoError(null);
@@ -127,7 +165,13 @@ export default function CoachesPage() {
       try {
         setAnalysisInfoLoading(true);
         setAnalysisInfoError(null);
-        const res = await fetch(`/api/analyses/${analysisIdFromQuery}`);
+        if (!user) {
+          throw new Error('Usuario no autenticado.');
+        }
+        const token = await user.getIdToken();
+        const res = await fetch(`/api/analyses/${analysisIdFromQuery}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (!res.ok) {
           throw new Error('No pudimos encontrar ese análisis.');
         }
@@ -167,7 +211,7 @@ export default function CoachesPage() {
     return () => {
       cancelled = true;
     };
-  }, [analysisIdFromQuery, unlockCoach]);
+  }, [analysisIdFromQuery, unlockCoach, user]);
 
   // Get unique specialties for filter
   const specialties = useMemo(() => {
@@ -175,9 +219,14 @@ export default function CoachesPage() {
     return [...new Set(allSpecialties)];
   }, [coaches]);
 
+  const visibleCoachesCount = useMemo(() => {
+    return coaches.filter(coach => coach.hidden !== true && coach.status !== 'suspended').length;
+  }, [coaches]);
+
   // Búsqueda básica y ordenamiento (sin filtrar por precio/rating)
   const filteredCoaches = useMemo(() => {
-    let filtered = coaches.filter(coach => {
+    const filtered = coaches.filter(coach => {
+      if (coach.status === 'suspended') return false;
       // Filtrar coaches ocultos
       if (coach.hidden === true) return false;
       
@@ -234,11 +283,13 @@ export default function CoachesPage() {
     });
   };
 
+  const openReviewNotice = (coach?: Coach | null) => {
+    const name = coach?.name?.trim();
+    setReviewNoticeCoachName(name && name.length > 0 ? name : 'el entrenador');
+    setReviewNoticeOpen(true);
+  };
+
   const handleRequestReview = async (coach: Coach) => {
-    if (!analysisIdFromQuery) {
-      router.push('/player/dashboard');
-      return;
-    }
     if (!user) {
       router.push('/login');
       return;
@@ -248,6 +299,11 @@ export default function CoachesPage() {
     setUnlockCoach(coach);
     setUnlockError(null);
     setIsAlreadyPaid(false);
+
+    if (!analysisIdFromQuery) {
+      setUnlockDialogOpen(true);
+      return;
+    }
     
     // Verificar si ya está pagado o tiene un pago pendiente ANTES de abrir el diálogo
     try {
@@ -277,6 +333,8 @@ export default function CoachesPage() {
             // No mostrar error, solo indicar que falta la evaluación
             setUnlockError(null);
           }
+          openReviewNotice(coach);
+          return;
         } else if (isPending) {
           console.log('⚠️ Coach tiene pago pendiente');
           setUnlockError('Ya tienes un pago pendiente para este entrenador. Espera a que se complete o contacta soporte si necesitas ayuda.');
@@ -291,6 +349,8 @@ export default function CoachesPage() {
         if (coachAccess && coachAccess.status === 'paid') {
           console.log('✅ Coach ya tiene pago completado (fallback desde analysisInfo)');
           setIsAlreadyPaid(true);
+          openReviewNotice(coach);
+          return;
         }
       }
     }
@@ -339,6 +399,7 @@ export default function CoachesPage() {
           // Ya está pagado - mostrar como información
           setIsAlreadyPaid(true);
           setUnlockError(null);
+          openReviewNotice(unlockCoach);
           return;
         }
         // Si es error de monto mínimo, mostrar mensaje específico
@@ -385,6 +446,53 @@ export default function CoachesPage() {
     }
   };
 
+  const handleUseFreeReview = async () => {
+    if (!analysisIdFromQuery || !unlockCoach) return;
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    try {
+      setUsingFreeReview(true);
+      setUnlockError(null);
+      const token = await user.getIdToken();
+      const res = await fetch('/api/coach-unlocks/free', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          analysisId: analysisIdFromQuery,
+          coachId: unlockCoach.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 409) {
+          setIsAlreadyPaid(true);
+          setUnlockError(null);
+          return;
+        }
+        throw new Error(data?.error || 'No se pudo usar la revisión gratis.');
+      }
+      setIsAlreadyPaid(true);
+      setPaidCoachIds((prev) => prev.includes(unlockCoach.id) ? prev : [...prev, unlockCoach.id]);
+      setFreeCoachReviews(Number(data?.freeCoachReviewsLeft ?? Math.max(0, freeCoachReviews - 1)));
+      toast({
+        title: 'Revisión gratis aplicada',
+        description: 'El entrenador ya tiene acceso al análisis.',
+      });
+      openReviewNotice(unlockCoach);
+      setUnlockDialogOpen(false);
+      router.refresh();
+    } catch (error: any) {
+      setUnlockError(error?.message || 'Error inesperado al usar revisión gratis.');
+    } finally {
+      setUsingFreeReview(false);
+    }
+  };
+
   const handleSimulatePayment = async () => {
     if (!analysisIdFromQuery || !unlockCoach) return;
     if (!user) {
@@ -420,6 +528,7 @@ export default function CoachesPage() {
         title: 'Pago simulado',
         description: 'El análisis está desbloqueado. El entrenador puede verlo ahora.',
       });
+      openReviewNotice(unlockCoach);
       setUnlockDialogOpen(false);
       // Recargar la página para actualizar el estado
       router.refresh();
@@ -528,7 +637,7 @@ export default function CoachesPage() {
 
         {/* Results Count */}
         <div className="text-sm text-muted-foreground">
-          Mostrando {filteredCoaches.length} de {coaches.length} entrenadores
+          Mostrando {filteredCoaches.length} de {visibleCoachesCount} entrenadores
         </div>
       </div>
 
@@ -572,17 +681,13 @@ export default function CoachesPage() {
             </CardHeader>
 
             <CardContent className="flex-grow space-y-4">
-              {/* Experience */}
+              {/* Curriculum */}
               <div>
                 <h4 className="font-semibold mb-2 flex items-center gap-2">
                   <Briefcase className="h-5 w-5 text-primary" /> 
-                  Experiencia
+                  Curriculum
                 </h4>
                 <p className="text-sm text-muted-foreground">{coach.experience}</p>
-                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3" />
-                  {coach.yearsOfExperience} años
-                </div>
               </div>
 
               {/* Bio */}
@@ -723,12 +828,12 @@ export default function CoachesPage() {
                   <DialogTrigger asChild>
                     <Button variant="outline" className="flex-1">
                       <MessageSquare className="mr-2 h-4 w-4" />
-                      Pedir ayuda
+                      Enviar mensaje
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Pedir ayuda a {coach.name}</DialogTitle>
+                      <DialogTitle>Enviar mensaje a {coach.name}</DialogTitle>
                       <DialogDescription>Envía un mensaje breve al entrenador.</DialogDescription>
                     </DialogHeader>
                     <Textarea
@@ -747,6 +852,13 @@ export default function CoachesPage() {
                           try {
                             setSending(true);
                             const colRef = collection(db as any, 'messages');
+                            const appBaseUrl = getClientAppBaseUrl();
+                            const analysisUrl = analysisIdFromQuery && appBaseUrl
+                              ? `${appBaseUrl}/analysis/${analysisIdFromQuery}`
+                              : '';
+                            const appendedText = analysisUrl && !helpMessage.includes(analysisUrl)
+                              ? `${helpMessage}\n\nLink al análisis: ${analysisUrl}`
+                              : helpMessage;
                             const payload = {
                               fromId: user.uid,
                               fromName: (userProfile as any)?.name || user.displayName || 'Jugador',
@@ -754,9 +866,16 @@ export default function CoachesPage() {
                               toId: coach.id,
                               toCoachDocId: coach.id,
                               toName: coach.name,
-                              text: helpMessage,
+                              text: appendedText,
+                              analysisId: analysisIdFromQuery || null,
                               createdAt: serverTimestamp(),
                               read: false,
+                              messageType: getMessageType({ fromId: user.uid, analysisId: analysisIdFromQuery || null }),
+                              conversationId: buildConversationId({
+                                fromId: user.uid,
+                                toId: coach.id,
+                                analysisId: analysisIdFromQuery || null,
+                              }),
                             };
                             await addDoc(colRef, payload as any);
                             setHelpOpenFor(null);
@@ -775,18 +894,14 @@ export default function CoachesPage() {
                 <Button
                   className="flex-1"
                   onClick={() => {
-                    if (analysisIdFromQuery) {
-                      handleRequestReview(coach);
-                    } else {
-                      router.push('/player/messages');
-                    }
+                    handleRequestReview(coach);
                   }}
                   variant={paidCoachIds.includes(coach.id) ? 'outline' : 'default'}
                 >
                   <Users className="mr-2 h-4 w-4" /> 
                   {analysisIdFromQuery 
                     ? (paidCoachIds.includes(coach.id) ? 'Ya abonado' : 'Solicitar revisión')
-                    : 'Conectar'}
+                    : 'Solicitar revisión'}
                 </Button>
               </div>
             </CardFooter>
@@ -870,6 +985,15 @@ export default function CoachesPage() {
                 </span>
               </div>
             </div>
+
+            {freeCoachReviews > 0 && !isAlreadyPaid && (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                <p className="font-medium">Tenés {freeCoachReviews} revisión{freeCoachReviews === 1 ? '' : 'es'} gratis disponible{freeCoachReviews === 1 ? '' : 's'}.</p>
+                <p className="text-emerald-800 text-xs mt-1">
+                  Podés usar una revisión gratis para desbloquear este entrenador sin pagar.
+                </p>
+              </div>
+            )}
 
             {/* Selector de método de pago - SIEMPRE visible */}
             <div className="rounded-md border p-3 text-sm space-y-2 bg-blue-50 border-blue-200">
@@ -958,10 +1082,27 @@ export default function CoachesPage() {
                 <Button variant="outline" onClick={() => setUnlockDialogOpen(false)} disabled={creatingUnlock || simulatingPayment}>
                   Cancelar
                 </Button>
+                {freeCoachReviews > 0 && (
+                  <Button
+                    variant="secondary"
+                    onClick={handleUseFreeReview}
+                    disabled={
+                      usingFreeReview ||
+                      creatingUnlock ||
+                      simulatingPayment ||
+                      !analysisIdFromQuery ||
+                      !unlockCoach ||
+                      analysisInfoLoading
+                    }
+                  >
+                    {usingFreeReview ? 'Usando revisión...' : 'Usar revisión gratis'}
+                  </Button>
+                )}
                 <Button
                   onClick={handleCreateUnlock}
                   disabled={
                     creatingUnlock ||
+                    usingFreeReview ||
                     simulatingPayment ||
                     !analysisIdFromQuery ||
                     !unlockCoach ||
@@ -977,6 +1118,25 @@ export default function CoachesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={reviewNoticeOpen} onOpenChange={setReviewNoticeOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revisión solicitada</AlertDialogTitle>
+            <AlertDialogDescription>
+              {reviewNoticeCoachName} ya tiene el análisis a disposición para revisarlo y dejar su devolución. Te avisaremos cuando responda.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cerrar</AlertDialogCancel>
+            {analysisIdFromQuery && (
+              <AlertDialogAction onClick={() => router.push(`/analysis/${analysisIdFromQuery}`)}>
+                Ir al análisis
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* No Results */}
       {filteredCoaches.length === 0 && (

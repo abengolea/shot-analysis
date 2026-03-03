@@ -148,7 +148,7 @@ export default function KinoveaDemoPage() {
               <div className="flex items-center gap-2">
                 <Label className="text-xs">Filtrar por tiro</Label>
                 <Select onValueChange={setFilterShotType} value={filterShotType}>
-                  <SelectTrigger className="w-[180px]">
+                  <SelectTrigger className="w-full sm:w-[180px]">
                     <SelectValue placeholder="Todos" />
                   </SelectTrigger>
                   <SelectContent>

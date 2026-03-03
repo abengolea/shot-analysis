@@ -28,6 +28,14 @@ export default function CoachLayout({ children }: { children: React.ReactNode })
   }, [pathname]);
 
   useEffect(() => {
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("preferredRole", "coach");
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     const run = async () => {
       if (loading) return;
       setError(null);

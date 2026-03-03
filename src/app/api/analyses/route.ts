@@ -1,106 +1,213 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb, isFirebaseAdminAvailable, getFirebaseAdminError } from '@/lib/firebase-admin';
+import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { FieldPath } from 'firebase-admin/firestore';
 
 export const dynamic = 'force-dynamic';
 
+async function isAdminRequest(request: NextRequest): Promise<boolean> {
+  try {
+    const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
+    if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) return false;
+    const token = authHeader.split(' ')[1];
+    const decoded = await adminAuth.verifyIdToken(token);
+    const uid = decoded.uid;
+    const coachSnap = await adminDb.collection('coaches').doc(uid).get();
+    const playerSnap = await adminDb.collection('players').doc(uid).get();
+    const role = coachSnap.exists ? (coachSnap.data() as any)?.role : (playerSnap.exists ? (playerSnap.data() as any)?.role : undefined);
+    return role === 'admin';
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
-    console.log('🔍 [ANALYSES] Endpoint llamado');
-    
+    if (!adminDb) {
+      return NextResponse.json({ error: 'Admin SDK no inicializado (FIREBASE_ADMIN_* o ADC faltante)' }, { status: 500 });
+    }
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
-    
-    console.log('🔍 [ANALYSES] userId:', userId);
-    
-    if (!userId) {
+    const adminFlag = searchParams.get('admin');
+    const queueFlag = searchParams.get('queue');
+
+    const requestIsAdmin = adminFlag === '1' || adminFlag === 'true' ? await isAdminRequest(request) : false;
+    if (!userId && !requestIsAdmin) {
       return NextResponse.json({ error: 'userId es requerido' }, { status: 400 });
     }
 
-    // Verificar Firebase Admin
-    if (!isFirebaseAdminAvailable()) {
-      console.error('❌ [ANALYSES] Firebase Admin no disponible:', getFirebaseAdminError());
-      return NextResponse.json({
-        analyses: [],
-        count: 0,
-        error: 'Base de datos no disponible',
-        details: getFirebaseAdminError()
+    // Cola IA para admin
+    if ((queueFlag === 'ia') && await isAdminRequest(request)) {
+      const qs = await adminDb.collection('ia_review_queue').orderBy('createdAt', 'desc').limit(500).get();
+      const iaQueue = qs.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      return NextResponse.json({ iaQueue });
+    }
+
+    const getCreatedAtMs = (value: any): number => {
+      if (!value) return 0;
+      if (typeof value === 'number' || typeof value === 'string') {
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+      }
+      if (typeof value?.toDate === 'function') return value.toDate().getTime();
+      if (typeof value?._seconds === 'number') {
+        return value._seconds * 1000 + Math.round((value._nanoseconds || 0) / 1e6);
+      }
+      return 0;
+    };
+
+    /** Puntaje en escala 0..100 para listados (score puede estar en score, analysisResult o scoreMetadata) */
+    const toDisplayScore = (a: any): number | null => {
+      const raw =
+        a?.score ??
+        a?.analysisResult?.score ??
+        a?.analysisResult?.overallScore ??
+        a?.analysisResult?.scoreMetadata?.weightedScore ??
+        a?.scoreMetadata?.weightedScore;
+      if (typeof raw !== 'number') return null;
+      if (raw <= 10) return Math.round(raw * 10);
+      if (raw <= 5) return Math.round((raw / 5) * 100);
+      return Math.round(raw);
+    };
+
+    let analyses: any[] = [];
+    if (requestIsAdmin) {
+      console.log('🔍 Listando TODOS los análisis (admin)');
+      const analysesSnapshot = await adminDb
+        .collection('analyses')
+        .orderBy('createdAt', 'desc')
+        .limit(500)
+        .get();
+      analyses = analysesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as any[];
+    } else {
+      const clubSnap = await adminDb.collection('clubs').doc(String(userId)).get();
+      if (clubSnap.exists) {
+        const clubName = String((clubSnap.data() as any)?.name || '').trim();
+        console.log('🔍 Buscando análisis para club:', clubName || userId);
+        if (clubName) {
+          const playersSnap = await adminDb
+            .collection('players')
+            .where('club', '==', clubName)
+            .limit(500)
+            .get();
+          const playerIds = playersSnap.docs.map(doc => doc.id);
+          if (playerIds.length > 0) {
+            const merged = new Map<string, any>();
+            const chunkSize = 10;
+            for (let i = 0; i < playerIds.length; i += chunkSize) {
+              const chunk = playerIds.slice(i, i + chunkSize);
+              const chunkSnap = await adminDb
+                .collection('analyses')
+                .where('playerId', 'in', chunk)
+                .orderBy('createdAt', 'desc')
+                .get();
+              for (const doc of chunkSnap.docs) {
+                if (!merged.has(doc.id)) {
+                  merged.set(doc.id, { id: doc.id, ...doc.data() });
+                }
+              }
+            }
+            analyses = Array.from(merged.values()).sort(
+              (a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt)
+            );
+          }
+        }
+      } else {
+        console.log('🔍 Buscando análisis para usuario:', userId);
+        const playerSnap = await adminDb
+          .collection('analyses')
+          .where('playerId', '==', userId)
+          .orderBy('createdAt', 'desc')
+          .get();
+        let userSnap: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData> | null = null;
+        try {
+          userSnap = await adminDb
+            .collection('analyses')
+            .where('userId', '==', userId)
+            .orderBy('createdAt', 'desc')
+            .get();
+        } catch (e) {
+          console.warn('⚠️ Query por userId falló, usando solo playerId', e);
+        }
+
+        const merged = new Map<string, any>();
+        for (const doc of playerSnap.docs) {
+          merged.set(doc.id, { id: doc.id, ...doc.data() });
+        }
+        if (userSnap) {
+          for (const doc of userSnap.docs) {
+            if (!merged.has(doc.id)) {
+              merged.set(doc.id, { id: doc.id, ...doc.data() });
+            }
+          }
+        }
+
+        analyses = Array.from(merged.values()).sort(
+          (a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt)
+        );
+      }
+    }
+
+    // Enriquecer con datos del jugador (solo para admin)
+    if (requestIsAdmin) {
+      const playerIds = Array.from(new Set(analyses.map((a: any) => String(a.playerId || '')).filter(Boolean)));
+
+      const idToPlayer: Record<string, { name?: string; email?: string }> = {};
+      // Firestore permite hasta 10 IDs en consultas 'in'
+      const chunkSize = 10;
+      for (let i = 0; i < playerIds.length; i += chunkSize) {
+        const chunk = playerIds.slice(i, i + chunkSize);
+        try {
+          const snap = await adminDb
+            .collection('players')
+            .where(FieldPath.documentId(), 'in', chunk)
+            .get();
+          snap.docs.forEach(d => {
+            const data = d.data() as any;
+            idToPlayer[d.id] = { name: data?.name, email: data?.email };
+          });
+        } catch (e) {
+          // Fallback: si falla la consulta 'in' por cualquier razón, intentar gets individuales
+          await Promise.all(
+            chunk.map(async (pid) => {
+              try {
+                const d = await adminDb.collection('players').doc(pid).get();
+                if (d.exists) {
+                  const data = d.data() as any;
+                  idToPlayer[pid] = { name: data?.name, email: data?.email };
+                }
+              } catch {
+                // ignorar
+              }
+            })
+          );
+        }
+      }
+
+      analyses = analyses.map((a: any) => {
+        const info = idToPlayer[String(a.playerId || '')] || {};
+        return { ...a, playerName: info.name || null, playerEmail: info.email || null };
       });
     }
 
-    console.log('🔍 [ANALYSES] Buscando en ambas colecciones...');
+    console.log(`✅ Encontrados ${analyses.length} análisis para usuario ${userId}`);
 
-    // Buscar en colección 'analyses'
-    const analysesSnapshot = await adminDb
-      .collection('analyses')
-      .where('playerId', '==', userId)
-      .orderBy('createdAt', 'desc')
-      .get();
-    
-    console.log(`📊 [ANALYSES] Colección 'analyses': ${analysesSnapshot.docs.length} documentos`);
-    
-    type AnalysisEntry = { id: string; createdAt?: any; source: string; [key: string]: any };
-
-    const analysesFromAnalyses: AnalysisEntry[] = analysesSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      source: 'analyses'
-    }));
-
-    // Buscar en colección 'video-analysis' (sin orderBy para evitar error de índice)
-    const videoAnalysisSnapshot = await adminDb
-      .collection('video-analysis')
-      .where('userId', '==', userId)
-      .get();
-    
-    console.log(`📊 [ANALYSES] Colección 'video-analysis': ${videoAnalysisSnapshot.docs.length} documentos`);
-    
-    const analysesFromVideoAnalysis: AnalysisEntry[] = videoAnalysisSnapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        playerId: data.userId,
-        shotType: data.shotType || 'Tipo no especificado',
-        status: data.analysis ? 'analyzed' : 'uploaded',
-        createdAt: data.createdAt,
-        videoUrl: data.videoUrl,
-        analysis: data.analysis,
-        metadata: data.metadata,
-        originalFileName: data.originalFileName,
-        source: 'video-analysis'
-      };
+    const analysesWithDisplayScore = analyses.map((a: any) => {
+      const displayScore = toDisplayScore(a);
+      return { ...a, displayScore: displayScore ?? undefined };
     });
 
-    // Combinar resultados
-    const allAnalyses = [...analysesFromAnalyses, ...analysesFromVideoAnalysis];
-    
-    // Ordenar por fecha
-    allAnalyses.sort((a, b) => {
-      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return dateB - dateA;
-    });
-
-    console.log(`✅ [ANALYSES] Total encontrados: ${allAnalyses.length}`);
-    
     return NextResponse.json({
-      analyses: allAnalyses,
-      count: allAnalyses.length,
-      userId: userId,
-      sources: {
-        analyses: analysesFromAnalyses.length,
-        videoAnalysis: analysesFromVideoAnalysis.length
-      }
+      analyses: analysesWithDisplayScore,
+      count: analysesWithDisplayScore.length
     });
 
   } catch (error) {
-    console.error('❌ [ANALYSES] Error:', error);
+    console.error('❌ Error al obtener análisis:', error);
     return NextResponse.json(
-      { 
-        error: 'Error interno del servidor',
-        details: error instanceof Error ? error.message : 'Error desconocido',
-        analyses: [],
-        count: 0
-      },
+      { error: 'Error interno del servidor' },
       { status: 500 }
     );
   }

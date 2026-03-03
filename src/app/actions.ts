@@ -4,8 +4,17 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { adminAuth, adminDb, adminStorage } from '@/lib/firebase-admin';
-import { sendCustomEmail } from '@/lib/email-service';
-import { isMaintenanceMode } from '@/lib/maintenance';
+import { scheduleKeyframesExtraction } from '@/lib/keyframes-backfill';
+import { getVideoDurationSecondsFromBuffer } from '@/lib/ffmpeg';
+import { buildEconomyEvidenceFromVideoUrl } from '@/lib/economy-evidence';
+import { detectShotsFromPoseService } from '@/lib/pose-shot-detection';
+import { sendAdminNotification, sendCustomEmail, sendPasswordResetEmail, sendVerificationEmail } from '@/lib/email-service';
+import { getAppBaseUrl } from '@/lib/app-url';
+import { buildScoreMetadata, loadWeightsFromFirestore } from '@/lib/scoring';
+import { generateAnalysisSummary } from '@/lib/ai-summary';
+import { verifyHasShotsWithLlmFromVideoUrl } from '@/lib/llm-shot-verify';
+import { buildNoShotsAnalysis, buildUnverifiedShotAnalysis } from '@/lib/analysis-fallbacks';
+import type { ChecklistCategory, DetailedChecklistItem } from '@/lib/types';
 // Acción: añadir entrenador desde el formulario de registro de coaches
 const AddCoachSchema = z.object({
     name: z.string().min(2, "Nombre demasiado corto"),
@@ -18,6 +27,36 @@ type AddCoachState = {
     success: boolean;
     message: string;
     errors?: Record<string, string[]>;
+};
+
+const normalizeDetailedChecklist = (input: any[]): ChecklistCategory[] => {
+    if (!Array.isArray(input)) return [];
+    const toRating = (value: any): DetailedChecklistItem['rating'] => {
+        if (value === 0) return 0;
+        if (typeof value !== 'number' || Number.isNaN(value)) return undefined;
+        const rounded = Math.round(value);
+        if (rounded <= 0) return 0;
+        if (rounded >= 5) return 5;
+        return rounded as 1 | 2 | 3 | 4;
+    };
+    return input.map((cat) => ({
+        category: String(cat?.category || 'SIN CATEGORIA'),
+        items: Array.isArray(cat?.items)
+            ? cat.items.map((it: any) => ({
+                id: String(it?.id || ''),
+                name: String(it?.name || ''),
+                description: String(it?.description || ''),
+                status: (it?.status as DetailedChecklistItem['status']) || 'Mejorable',
+                rating: toRating(it?.rating),
+                na: Boolean(it?.na),
+                comment: String(it?.comment || ''),
+                timestamp: typeof it?.timestamp === 'string' ? it.timestamp : undefined,
+                evidencia: typeof it?.evidencia === 'string' ? it.evidencia : undefined,
+                razon: typeof it?.razon === 'string' ? it.razon : undefined,
+                coachComment: typeof it?.coachComment === 'string' ? it.coachComment : undefined,
+            }))
+            : [],
+    }));
 };
 
 export async function addCoach(prevState: AddCoachState, formData: FormData): Promise<AddCoachState> {
@@ -77,12 +116,12 @@ export async function addCoach(prevState: AddCoachState, formData: FormData): Pr
         const ref = await adminDb.collection('coach_applications').add(application as any);
 
         try {
-            await sendCustomEmail({
-                to: 'abengolea1@gmail.com',
+            await sendAdminNotification({
                 subject: `Nueva solicitud de entrenador (admin): ${data.name}`,
-                html: `<p>Email: ${data.email}</p><p>Nombre: ${data.name}</p><p>Bio: ${data.experience}</p><p>Foto: ${photoUrl || '-'}</p><p>ID: ${ref.id}</p>`
+                html: `<p>Email: ${data.email}</p><p>Nombre: ${data.name}</p><p>Bio: ${data.experience}</p><p>Foto: ${photoUrl || '-'}</p><p>ID: ${ref.id}</p>`,
+                fallbackTo: 'abengolea1@gmail.com',
             });
-        } catch {}
+        } catch (e) {}
 
         return { success: true, message: 'Solicitud enviada para aprobación.' };
     } catch (e) {
@@ -133,7 +172,7 @@ export async function adminCreateCoach(prevState: AdminCreateCoachState, formDat
         try {
             const existing = await adminAuth.getUserByEmail(email);
             userId = existing.uid;
-        } catch {
+        } catch (e) {
             const created = await adminAuth.createUser({ email, displayName: name });
             userId = created.uid;
         }
@@ -157,7 +196,6 @@ export async function adminCreateCoach(prevState: AdminCreateCoachState, formDat
             email,
             bio,
             photoUrl,
-            avatarUrl: photoUrl, // También guardar como avatarUrl para compatibilidad con la UI
             role: 'coach' as const,
             status: 'pending' as const,
             verified: true, // verificación automática al tener foto
@@ -211,6 +249,77 @@ export async function adminCreateCoach(prevState: AdminCreateCoachState, formDat
         return { success: false, message: e?.message || 'No se pudo crear el entrenador.' };
     }
 }
+
+// Crear club desde el panel admin (alta solo-admin)
+type AdminCreateClubState = {
+    success: boolean;
+    message: string;
+    errors?: Record<string, string[]>;
+    userId?: string;
+};
+
+export async function adminCreateClub(_prevState: AdminCreateClubState, formData: FormData): Promise<AdminCreateClubState> {
+    try {
+        if (!adminDb || !adminAuth) {
+            return { success: false, message: 'Servidor sin Admin SDK' };
+        }
+
+        const normalizeClubName = (value: string) =>
+            value
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/\s+/g, " ")
+                .trim();
+
+        const name = String(formData.get('name') || '').trim();
+        const email = String(formData.get('email') || '').trim().toLowerCase();
+        const city = String(formData.get('city') || '').trim();
+        const province = String(formData.get('province') || '').trim();
+        const nameLower = normalizeClubName(name);
+
+        const fieldErrors: Record<string, string[]> = {};
+        if (!name || name.length < 2) fieldErrors.name = ['Nombre demasiado corto'];
+        if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fieldErrors.email = ['Email inválido'];
+        if (!city) fieldErrors.city = ['Ciudad requerida'];
+        if (!province) fieldErrors.province = ['Provincia requerida'];
+        if (Object.keys(fieldErrors).length) {
+            return { success: false, message: 'Revisa los campos del formulario.', errors: fieldErrors };
+        }
+
+        // Crear o recuperar usuario en Auth por email
+        let userId: string;
+        try {
+            const existing = await adminAuth.getUserByEmail(email);
+            userId = existing.uid;
+        } catch (e) {
+            const created = await adminAuth.createUser({ email, displayName: name });
+            userId = created.uid;
+        }
+
+        const nowIso = new Date().toISOString();
+        const clubData = {
+            userId,
+            name,
+            nameLower,
+            email,
+            role: 'club' as const,
+            status: 'active' as const,
+            avatarUrl: 'https://placehold.co/100x100.png',
+            city,
+            province,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            createdByAdminId: null as string | null,
+        };
+        await adminDb.collection('clubs').doc(userId).set(clubData, { merge: true });
+
+        return { success: true, message: 'Club creado correctamente.', userId };
+    } catch (e: any) {
+        console.error('Error adminCreateClub:', e);
+        return { success: false, message: e?.message || 'No se pudo crear el club.' };
+    }
+}
 // Regalar créditos (análisis) a un jugador desde el panel admin
 export async function giftAnalyses(_prevState: any, formData: FormData) {
     try {
@@ -232,6 +341,7 @@ export async function giftAnalyses(_prevState: any, formData: FormData) {
                 credits: 0,
                 freeAnalysesUsed: 0,
                 yearInUse: new Date().getFullYear(),
+                freeCoachReviews: 0,
                 historyPlusActive: false,
                 historyPlusValidUntil: null,
                 currency: 'ARS',
@@ -240,10 +350,51 @@ export async function giftAnalyses(_prevState: any, formData: FormData) {
             const newCredits = (base.credits || 0) + count;
             tx.set(walletRef, { ...base, credits: newCredits, updatedAt: nowIso }, { merge: true });
         });
+        revalidatePath('/admin');
+        revalidatePath(`/admin/players/${userId}`);
         return { success: true, message: `Se regalaron ${count} análisis.` };
     } catch (e) {
         console.error('Error regalando análisis:', e);
         return { success: false, message: 'Error al regalar análisis' };
+    }
+}
+
+// Regalar revisiones de coach gratis a un jugador desde el panel admin
+export async function giftCoachReviews(_prevState: any, formData: FormData) {
+    try {
+        const userId = String(formData.get('userId') || '');
+        const count = Number(formData.get('count') || 0);
+        if (!userId || !count || count <= 0) {
+            return { success: false, message: 'Parámetros inválidos' };
+        }
+        if (!adminDb) {
+            return { success: false, message: 'Servidor sin Admin SDK' };
+        }
+        const db = adminDb!;
+        const nowIso = new Date().toISOString();
+        await db.runTransaction(async (tx: any) => {
+            const walletRef = db.collection('wallets').doc(userId);
+            const walletSnap = await tx.get(walletRef);
+            const base = walletSnap.exists ? walletSnap.data() : {
+                userId,
+                credits: 0,
+                freeAnalysesUsed: 0,
+                yearInUse: new Date().getFullYear(),
+                freeCoachReviews: 0,
+                historyPlusActive: false,
+                historyPlusValidUntil: null,
+                currency: 'ARS',
+                createdAt: nowIso,
+            };
+            const newFreeReviews = (base.freeCoachReviews || 0) + count;
+            tx.set(walletRef, { ...base, freeCoachReviews: newFreeReviews, updatedAt: nowIso }, { merge: true });
+        });
+        revalidatePath('/admin');
+        revalidatePath(`/admin/players/${userId}`);
+        return { success: true, message: `Se regalaron ${count} revisiones de coach.` };
+    } catch (e) {
+        console.error('Error regalando revisiones de coach:', e);
+        return { success: false, message: 'Error al regalar revisiones de coach' };
     }
 }
 
@@ -278,45 +429,13 @@ export async function adminUpdateCoachStatus(_prev: any, formData: FormData) {
         await adminDb.collection('coaches').doc(userId).set({ status, updatedAt: new Date().toISOString() }, { merge: true });
         revalidatePath('/admin');
         revalidatePath(`/admin/coaches/${userId}`);
+        revalidatePath('/coaches');
+        revalidatePath('/coach/coaches');
+        revalidatePath('/player/coaches');
         return { success: true };
     } catch (e) {
         console.error('Error actualizando estado de coach:', e);
         return { success: false };
-    }
-}
-
-// Ocultar/mostrar coach (toggle hidden)
-export async function adminToggleCoachHidden(_prev: any, formData: FormData) {
-    try {
-        const userId = String(formData.get('userId') || '');
-        if (!userId) {
-            return { success: false, message: 'userId requerido' };
-        }
-        if (!adminDb) return { success: false, message: 'Servidor sin Admin SDK' };
-        
-        // Obtener el estado actual del coach
-        const coachDoc = await adminDb.collection('coaches').doc(userId).get();
-        if (!coachDoc.exists) {
-            return { success: false, message: 'Coach no encontrado' };
-        }
-        
-        const currentData = coachDoc.data() as any;
-        const currentHidden = currentData?.hidden === true;
-        const newHidden = !currentHidden;
-        
-        await adminDb.collection('coaches').doc(userId).set({ 
-            hidden: newHidden, 
-            updatedAt: new Date().toISOString() 
-        }, { merge: true });
-        
-        revalidatePath('/admin');
-        revalidatePath(`/admin/coaches/${userId}`);
-        revalidatePath('/coach/coaches');
-        
-        return { success: true, message: newHidden ? 'Coach oculto' : 'Coach visible' };
-    } catch (e) {
-        console.error('Error ocultando/mostrando coach:', e);
-        return { success: false, message: 'Error al actualizar' };
     }
 }
 
@@ -326,46 +445,24 @@ export async function adminUpdateWallet(_prev: any, formData: FormData) {
         const userId = String(formData.get('userId') || '');
         const credits = Number(formData.get('credits') || 0);
         const freeAnalysesUsed = Number(formData.get('freeAnalysesUsed') || 0);
+        const freeCoachReviews = Number(formData.get('freeCoachReviews') || 0);
         const redirectTo = String(formData.get('redirectTo') || '');
-        
-        console.log('adminUpdateWallet called with:', { userId, credits, freeAnalysesUsed, redirectTo });
-        
-        if (!userId || credits < 0 || freeAnalysesUsed < 0) {
-            console.error('Parámetros inválidos:', { userId, credits, freeAnalysesUsed });
+        if (!userId || credits < 0 || freeAnalysesUsed < 0 || freeCoachReviews < 0) {
             return { success: false, message: 'Parámetros inválidos' };
         }
-        if (!adminDb) {
-            console.error('Admin SDK no inicializado');
-            return { success: false, message: 'Servidor sin Admin SDK' };
-        }
-        
+        if (!adminDb) return { success: false, message: 'Servidor sin Admin SDK' };
         const walletRef = adminDb.collection('wallets').doc(userId);
         const nowIso = new Date().toISOString();
-        const walletData = { userId, credits, freeAnalysesUsed, updatedAt: nowIso };
-        
-        console.log('Actualizando wallet con datos:', walletData);
-        await walletRef.set(walletData, { merge: true });
-        
-        console.log('Wallet actualizada exitosamente, revalidando paths...');
+        await walletRef.set({ userId, credits, freeAnalysesUsed, freeCoachReviews, updatedAt: nowIso }, { merge: true });
         revalidatePath('/admin');
         revalidatePath(`/admin/players/${userId}`);
-        
-        // Solo redirigir si se especifica redirectTo (formularios HTML normales)
         if (redirectTo) {
-            console.log('Redirigiendo a:', redirectTo);
             redirect(redirectTo);
         }
-        
-        console.log('adminUpdateWallet completado exitosamente');
         return { success: true };
-    } catch (e: any) {
-        // Si es un error de redirect de Next.js, no lo tratamos como error
-        if (e?.message === 'NEXT_REDIRECT') {
-            console.log('Redirección exitosa');
-            throw e; // Re-lanzamos para que Next.js maneje la redirección
-        }
+    } catch (e) {
         console.error('Error actualizando wallet:', e);
-        return { success: false, message: `Error: ${e?.message || 'Error desconocido'}` };
+        return { success: false };
     }
 }
 
@@ -390,14 +487,49 @@ export async function adminSetHistoryPlus(_prev: any, formData: FormData) {
     }
 }
 
-// Enviar link de reseteo de contraseña al email del jugador
+// Olvidé contraseña: envía email con link (template + continueUrl del entorno actual)
+export async function requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalized)) {
+    return { success: false, message: 'Email inválido' };
+  }
+  try {
+    const sent = await sendPasswordResetEmail(normalized);
+    if (sent) return { success: true, message: 'Si el email está registrado, recibirás un enlace para restablecer tu contraseña.' };
+    return { success: false, message: 'No se pudo enviar el email. Revisá la configuración del servidor.' };
+  } catch (e) {
+    console.error('requestPasswordReset:', e);
+    return { success: false, message: 'Error al enviar el email. Intentá más tarde.' };
+  }
+}
+
+// Reenviar verificación: envía email de verificación (template + continueUrl del entorno actual)
+export async function requestVerificationEmail(email: string): Promise<{ success: boolean; message: string }> {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalized)) {
+    return { success: false, message: 'Email inválido' };
+  }
+  if (!adminAuth) return { success: false, message: 'Servidor no disponible.' };
+  try {
+    const userRecord = await adminAuth.getUserByEmail(normalized);
+    const sent = await sendVerificationEmail(userRecord.uid, normalized);
+    if (sent) return { success: true, message: 'Te enviamos un nuevo email de verificación. Revisá tu bandeja y spam.' };
+    return { success: false, message: 'No se pudo enviar el email. Intentá más tarde.' };
+  } catch (e: any) {
+    if (e?.code === 'auth/user-not-found') return { success: false, message: 'Este email no está registrado.' };
+    console.error('requestVerificationEmail:', e);
+    return { success: false, message: 'Error al enviar el email. Intentá más tarde.' };
+  }
+}
+
+// Enviar link de reseteo de contraseña al email del jugador (admin; devuelve link, no envía email)
+// Usado con form action (1 arg: FormData) o wrapper (2 args: prev, FormData)
 export async function adminSendPasswordReset(_prev: any, formData?: FormData) {
     try {
-        if (!formData) {
-            return { success: false, message: 'Faltan datos del formulario' };
-        }
-        const userId = String(formData.get('userId') || '');
-        if (!userId) return { success: false, message: 'userId requerido' };
+        const fd = (formData && typeof (formData as any).get === 'function') ? formData : _prev;
+        if (!fd || typeof (fd as any).get !== 'function') return { success: false };
+        const userId = String((fd as FormData).get('userId') || '');
+        if (!userId) return { success: false };
         if (!adminDb || !adminAuth) return { success: false };
         let email = '';
         // Buscar email en players o coaches; fallback a Auth
@@ -410,65 +542,21 @@ export async function adminSendPasswordReset(_prev: any, formData?: FormData) {
             if (coachDoc.exists) email = String(coachDoc.data()?.email || '');
         }
         if (!email) {
+            const clubDoc = await adminDb.collection('clubs').doc(userId).get();
+            if (clubDoc.exists) email = String(clubDoc.data()?.email || '');
+        }
+        if (!email) {
             try {
                 const userRecord = await adminAuth.getUser(userId);
                 email = userRecord.email || '';
-            } catch {}
+            } catch (e) {}
         }
         if (!email) return { success: false, message: 'Email no encontrado' };
-        const link = await adminAuth.generatePasswordResetLink(email);
+        const baseUrl = getAppBaseUrl();
+        const actionCodeSettings = baseUrl ? { url: baseUrl } : undefined;
+        const link = await adminAuth.generatePasswordResetLink(email, actionCodeSettings);
         console.log(`🔗 Password reset link for ${email}: ${link}`);
-
-        const html = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #dc2626;">Restablece tu Contraseña</h2>
-            <p>Hola,</p>
-            <p>Has solicitado restablecer tu contraseña en Shot Analysis.</p>
-            <p>Haz clic en el botón de abajo para crear una nueva contraseña:</p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${link}"
-                 style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                Restablecer Contraseña
-              </a>
-            </div>
-            <p>Si el botón no funciona, copia y pega este enlace en tu navegador:</p>
-            <p style="word-break: break-all; color: #6b7280;">${link}</p>
-            <p>Este enlace expirará en 1 hora.</p>
-            <p>Si no solicitaste este cambio, puedes ignorar este email.</p>
-            <p>Saludos,<br>El equipo de Shot Analysis</p>
-          </div>
-        `;
-
-        const text = `
-Restablece tu Contraseña
-
-Hola,
-
-Has solicitado restablecer tu contraseña en Shot Analysis.
-
-Haz clic en este enlace para crear una nueva contraseña:
-${link}
-
-Este enlace expirará en 1 hora.
-
-Si no solicitaste este cambio, puedes ignorar este email.
-
-Saludos,
-El equipo de Shot Analysis
-        `.trim();
-
-        const sent = await sendCustomEmail({
-            to: email,
-            subject: 'Restablece tu contraseña',
-            html,
-            text,
-        });
-
-        if (!sent) {
-            return { success: false, message: 'No se pudo enviar el email. Usa el link de abajo.', link };
-        }
-
-        return { success: true, message: 'Email enviado.', link };
+        return { success: true, link };
     } catch (e) {
         console.error('Error enviando reset password:', e);
         return { success: false };
@@ -482,13 +570,7 @@ export async function adminUpdateCoachProfile(_prev: any, formData: FormData) {
         if (!userId) return { success: false, message: 'userId requerido' };
         if (!adminDb) return { success: false, message: 'Servidor sin Admin SDK' };
         const name = String(formData.get('name') || '').trim();
-        const email = String(formData.get('email') || '').trim();
         const bio = String(formData.get('bio') || '').trim();
-        const experience = String(formData.get('experience') || '').trim();
-        const education = String(formData.get('education') || '').trim();
-        const yearsOfExperienceRaw = String(formData.get('yearsOfExperience') || '').trim();
-        const certificationsRaw = String(formData.get('certifications') || '').trim();
-        const specialtiesRaw = String(formData.get('specialties') || '').trim();
         const payoutEmail = String(formData.get('payoutEmail') || '').trim();
         const ratePerAnalysisRaw = String(formData.get('ratePerAnalysis') || '').trim();
         const verified = formData.get('verified') != null;
@@ -500,32 +582,7 @@ export async function adminUpdateCoachProfile(_prev: any, formData: FormData) {
         const youtube = String(formData.get('youtube') || '').trim();
         const update: any = { updatedAt: new Date().toISOString() };
         if (name) update.name = name;
-        if (email) update.email = email.toLowerCase();
         if (bio || bio === '') update.bio = bio;
-        if (experience || experience === '') update.experience = experience;
-        if (education || education === '') update.education = education;
-        if (yearsOfExperienceRaw !== '') {
-            const years = Number(yearsOfExperienceRaw);
-            if (!Number.isNaN(years) && years >= 0) update.yearsOfExperience = years;
-        } else {
-            update.yearsOfExperience = null;
-        }
-        // Procesar certificaciones (una por línea)
-        if (certificationsRaw || certificationsRaw === '') {
-            const certifications = certificationsRaw
-                .split('\n')
-                .map(c => c.trim())
-                .filter(c => c.length > 0);
-            update.certifications = certifications.length > 0 ? certifications : [];
-        }
-        // Procesar especialidades (una por línea)
-        if (specialtiesRaw || specialtiesRaw === '') {
-            const specialties = specialtiesRaw
-                .split('\n')
-                .map(s => s.trim())
-                .filter(s => s.length > 0);
-            update.specialties = specialties.length > 0 ? specialties : [];
-        }
         if (payoutEmail || payoutEmail === '') update.payoutEmail = payoutEmail;
         if (ratePerAnalysisRaw !== '') {
             const r = Number(ratePerAnalysisRaw);
@@ -568,11 +625,8 @@ export async function adminActivateCoachNow(_prev: any, formData: FormData) {
 }
 
 // Activar y enviar link de contraseña en un solo paso
-export async function adminActivateCoachAndSendPassword(_prev: any, formData?: FormData) {
+export async function adminActivateCoachAndSendPassword(_prev: any, formData: FormData) {
     try {
-        if (!formData) {
-            return { success: false, message: 'Faltan datos del formulario' };
-        }
         const userId = String(formData.get('userId') || '');
         if (!userId) return { success: false, message: 'userId requerido' };
         if (!adminDb || !adminAuth) return { success: false, message: 'Servidor sin Admin SDK' };
@@ -585,27 +639,25 @@ export async function adminActivateCoachAndSendPassword(_prev: any, formData?: F
         try {
             const coachDoc = await adminDb.collection('coaches').doc(userId).get();
             if (coachDoc.exists) email = String(coachDoc.data()?.email || '');
-        } catch {}
+        } catch (e) {}
         if (!email) {
-            try { const userRecord = await adminAuth.getUser(userId); email = userRecord.email || ''; } catch {}
+            try { const userRecord = await adminAuth.getUser(userId); email = userRecord.email || ''; } catch (e) {}
         }
         if (!email) return { success: false, message: 'Email del coach no encontrado' };
 
-        // Generar link de restablecimiento y enviarlo por email
-        const link = await adminAuth.generatePasswordResetLink(email);
+        // Generar link de restablecimiento y enviarlo por email (redirect al entorno actual)
+        const baseUrl = getAppBaseUrl();
+        const actionCodeSettings = baseUrl ? { url: baseUrl } : undefined;
+        const link = await adminAuth.generatePasswordResetLink(email, actionCodeSettings);
         try {
-            const sent = await sendCustomEmail({
+            await sendCustomEmail({
                 to: email,
                 subject: 'Tu acceso como entrenador',
                 html: `<p>Hola, tu cuenta de entrenador fue activada.</p><p>Creá tu contraseña desde este enlace: <a href="${link}">establecer contraseña</a>.</p><p>Luego ingresá a tu panel y completá tu perfil.</p>`
             });
-            if (!sent) {
-                console.warn('No se pudo enviar email de contraseña; devolviendo el link de fallback.');
-                return { success: false, message: 'Coach activado. No se pudo enviar email; usa el link devuelto.', link };
-            }
         } catch (e) {
             console.warn('No se pudo enviar email de contraseña; devolviendo el link de fallback.');
-            return { success: false, message: 'Coach activado. No se pudo enviar email; usa el link devuelto.', link };
+            return { success: true, message: 'Coach activado. No se pudo enviar email; usa el link devuelto.', link };
         }
 
         revalidatePath('/admin');
@@ -645,17 +697,17 @@ export async function adminUpdateCoachPhoto(_prev: any, formData: FormData) {
         await gcsFile.makePublic();
         const photoUrl = `https://storage.googleapis.com/${bucket.name}/${path}`;
 
-        await adminDb.collection('coaches').doc(userId).set({ 
-            photoUrl, 
-            avatarUrl: photoUrl, // También guardar como avatarUrl para compatibilidad con la UI
-            updatedAt: new Date().toISOString() 
+        await adminDb.collection('coaches').doc(userId).set({
+            photoUrl,
+            avatarUrl: photoUrl,
+            updatedAt: new Date().toISOString(),
         }, { merge: true });
         revalidatePath('/admin');
         revalidatePath(`/admin/coaches/${userId}`);
-        return { success: true, photoUrl };
-    } catch (e) {
+        return { success: true, message: 'Foto actualizada', photoUrl };
+    } catch (e: any) {
         console.error('Error subiendo foto de coach:', e);
-        return { success: false };
+        return { success: false, message: 'No se pudo subir la foto' };
     }
 }
 
@@ -665,7 +717,7 @@ import { standardizeVideoBuffer } from '@/lib/ffmpeg';
 type AgeCategory = 'Sub-10' | 'Sub-13' | 'Sub-15' | 'Sub-18' | 'Amateur adulto' | 'Profesional';
 type PlayerLevel = 'Principiante' | 'Intermedio' | 'Avanzado';
 
-function mapAgeGroupToCategory(ageGroup: string): AgeCategory {
+function _mapAgeGroupToCategory(ageGroup: string): AgeCategory {
     switch (ageGroup) {
         case 'U10': return 'Sub-10';
         case 'U13': return 'Sub-13';
@@ -678,7 +730,7 @@ function mapAgeGroupToCategory(ageGroup: string): AgeCategory {
     }
 }
 
-function mapPlayerLevel(playerLevel: string): PlayerLevel {
+function _mapPlayerLevel(playerLevel: string): PlayerLevel {
     switch (playerLevel) {
         case 'Principiante': return 'Principiante';
         case 'Intermedio': return 'Intermedio';
@@ -687,57 +739,47 @@ function mapPlayerLevel(playerLevel: string): PlayerLevel {
     }
 }
 
-const normalizeUploadedVideoUrl = (value?: string | null): string | null => {
-    if (!value) return null;
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    const lower = trimmed.toLowerCase();
-    if (lower.startsWith('temp://')) return null;
-    const isGs = trimmed.startsWith('gs://');
-    const isHttp = trimmed.startsWith('http://') || trimmed.startsWith('https://');
-    if (isGs) return trimmed;
-    if (isHttp) {
-        const isStorageHost = trimmed.includes('storage.googleapis.com')
-            || trimmed.includes('firebasestorage.googleapis.com')
-            || trimmed.includes('localhost:9199')
-            || trimmed.includes('127.0.0.1:9199');
-        if (isStorageHost && trimmed.includes('/v0/b/')) return trimmed;
-        if (trimmed.includes('storage.googleapis.com')) return trimmed;
+type ShotTypesMaintenance = {
+    tres: boolean;
+    media: boolean;
+    libre: boolean;
+};
+
+const DEFAULT_MAINTENANCE = {
+    enabled: false,
+    title: '🔧 SITIO EN MANTENIMIENTO',
+    message: 'El sistema está en mantenimiento. Intenta nuevamente más tarde.',
+    shotTypesMaintenance: {
+        tres: false,
+        media: false,
+        libre: false,
+    } as ShotTypesMaintenance,
+};
+
+function normalizeShotTypesMaintenance(input: any): ShotTypesMaintenance {
+    const base: ShotTypesMaintenance = { ...DEFAULT_MAINTENANCE.shotTypesMaintenance };
+    if (input && typeof input === 'object') {
+        base.tres = Boolean((input as any).tres);
+        base.media = Boolean((input as any).media);
+        base.libre = Boolean((input as any).libre);
     }
-    console.warn('⚠️ URL de video subida inválida, se ignorará:', trimmed);
+    return base;
+}
+
+function mapShotTypeToKey(shotType: string): keyof ShotTypesMaintenance | null {
+    const value = String(shotType || '').toLowerCase();
+    if (value.includes('tres')) return 'tres';
+    if (value.includes('media')) return 'media';
+    if (value.includes('libre')) return 'libre';
     return null;
-};
-
-const parseUploadedVideoUrls = (formData: FormData) => {
-    const rawBack = (formData.get('uploadedBackUrl') as string | null) || null;
-    const rawFront = (formData.get('uploadedFrontUrl') as string | null) || null;
-    const rawLeft = (formData.get('uploadedLeftUrl') as string | null) || null;
-    const rawRight = (formData.get('uploadedRightUrl') as string | null) || null;
-
-    const uploadedBackUrl = normalizeUploadedVideoUrl(rawBack);
-    const uploadedFrontUrl = normalizeUploadedVideoUrl(rawFront);
-    const uploadedLeftUrl = normalizeUploadedVideoUrl(rawLeft);
-    const uploadedRightUrl = normalizeUploadedVideoUrl(rawRight);
-
-    const invalidFields: string[] = [];
-    if (rawBack && !uploadedBackUrl) invalidFields.push('uploadedBackUrl');
-    if (rawFront && !uploadedFrontUrl) invalidFields.push('uploadedFrontUrl');
-    if (rawLeft && !uploadedLeftUrl) invalidFields.push('uploadedLeftUrl');
-    if (rawRight && !uploadedRightUrl) invalidFields.push('uploadedRightUrl');
-
-    return {
-        uploadedBackUrl,
-        uploadedFrontUrl,
-        uploadedLeftUrl,
-        uploadedRightUrl,
-        invalidFields
-    };
-};
+}
 
 // Obtener usuario actual usando Firebase Admin SDK
-const getCurrentUser = async (userId: string) => {
+const _getCurrentUser = async (userId: string) => {
     try {
-                if (!adminDb) {
+        console.log(`🔍 Obteniendo usuario actual con Admin SDK: ${userId}`);
+        
+        if (!adminDb) {
             throw new Error("Firebase Admin Firestore no está inicializado");
         }
         
@@ -746,7 +788,8 @@ const getCurrentUser = async (userId: string) => {
         
         if (playerDoc.exists) {
             const playerData = playerDoc.data();
-                        return { 
+            console.log(`✅ Jugador encontrado: ${playerData?.name}`);
+            return { 
                 id: userId, 
                 name: playerData?.name || 'Usuario',
                 playerLevel: playerData?.playerLevel || 'Por definir',
@@ -755,46 +798,33 @@ const getCurrentUser = async (userId: string) => {
             };
         }
         
-                return null;
+        console.log(`❌ Usuario no encontrado: ${userId}`);
+        return null;
     } catch (error) {
         console.error('❌ Error obteniendo usuario con Admin SDK:', error);
         return null;
     }
 }
 
-// FUNCIÓN ANTIGUA DE ANÁLISIS CON GENKIT (BACKUP)
-export async function startAnalysisOld(prevState: any, formData: FormData) {
+export async function startAnalysis(prevState: any, formData: FormData) {
     try {
-        // Verificar si el sistema está en modo mantenimiento
-        const maintenanceEnabled = await isMaintenanceMode();
-        if (maintenanceEnabled) {
-            return { 
-                message: "El sistema está en mantenimiento. El análisis de lanzamientos está temporalmente deshabilitado.", 
-                error: true 
-            };
-        }
+        console.log("🚀 Iniciando análisis (sin frames del cliente)...");
+        console.log("🔍 Variables de entorno:");
+        console.log("  - GOOGLE_API_KEY:", process.env.GOOGLE_API_KEY ? "✅ Configurado" : "❌ No configurado");
+        console.log("  - GEMINI_API_KEY:", process.env.GEMINI_API_KEY ? "✅ Configurado" : "❌ No configurado");
 
-        console.log("🚀 Iniciando análisis OLD con Genkit (sin frames del cliente)...");
-                                const userId = formData.get('userId') as string;
+        const userId = formData.get('userId') as string;
         const coachId = (formData.get('coachId') as string | null) || null;
         if (!userId) return { message: "ID de usuario requerido.", error: true };
         const shotType = formData.get('shotType') as string;
         if (!shotType) return { message: "Tipo de lanzamiento requerido.", error: true };
+        const analysisMode = String(formData.get('analysisMode') || 'standard');
 
         // Nuevo flujo: aceptar URLs ya subidas por el cliente (Firebase Storage)
-        const {
-            uploadedBackUrl,
-            uploadedFrontUrl,
-            uploadedLeftUrl,
-            uploadedRightUrl,
-            invalidFields
-        } = parseUploadedVideoUrls(formData);
-        if (invalidFields.length > 0) {
-            return {
-                message: `URLs de video inválidas: ${invalidFields.join(', ')}`,
-                error: true
-            };
-        }
+        const uploadedBackUrl = (formData.get('uploadedBackUrl') as string | null) || null;
+        const uploadedFrontUrl = (formData.get('uploadedFrontUrl') as string | null) || null;
+        const uploadedLeftUrl = (formData.get('uploadedLeftUrl') as string | null) || null;
+        const uploadedRightUrl = (formData.get('uploadedRightUrl') as string | null) || null;
 
         // Flujo legacy: archivos directos
         const formBack = formData.get('video-back') as File | null;
@@ -813,6 +843,39 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
         }
         const db = adminDb;
 
+        // Validar mantenimiento global o por tipo de tiro
+        try {
+            const maintenanceRef = db.collection('config').doc('maintenance');
+            const maintenanceSnap = await maintenanceRef.get();
+            const maintenanceData = maintenanceSnap.exists ? maintenanceSnap.data() as any : {};
+            const maintenanceEnabled = Boolean(maintenanceData?.enabled);
+            const normalizedShotTypes = normalizeShotTypesMaintenance(maintenanceData?.shotTypesMaintenance);
+
+            if (maintenanceEnabled) {
+                return {
+                    message: maintenanceData?.message || DEFAULT_MAINTENANCE.message,
+                    error: true,
+                };
+            }
+
+            const shotKey = mapShotTypeToKey(shotType);
+            if (shotKey && normalizedShotTypes[shotKey]) {
+                const available: string[] = [];
+                if (!normalizedShotTypes.tres) available.push('Lanzamiento de Tres');
+                if (!normalizedShotTypes.media) available.push('Lanzamiento de Media Distancia');
+                if (!normalizedShotTypes.libre) available.push('Tiro Libre');
+                const availableText = available.length > 0
+                    ? `Tipos disponibles: ${available.join(', ')}.`
+                    : 'No hay tipos disponibles en este momento.';
+                return {
+                    message: `El tipo "${shotType}" está en mantenimiento. ${availableText}`,
+                    error: true,
+                };
+            }
+        } catch (e) {
+            console.warn('No se pudo validar mantenimiento:', e);
+        }
+
         // Obtener usuario
         const playerDoc = await db.collection('players').doc(userId).get();
         const currentUser = playerDoc.exists ? { id: userId, ...(playerDoc.data() as any) } : null;
@@ -828,103 +891,70 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
 
         // Nota: Antes se bloqueaba por perfil incompleto. Ahora permitimos continuar.
 
-        // Enforce créditos / gratis
+        // Enforce créditos / gratis (excepto modo BIOMECH PRO de prueba)
         const currentYear = new Date().getFullYear();
-        let billingInfo: { type: 'free' | 'credit'; year: number } | null = null;
-        try {
-            await db.runTransaction(async (tx: any) => {
-                const walletRef = db.collection('wallets').doc(userId);
-                const walletSnap = await tx.get(walletRef);
-                let data: any = walletSnap.exists ? walletSnap.data() : null;
-                if (!data) {
-                    data = {
-                        userId,
-                        credits: 0,
-                        freeAnalysesUsed: 0,
-                        yearInUse: currentYear,
-                        historyPlusActive: false,
-                        historyPlusValidUntil: null,
-                        currency: 'ARS',
-                        createdAt: new Date().toISOString(),
-                        updatedAt: new Date().toISOString(),
-                    };
-                    tx.set(walletRef, data);
-                }
-                if (Number(data.yearInUse) !== currentYear) {
-                    data.freeAnalysesUsed = 0;
-                    data.yearInUse = currentYear;
-                    data.lastFreeAnalysisDate = null; // Reset last free analysis date for new year
-                }
-                
-                // Check if user can use a free analysis (2 per year with 6 months separation)
-                const canUseFreeAnalysis = () => {
-                    const freeUsed = data.freeAnalysesUsed || 0;
-                    if (freeUsed >= 2) return false;
-                    
-                    // If no free analysis used yet, allow it
-                    if (freeUsed === 0) return true;
-                    
-                    // If one free analysis used, check if 6 months have passed
-                    const lastFreeDate = data.lastFreeAnalysisDate;
-                    if (!lastFreeDate) return false;
-                    
-                    const lastDate = new Date(lastFreeDate);
-                    const now = new Date();
-                    const sixMonthsAgo = new Date(now.getTime() - (6 * 30 * 24 * 60 * 60 * 1000)); // 6 months in milliseconds
-                    
-                    return lastDate <= sixMonthsAgo;
-                };
-                
-                if (canUseFreeAnalysis()) {
-                    data.freeAnalysesUsed = (data.freeAnalysesUsed || 0) + 1;
-                    data.lastFreeAnalysisDate = new Date().toISOString();
-                    data.updatedAt = new Date().toISOString();
-                    tx.update(walletRef, { 
-                        freeAnalysesUsed: data.freeAnalysesUsed, 
-                        lastFreeAnalysisDate: data.lastFreeAnalysisDate,
-                        yearInUse: data.yearInUse, 
-                        updatedAt: data.updatedAt 
-                    });
-                    billingInfo = { type: 'free', year: currentYear };
-                } else if ((data.credits || 0) > 0) {
-                    data.credits = Number(data.credits) - 1;
-                    data.updatedAt = new Date().toISOString();
-                    tx.update(walletRef, { credits: data.credits, updatedAt: data.updatedAt });
-                    billingInfo = { type: 'credit', year: currentYear };
-                } else {
-                    billingInfo = null;
-                }
-            });
-        } catch (e) {
-            return { message: 'No se pudo verificar tu saldo. Intenta nuevamente.', error: true };
+        let billingInfo: { type: 'free' | 'credit' | 'biomech-pro'; year: number } | null = null;
+        if (analysisMode === 'biomech-pro') {
+            billingInfo = { type: 'biomech-pro', year: currentYear };
+        } else {
+            try {
+                await db.runTransaction(async (tx: any) => {
+                    const walletRef = db.collection('wallets').doc(userId);
+                    const walletSnap = await tx.get(walletRef);
+                    const nowIso = new Date().toISOString();
+                    let data: any = walletSnap.exists ? walletSnap.data() : null;
+                    if (!data) {
+                        data = {
+                            userId,
+                            credits: 0,
+                            freeAnalysesUsed: 0,
+                            yearInUse: currentYear,
+                            freeCoachReviews: 0,
+                            lastFreeAnalysisDate: null,
+                            historyPlusActive: false,
+                            historyPlusValidUntil: null,
+                            currency: 'ARS',
+                            createdAt: nowIso,
+                            updatedAt: nowIso,
+                        };
+                        tx.set(walletRef, data);
+                    }
+                    if (Number(data.yearInUse) !== currentYear) {
+                        data.freeAnalysesUsed = 0;
+                        data.yearInUse = currentYear;
+                        data.lastFreeAnalysisDate = null;
+                    }
+                    if ((data.freeAnalysesUsed || 0) < 2) {
+                        data.freeAnalysesUsed = (data.freeAnalysesUsed || 0) + 1;
+                        data.updatedAt = nowIso;
+                        data.lastFreeAnalysisDate = nowIso;
+                        tx.update(walletRef, {
+                            freeAnalysesUsed: data.freeAnalysesUsed,
+                            yearInUse: data.yearInUse,
+                            lastFreeAnalysisDate: data.lastFreeAnalysisDate,
+                            updatedAt: data.updatedAt
+                        });
+                        billingInfo = { type: 'free', year: currentYear };
+                    } else if ((data.credits || 0) > 0) {
+                        data.credits = Number(data.credits) - 1;
+                        data.updatedAt = nowIso;
+                        tx.update(walletRef, { credits: data.credits, updatedAt: data.updatedAt });
+                        billingInfo = { type: 'credit', year: currentYear };
+                    } else {
+                        billingInfo = null;
+                    }
+                });
+            } catch (e) {
+                return { message: 'No se pudo verificar tu saldo. Intenta nuevamente.', error: true };
+            }
         }
         if (!billingInfo) {
-            // Check if it's because of the 6-month waiting period
-            const walletSnap = await adminDb.collection('wallets').doc(userId).get();
-            const walletData = walletSnap.data();
-            const freeUsed = walletData?.freeAnalysesUsed || 0;
-            const lastFreeDate = walletData?.lastFreeAnalysisDate;
-            
-            if (freeUsed === 1 && lastFreeDate) {
-                const lastDate = new Date(lastFreeDate);
-                const now = new Date();
-                const sixMonthsFromLast = new Date(lastDate.getTime() + (6 * 30 * 24 * 60 * 60 * 1000));
-                const daysUntilNext = Math.ceil((sixMonthsFromLast.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-                
-                if (daysUntilNext > 0) {
-                    return {
-                        message: `Usaste tu primer análisis gratis. Tu segundo análisis gratis estará disponible en ${daysUntilNext} días (después de 6 meses desde el último análisis gratuito). Mientras tanto, podés comprar un análisis o pack.`,
-                        error: true,
-                    };
-                }
-            }
-            
             return {
                 message: 'Alcanzaste el límite de 2 análisis gratis este año y no tenés créditos. Comprá un análisis o pack para continuar.',
                 error: true,
             };
         }
-        const billing = billingInfo as { type: 'free' | 'credit'; year: number };
+        const billing = billingInfo as { type: 'free' | 'credit' | 'biomech-pro'; year: number };
 
         // Helper para estandarizar y subir a Storage (solo cuando recibimos archivos binarios)
         const uploadVideoToStorage = async (file: File, userId: string, options: { maxSeconds?: number } = {}): Promise<string> => {
@@ -959,6 +989,7 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
             return `https://storage.googleapis.com/${bucket.name}/${filePath}`;
         };
 
+
         let videoPath: string = '';
         let videoFrontUrl: string | null = null;
         let videoBackUrl: string | null = null;
@@ -967,44 +998,34 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
 
         if (hasUploadedUrls) {
             // Usar URLs ya subidas por el cliente (resumable upload)
-            console.log('📤 Usando videos pre-subidos por el cliente...');
             videoBackUrl = uploadedBackUrl || null;
             videoFrontUrl = uploadedFrontUrl || null;
             videoLeftUrl = uploadedLeftUrl || null;
             videoRightUrl = uploadedRightUrl || null;
             videoPath = videoBackUrl || videoFrontUrl || videoLeftUrl || videoRightUrl || '';
-            
-            const videoCount = [videoBackUrl, videoFrontUrl, videoLeftUrl, videoRightUrl].filter(Boolean).length;
-                        if (!videoPath) {
+            if (!videoPath) {
                 return { message: 'No se recibió ninguna URL de video válida.', error: true };
             }
         } else {
-            // Subida server-side (legacy) con mejor logging
-            console.log('📤 Subiendo videos al servidor...');
-            const primaryMaxSeconds = primaryIsBack ? 30 : 30;
-            
-            console.log(`📹 Subiendo video principal (${primaryIsBack ? 'back' : 'front'})...`);
+            // Subida server-side (legacy)
+            const primaryMaxSeconds = primaryIsBack ? 40 : 30;
             const uploadedPrimaryUrl = await uploadVideoToStorage(primaryFile!, currentUser.id, { maxSeconds: primaryMaxSeconds });
             videoFrontUrl = primaryIsBack ? null : uploadedPrimaryUrl;
             videoBackUrl = primaryIsBack ? uploadedPrimaryUrl : null;
-            
-            // Subir videos adicionales si existen
             if (videoLeft && videoLeft.size > 0) {
-                                videoLeftUrl = await uploadVideoToStorage(videoLeft, currentUser.id, { maxSeconds: 30 });
+                videoLeftUrl = await uploadVideoToStorage(videoLeft, currentUser.id, { maxSeconds: 30 });
             }
             if (videoRight && videoRight.size > 0) {
-                                videoRightUrl = await uploadVideoToStorage(videoRight, currentUser.id, { maxSeconds: 30 });
+                videoRightUrl = await uploadVideoToStorage(videoRight, currentUser.id, { maxSeconds: 30 });
             }
             if (primaryIsBack === false && formBack && formBack.size > 0) {
-                                videoBackUrl = await uploadVideoToStorage(formBack, currentUser.id, { maxSeconds: 30 });
+                videoBackUrl = await uploadVideoToStorage(formBack, currentUser.id, { maxSeconds: 40 });
             }
             if (primaryIsBack === true && formFront && formFront.size > 0) {
-                                videoFrontUrl = await uploadVideoToStorage(formFront, currentUser.id, { maxSeconds: 30 });
+                videoFrontUrl = await uploadVideoToStorage(formFront, currentUser.id, { maxSeconds: 30 });
             }
             videoPath = uploadedPrimaryUrl;
-            
-            const totalVideos = [videoBackUrl, videoFrontUrl, videoLeftUrl, videoRightUrl].filter(Boolean).length;
-                    }
+        }
 
         // Guardar análisis
         const analysisData: any = {
@@ -1015,6 +1036,7 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
             videoLeftUrl: videoLeftUrl,
             videoRightUrl: videoRightUrl,
             videoBackUrl: videoBackUrl,
+            analysisMode,
             status: 'uploaded',
             coachCompleted: false,
             createdAt: new Date().toISOString(),
@@ -1029,20 +1051,20 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
 
         // Notificar por email
         try {
-            const prodBase = 'https://shot-analysis--shotanalisys.us-central1.hosted.app';
-            const link = `${prodBase}/admin/revision-ia/${analysisRef.id}`;
-            await sendCustomEmail({
-                to: 'abengolea@hotmail.com',
+            const appBaseUrl = getAppBaseUrl();
+            const link = appBaseUrl ? `${appBaseUrl}/admin/revision-ia/${analysisRef.id}` : '';
+            await sendAdminNotification({
                 subject: 'Nuevo video subido para análisis',
                 html: `<p>Se subió un nuevo video para análisis.</p>
                       <p><b>Jugador:</b> ${currentUser?.name || currentUser?.id || 'desconocido'}</p>
                       <p><b>Tipo de tiro:</b> ${shotType}</p>
-                      <p><a href="${link}">Revisar en Revisión IA</a></p>`,
+                      ${link ? `<p><a href="${link}">Revisar en Revisión IA</a></p>` : ''}`,
+                fallbackTo: 'abengolea@hotmail.com',
             });
-        } catch {}
+        } catch (e) {}
 
-        // Ejecutar análisis IA con prompt de producción (mismo que test-video-real)
-        const { analyzeVideoSingleCall } = await import('@/utils/gemini-single-call');
+        // Ejecutar análisis IA sin frames del cliente
+        const { analyzeBasketballShot, detectShots } = await import('@/ai/flows/analyze-basketball-shot');
         const mapAgeGroupToCategory = (ageGroup: string) => {
             switch (ageGroup) {
                 case 'U10': return 'Sub-10';
@@ -1059,246 +1081,400 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
         const ageCategory = mapAgeGroupToCategory(currentUser.ageGroup || 'Amateur');
         const playerLevel = mapPlayerLevel(currentUser.playerLevel || 'Principiante');
 
-        // Preprocesar videos con FFmpeg para optimizar análisis (hasta 4 videos)
-        console.log('⚙️ Preprocesando videos con FFmpeg...');
-        
-        const { preprocessVideo } = await import('@/lib/gemini-video-real');
-        
-        // Video principal
-        const videoResponse1 = await fetch(videoPath);
-        const videoBuffer1 = Buffer.from(await videoResponse1.arrayBuffer());
-        const { optimizedVideo: processedVideo1 } = await preprocessVideo(videoBuffer1, 'video1.mp4');
-        const base64Video1 = processedVideo1.toString('base64');
+        const durationCache = new Map<string, number>();
+        const getDurationForUrl = async (url: string): Promise<number> => {
+            if (!url) return 0;
+            if (durationCache.has(url)) return durationCache.get(url) || 0;
+            try {
+                const resp = await fetch(url);
+                if (!resp.ok) return 0;
+                const ab = await resp.arrayBuffer();
+                const buf = Buffer.from(ab);
+                const durationSec = await getVideoDurationSecondsFromBuffer(buf);
+                durationCache.set(url, durationSec);
+                return durationSec;
+            } catch (e) {
+                return 0;
+            }
+        };
+        const chooseTargetFrames = (durationSec: number): number => {
+            if (!durationSec || durationSec <= 0) return 48;
+            if (durationSec <= 4.5) return 72;
+            if (durationSec <= 8) return 56;
+            if (durationSec <= 12) return 40;
+            return 32;
+        };
 
-        let base64Video2: string | undefined;
-        let base64Video3: string | undefined;
-        let base64Video4: string | undefined;
-
-        // Video frontal
-        if (videoFrontUrl) {
-            const videoResponse2 = await fetch(videoFrontUrl);
-            const videoBuffer2 = Buffer.from(await videoResponse2.arrayBuffer());
-            const { optimizedVideo: processedVideo2 } = await preprocessVideo(videoBuffer2, 'video2.mp4');
-            base64Video2 = processedVideo2.toString('base64');
-        }
-
-        // Video izquierdo
-        if (videoLeftUrl) {
-            const videoResponse3 = await fetch(videoLeftUrl);
-            const videoBuffer3 = Buffer.from(await videoResponse3.arrayBuffer());
-            const { optimizedVideo: processedVideo3 } = await preprocessVideo(videoBuffer3, 'video3.mp4');
-            base64Video3 = processedVideo3.toString('base64');
-        }
-
-        // Video derecho
-        if (videoRightUrl) {
-            const videoResponse4 = await fetch(videoRightUrl);
-            const videoBuffer4 = Buffer.from(await videoResponse4.arrayBuffer());
-            const { optimizedVideo: processedVideo4 } = await preprocessVideo(videoBuffer4, 'video4.mp4');
-            base64Video4 = processedVideo4.toString('base64');
-        }
-
-                // Log de tamaños de videos para debugging
-        console.log(`📊 Tamaños de videos base64:`, {
-            video1: `${Math.round(base64Video1.length / 1024)}KB`,
-            video2: base64Video2 ? `${Math.round(base64Video2.length / 1024)}KB` : 'N/A',
-            video3: base64Video3 ? `${Math.round(base64Video3.length / 1024)}KB` : 'N/A',
-            video4: base64Video4 ? `${Math.round(base64Video4.length / 1024)}KB` : 'N/A'
-        });
-        
-        let analysisResult;
+        let skipDomainCheck = false;
+        let detectedShotsCount: number | undefined = undefined;
         try {
-            analysisResult = await analyzeVideoSingleCall(base64Video1, base64Video2, base64Video3, base64Video4);
-                    } catch (error) {
-            console.error('❌ Error en el análisis:', error);
-            throw new Error(`Error en el análisis de video: ${error instanceof Error ? error.message : 'Error desconocido'}`);
-        }
+            const durationSec = await getDurationForUrl(videoPath);
+            const targetFrames = chooseTargetFrames(durationSec);
+            const primaryDetection =
+                (await detectShotsFromPoseService(videoPath, targetFrames)) ||
+                (await detectShots({
+                    videoUrl: videoPath,
+                    shotType,
+                    ageCategory,
+                    playerLevel,
+                    availableKeyframes: [],
+                }));
+            const count = typeof primaryDetection?.shots_count === 'number'
+                ? primaryDetection.shots_count
+                : Array.isArray(primaryDetection?.shots)
+                    ? primaryDetection.shots.length
+                    : 0;
+            skipDomainCheck = count > 0;
+            detectedShotsCount = typeof count === 'number' ? count : undefined;
+        } catch (e) {}
 
-        // Convertir parámetros en categorías para el frontend
-        const parameters = analysisResult.technicalAnalysis?.parameters || [];
+        let availableKeyframes: Array<{ index: number; timestamp: number; description: string }> = [];
+        try {
+            const evidence = await buildEconomyEvidenceFromVideoUrl(videoPath, { targetFrames: 8 });
+            availableKeyframes = Array.isArray(evidence?.availableKeyframes) ? evidence.availableKeyframes : [];
+        } catch (e) {}
 
-        // Función para crear un resumen descriptivo del análisis
-        const createAnalysisSummary = (analysisResult: any): string => {
-            const verification = analysisResult.verification || {};
-            const technicalAnalysis = analysisResult.technicalAnalysis || {};
-            const shotSummary = analysisResult.shotSummary || {};
-            const shots = analysisResult.shots || [];
-            
-            let summary = `Análisis de ${shots.length} tiro${shots.length > 1 ? 's' : ''} de baloncesto`;
-            
-            // Agregar información del video
-            if (verification.cameraAngle) {
-                summary += ` desde ángulo ${verification.cameraAngle}`;
-            }
-            
-            // Agregar información de la canasta
-            if (verification.basketVisible !== undefined) {
-                summary += verification.basketVisible ? ' con canasta visible' : ' sin visibilidad de canasta';
-            }
-            
-            // Agregar puntuación general
-            if (technicalAnalysis.overallScore) {
-                summary += `. Puntuación general: ${technicalAnalysis.overallScore}/100`;
-            }
-            
-            // Agregar fortalezas principales
-            if (technicalAnalysis.strengths && technicalAnalysis.strengths.length > 0) {
-                summary += `. Fortalezas: ${technicalAnalysis.strengths.slice(0, 2).join(', ')}`;
-            }
-            
-            // Agregar debilidades principales
-            if (technicalAnalysis.weaknesses && technicalAnalysis.weaknesses.length > 0) {
-                summary += `. Áreas de mejora: ${technicalAnalysis.weaknesses.slice(0, 2).join(', ')}`;
-            }
-            
-            return summary;
+        let shotFramesUrl: string | null = null;
+        let shotFramesForPrompt: Array<{ idx: number; start_ms: number; release_ms: number; frames: string[] }> = [];
+        const detectionByLabel: Array<{ label: string; url: string; result: any }> = [];
+        const scrubSummaryText = (text: string) => {
+            if (!text) return '';
+            return String(text)
+                .replace(/\b\d+(\.\d+)?\s*s\b/gi, '')
+                .replace(/\b\d+(\.\d+)?\s*segundos?\b/gi, '')
+                .replace(/\b\d+(\.\d+)?\s*s-\d+(\.\d+)?\s*s\b/gi, '')
+                .replace(/\s{2,}/g, ' ')
+                .trim();
         };
-        
-        // Función para mapear nombres de Gemini a IDs canónicos
-        const getCanonicalId = (geminiName: string): string => {
-            const nameMap: Record<string, string> = {
-                'Alineación de pies': 'alineacion_pies',
-                'Alineación del cuerpo': 'alineacion_cuerpo',
-                'Muñeca cargada': 'muneca_cargada',
-                'Flexión de rodillas': 'flexion_rodillas',
-                'Hombros relajados': 'hombros_relajados',
-                'Enfoque visual': 'enfoque_visual',
-                'Mano no dominante ascenso': 'mano_no_dominante_ascenso',
-                'Codos cerca del cuerpo': 'codos_cerca_cuerpo',
-                'Ángulo de codo estable en ascenso': 'angulo_codo_fijo_ascenso',
-                'Subida recta del balón': 'subida_recta_balon',
-                'Trayectoria hasta set point': 'trayectoria_hasta_set_point',
-                'Set point': 'set_point',
-                'Tiempo de lanzamiento': 'tiempo_lanzamiento',
-                'Mano no dominante liberación': 'mano_no_dominante_liberacion',
-                'Extensión completa del brazo': 'extension_completa_brazo',
-                'Giro de la pelota': 'giro_pelota',
-                'Ángulo de salida': 'angulo_salida',
-                'Equilibrio post-liberación y aterrizaje': 'equilibrio_post_liberacion',
-                'Duración del follow-through': 'duracion_follow_through',
-                'Consistencia del movimiento': 'consistencia_repetitiva',
-                'Consistencia técnica': 'consistencia_tecnica',
-                'Consistencia de resultados': 'consistencia_resultados'
-            };
-            return nameMap[geminiName] || geminiName.toLowerCase().replace(/\s+/g, '_');
-        };
-        
-        // TEMPORAL: Mostrar TODOS los parámetros en una categoría para debug
-        const detailedChecklist = [
-            {
-                category: "TODOS LOS PARÁMETROS (DEBUG)",
-                items: parameters.map((p: any) => ({
-                    id: getCanonicalId(p.name),
-                    name: p.name.replace(/_/g, ' ').replace(/\b\w/g, (letter: string) => letter.toUpperCase()),
-                    description: p.comment || '',
-                    status: (() => {
-                        const score = p.score || 0;
-                        if (score >= 70) return 'Correcto';
-                        if (score >= 36) return 'Mejorable';
-                        return 'Incorrecto';
-                    })(), // Forzar cálculo basado en score, ignorar status de IA
-                    rating: (() => {
-                        const score = p.score || 0;
-                        if (score >= 90) return 5; // Excelente
-                        if (score >= 70) return 4; // Correcto
-                        if (score >= 50) return 3; // Mejorable
-                        if (score >= 30) return 2; // Incorrecto leve
-                        return 1; // Incorrecto
-                    })() as 0 | 1 | 2 | 3 | 4 | 5,
-                    comment: p.comment || '',
-                    na: p.status === 'no_evaluable',
-                    razon: p.razon || '',
-                    evidencia: p.evidencia || '',
-                    timestamp: p.timestamp || ''
-                }))
-            },
-        ];
-
-        // Adaptar el resultado del nuevo prompt al formato esperado por la UI
-        const adaptedAnalysisResult = {
-            ...analysisResult,
-            detailedChecklist: detailedChecklist,
-            keyframes: { front: [], back: [], left: [], right: [] },
-            // Mapear campos del nuevo formato al formato esperado
-            analysisSummary: createAnalysisSummary(analysisResult),
-            overallScore: analysisResult.technicalAnalysis?.overallScore || 0,
-            strengths: analysisResult.technicalAnalysis?.strengths || [],
-            weaknesses: analysisResult.technicalAnalysis?.weaknesses || [],
-            recommendations: analysisResult.technicalAnalysis?.recommendations || [],
-            // INCLUIR VERIFICACIÓN Y OTROS CAMPOS IMPORTANTES
-            verification: analysisResult.verification,
-            shotSummary: analysisResult.shotSummary,
-            shots: analysisResult.shots,
-        };
-
-                console.log('🔍 Debug - Videos procesados:', {
-            video1: !!base64Video1,
-            video2: !!base64Video2,
-            video3: !!base64Video3,
-            video4: !!base64Video4,
-            totalVideos: [base64Video1, base64Video2, base64Video3, base64Video4].filter(Boolean).length
-        });
-        
-                        console.log('🔍 Debug - FormData recibido:', {
-            hasVideoBack: formData.has('video-back'),
-            hasVideoFront: formData.has('video-front'),
-            hasVideoLeft: formData.has('video-left'),
-            hasVideoRight: formData.has('video-right'),
-            hasUploadedBackUrl: formData.has('uploadedBackUrl'),
-            hasUploadedFrontUrl: formData.has('uploadedFrontUrl'),
-            hasUploadedLeftUrl: formData.has('uploadedLeftUrl'),
-            hasUploadedRightUrl: formData.has('uploadedRightUrl')
-        });
-
-        // Guardar análisis mejorado con metadatos adicionales
-                // Función para limpiar valores undefined
-        const cleanForFirestore = (obj: any): any => {
-            if (obj === null || obj === undefined) return null;
-            if (typeof obj !== 'object') return obj;
-            if (Array.isArray(obj)) return obj.map(cleanForFirestore);
-            
-            const cleaned: any = {};
-            for (const [key, value] of Object.entries(obj)) {
-                if (value !== undefined) {
-                    cleaned[key] = cleanForFirestore(value);
-                }
-            }
+        const sanitizeAiSummary = (text: string | null, totalShots: number) => {
+            if (!text) return '';
+            if (totalShots === 0) return '';
+            const cleaned = scrubSummaryText(text);
+            if (!cleaned) return '';
+            const contradictsZero = totalShots === 0 && /se detect|un tiro|1 tiro|uno tiro/i.test(cleaned);
+            const contradictsPositive =
+                totalShots > 0 && /no se detectaron tiros|no se detecto tiros|no se detectaron lanzamientos/i.test(cleaned);
+            if (contradictsZero || contradictsPositive) return '';
             return cleaned;
         };
+        const buildDeterministicSummary = ({
+            totalShots,
+            byLabel,
+            baseSummary,
+            aiSummary,
+            strengths,
+            weaknesses,
+        }: {
+            totalShots: number;
+            byLabel: Array<{ label: string; count: number }>;
+            baseSummary?: string;
+            aiSummary?: string | null;
+            strengths?: string[];
+            weaknesses?: string[];
+        }) => {
+            const breakdown = byLabel
+                .filter((item) => typeof item.count === 'number')
+                .map((item) => `${item.label}: ${item.count}`)
+                .join(', ');
+            const shotWord = totalShots === 1 ? 'tiro' : 'tiros';
+            const videoCount = byLabel.length;
+            const videoWord = videoCount === 1 ? 'video' : 'videos';
+            const intro =
+                totalShots > 0
+                    ? `Se analizaron ${totalShots} ${shotWord} en ${videoCount} ${videoWord}${breakdown ? ` (${breakdown})` : ''}.`
+                    : 'No se detectaron tiros completos en los videos analizados.';
+            const noEval = (analysisResultWithScore?.resumen_evaluacion?.parametros_no_evaluables || 0) > 0
+                ? `Se dejaron ${analysisResultWithScore?.resumen_evaluacion?.parametros_no_evaluables} parámetros sin evaluar por limitaciones del video.`
+                : '';
+            const cleanCounts = (text: string) =>
+                text
+                    .split(/(?<=\.)\s+/)
+                    .filter((sentence) => !/se detectaron|se analizaron|total de tiros|tiros detectados/i.test(sentence))
+                    .join(' ')
+                    .trim();
+            const strengthText = Array.isArray(strengths) && strengths.length > 0
+                ? `Fortalezas: ${strengths.slice(0, 2).join('; ')}.`
+                : '';
+            const weaknessText = Array.isArray(weaknesses) && weaknesses.length > 0
+                ? `Debilidades: ${weaknesses.slice(0, 2).join('; ')}.`
+                : '';
+            const aiClean = sanitizeAiSummary(aiSummary || null, totalShots);
+            const baseClean = sanitizeAiSummary(baseSummary || '', totalShots);
+            const narrative = cleanCounts(aiClean || baseClean);
+            return [intro, noEval, strengthText, weaknessText, narrative].filter(Boolean).join(' ');
+        };
+        const buildShotsSummary = async (original: string, totalShots: number, byLabel: Array<{ label: string; count: number }>) => {
+            const aiSummary = await generateAnalysisSummary({
+                baseSummary: original,
+                verificacion_inicial: analysisResultWithScore?.verificacion_inicial,
+                strengths: analysisResultWithScore?.strengths,
+                weaknesses: analysisResultWithScore?.weaknesses,
+                recommendations: analysisResultWithScore?.recommendations,
+                resumen_evaluacion: analysisResultWithScore?.resumen_evaluacion,
+                shots: { total: totalShots, byLabel },
+            });
+            return buildDeterministicSummary({
+                totalShots,
+                byLabel,
+                baseSummary: original,
+                aiSummary,
+                strengths: analysisResultWithScore?.strengths,
+                weaknesses: analysisResultWithScore?.weaknesses,
+            });
+        };
+        const normalizeDetectionResult = (result: any, durationSec: number | null) => {
+            const shots = Array.isArray(result?.shots) ? result.shots : [];
+            if (!durationSec || durationSec <= 0) return result;
+            const maxMs = durationSec * 1000 + 250;
+            let filtered = shots.filter((shot: any) => {
+                const endMs = Number(shot?.end_ms ?? shot?.release_ms ?? 0);
+                const startMs = Number(shot?.start_ms ?? 0);
+                return startMs <= maxMs && endMs <= maxMs;
+            });
+            if (durationSec <= 4.5 && filtered.length > 1) {
+                filtered = [filtered[0]];
+            }
+            return {
+                ...result,
+                shots: filtered,
+                shots_count: filtered.length,
+            };
+        };
 
-        const updateData = cleanForFirestore({
-            status: 'analyzed',
-            analysisResult: adaptedAnalysisResult,
-            detailedChecklist: adaptedAnalysisResult.detailedChecklist,
-            keyframes: adaptedAnalysisResult.keyframes,
-            coachCompleted: false,
-            updatedAt: new Date().toISOString(),
-            // Metadatos adicionales del análisis
-            analysisMetadata: {
-                totalVideos: [videoBackUrl, videoFrontUrl, videoLeftUrl, videoRightUrl].filter(Boolean).length,
-                preprocessed: true,
-                ffmpegOptimized: true,
-                promptVersion: 'multi-session-v2',
-                analysisMethod: 'gemini-2.0-flash-exp',
-                processingTime: new Date().toISOString(),
-                videoUrls: {
-                    back: videoBackUrl,
-                    front: videoFrontUrl,
-                    left: videoLeftUrl,
-                    right: videoRightUrl
+        try {
+            if (adminStorage) {
+                const sources = [
+                    { label: 'back', url: videoBackUrl },
+                    { label: 'front', url: videoFrontUrl },
+                    { label: 'left', url: videoLeftUrl },
+                    { label: 'right', url: videoRightUrl },
+                ].filter((s): s is { label: string; url: string } => Boolean(s.url));
+
+                for (const source of sources) {
+                    const durationSec = await getDurationForUrl(source.url);
+                    const targetFrames = chooseTargetFrames(durationSec);
+                    const result =
+                        (await detectShotsFromPoseService(source.url, targetFrames)) ||
+                        (await detectShots({
+                            videoUrl: source.url,
+                            shotType,
+                            ageCategory,
+                            playerLevel,
+                            availableKeyframes: [],
+                        }));
+                    const normalized = normalizeDetectionResult(result, durationSec);
+                    detectionByLabel.push({ label: source.label, url: source.url, result: normalized });
+                }
+
+                const primary = detectionByLabel.find((d) => d.label === (videoBackUrl ? 'back' : 'front'))
+                    || detectionByLabel[0];
+                const shots = Array.isArray(primary?.result?.shots) ? primary.result.shots : [];
+                if (primary && shots.length > 0) {
+                    const resp = await fetch(primary.url);
+                    if (resp.ok) {
+                        const { extractFramesBetweenDataUrlsFromBuffer } = await import('@/lib/ffmpeg');
+                        const ab = await resp.arrayBuffer();
+                        const videoBuffer = Buffer.from(ab);
+                        const durationSec = await getVideoDurationSecondsFromBuffer(videoBuffer);
+                        const normalizedPrimary = normalizeDetectionResult(primary.result, durationSec);
+                        primary.result = normalizedPrimary;
+                        const preFrames = 4;
+                        const postFrames = 3;
+                        const shotFrames = [];
+                        const normalizedShots = Array.isArray(normalizedPrimary?.shots) ? normalizedPrimary.shots : shots;
+                        for (const shot of normalizedShots) {
+                            const startSec = Math.max(0, Number(shot.start_ms || 0) / 1000);
+                            const releaseSec = Math.max(startSec + 0.05, Number(shot.release_ms || 0) / 1000);
+                            const endMs = Number(shot.end_ms || 0);
+                            const endSecRaw = endMs > 0 ? endMs / 1000 : releaseSec + 0.45;
+                            const endSec = Math.max(releaseSec + 0.1, Math.min(endSecRaw, durationSec || endSecRaw));
+                            const pre = await extractFramesBetweenDataUrlsFromBuffer(
+                                videoBuffer,
+                                startSec,
+                                releaseSec,
+                                preFrames
+                            );
+                            const post = await extractFramesBetweenDataUrlsFromBuffer(
+                                videoBuffer,
+                                releaseSec,
+                                endSec,
+                                postFrames
+                            );
+                            const frames = Array.from(new Set([...(pre || []), ...(post || [])])).filter(Boolean);
+                            shotFrames.push({
+                                idx: shot.idx,
+                                start_ms: shot.start_ms,
+                                release_ms: shot.release_ms,
+                                frames,
+                            });
+                        }
+                        const bucket = adminStorage.bucket();
+                        const filePath = `analysis-evidence/${analysisRef.id}/shot-frames.json`;
+                        const fileRef = bucket.file(filePath);
+                        await fileRef.save(JSON.stringify({
+                            analysisId: analysisRef.id,
+                            createdAt: new Date().toISOString(),
+                            source: primary.label,
+                            shots: shotFrames,
+                        }), { contentType: 'application/json' });
+                        await fileRef.makePublic();
+                        shotFramesUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+                        shotFramesForPrompt = shotFrames.slice(0, 2).map((shot) => ({
+                            ...shot,
+                            frames: Array.isArray(shot.frames)
+                                ? shot.frames
+                                    .map((frame) => typeof frame === 'string' ? frame : frame?.dataUrl)
+                                    .filter((frame): frame is string => typeof frame === 'string' && frame.length > 0)
+                                    .slice(0, 5)
+                                : [],
+                        }));
+                    }
                 }
             }
+        } catch (e) {
+            console.warn('No se pudieron extraer frames por tiro', e);
+        }
+
+        let llmShotVerification: { has_shot_attempt: boolean; confidence?: number; reasoning?: string } | null = null;
+        if (detectedShotsCount === 0) {
+            llmShotVerification = await verifyHasShotsWithLlmFromVideoUrl(videoPath);
+        }
+
+        const analysisResult = detectedShotsCount === 0
+            ? (llmShotVerification?.has_shot_attempt
+                ? buildUnverifiedShotAnalysis(llmShotVerification.reasoning, llmShotVerification.confidence)
+                : buildNoShotsAnalysis())
+            : await analyzeBasketballShot({
+                videoUrl: videoPath,
+                shotType,
+                ageCategory,
+                playerLevel,
+                availableKeyframes,
+                ...(skipDomainCheck ? { skipDomainCheck: true } : {}),
+                ...(typeof detectedShotsCount === 'number' ? { detectedShotsCount } : {}),
+                ...(shotFramesForPrompt.length > 0
+                    ? { shotFrames: { sourceAngle: videoBackUrl ? 'back' : 'front', shots: shotFramesForPrompt } }
+                    : {}),
+            });
+
+        const detailedChecklist = Array.isArray(analysisResult?.detailedChecklist) ? analysisResult.detailedChecklist : [];
+        let scoreMetadata = undefined;
+        if (detailedChecklist.length > 0) {
+            const weights = await loadWeightsFromFirestore(shotType);
+            const normalizedChecklist = normalizeDetailedChecklist(detailedChecklist);
+            scoreMetadata = buildScoreMetadata(normalizedChecklist, shotType, weights);
+        }
+
+        let analysisResultWithScore = scoreMetadata
+            ? { ...analysisResult, scoreMetadata }
+            : analysisResult;
+
+        if (detectionByLabel.length > 0 && analysisResultWithScore?.verificacion_inicial) {
+            let totalShots = 0;
+            const tirosIndividuales: Array<{ numero: number; timestamp: string; descripcion: string }> = [];
+            const shotsByLabel: Array<{ label: string; count: number }> = [];
+            let seq = 1;
+            for (const det of detectionByLabel) {
+                const shots = Array.isArray(det?.result?.shots) ? det.result.shots : [];
+                const shotsCount = typeof det?.result?.shots_count === 'number'
+                    ? det.result.shots_count
+                    : shots.length;
+                totalShots += shotsCount;
+                shotsByLabel.push({ label: det.label, count: shotsCount });
+                shots.forEach((shot: any, _idx: number) => {
+                    const startMs = Number(shot?.start_ms || 0);
+                    const releaseMs = Number(shot?.release_ms || 0);
+                    const startLabel = `${(startMs / 1000).toFixed(2)}s`;
+                    const releaseLabel = `${(releaseMs / 1000).toFixed(2)}s`;
+                    const notes = Array.isArray(shot?.notes) ? shot.notes.filter(Boolean) : [];
+                    tirosIndividuales.push({
+                        numero: seq++,
+                        timestamp: `${det.label} ${startLabel}-${releaseLabel}`,
+                        descripcion: `${det.label}: ${notes.length > 0 ? notes.join('; ') : 'Tiro detectado'}`,
+                    });
+                });
+            }
+
+            const primary = detectionByLabel.find((d) => d.label === (videoBackUrl ? 'back' : 'front'))
+                || detectionByLabel[0];
+            let tirosPorSegundo: number | undefined = undefined;
+            if (detectionByLabel.length === 1 && primary?.result) {
+                const fps = Number(primary.result?.diagnostics?.fps_assumed || 0);
+                const framesTotal = Number(primary.result?.diagnostics?.frames_total || 0);
+                const durationSec = fps > 0 && framesTotal > 0 ? framesTotal / fps : null;
+                tirosPorSegundo = durationSec ? Number((totalShots / durationSec).toFixed(3)) : undefined;
+            }
+
+            const noShots = totalShots === 0;
+            if (noShots) {
+                const fallback = llmShotVerification?.has_shot_attempt
+                    ? buildUnverifiedShotAnalysis(llmShotVerification.reasoning, llmShotVerification.confidence)
+                    : buildNoShotsAnalysis();
+                if (!llmShotVerification?.has_shot_attempt) {
+                    fallback.verificacion_inicial.deteccion_ia = {
+                        angulo_detectado: 'sin_tiros',
+                        estrategia_usada: detectionByLabel.length > 1 ? 'detectShots.multi' : 'detectShots',
+                        tiros_individuales: [],
+                        total_tiros: 0,
+                    };
+                }
+                analysisResultWithScore = fallback;
+            } else {
+                const verificacion = {
+                    ...analysisResultWithScore.verificacion_inicial,
+                    tiros_detectados: totalShots,
+                    ...(typeof tirosPorSegundo === 'number' ? { tiros_por_segundo: tirosPorSegundo } : {}),
+                    deteccion_ia: {
+                        angulo_detectado: detectionByLabel.length > 1
+                            ? 'multi'
+                            : (analysisResultWithScore.verificacion_inicial?.angulo_camara || 'desconocido'),
+                        estrategia_usada: detectionByLabel.length > 1 ? 'detectShots.multi' : 'detectShots',
+                        tiros_individuales: tirosIndividuales,
+                        total_tiros: totalShots,
+                    },
+                };
+
+                const summary = await buildShotsSummary(analysisResultWithScore.analysisSummary, totalShots, shotsByLabel);
+                analysisResultWithScore = {
+                    ...analysisResultWithScore,
+                    verificacion_inicial: verificacion,
+                    analysisSummary: summary,
+                };
+            }
+        }
+
+        await db.collection('analyses').doc(analysisRef.id).update({
+            status: 'analyzed',
+            analysisResult: analysisResultWithScore,
+            detailedChecklist: analysisResult.detailedChecklist || [],
+            shotFramesUrl,
+            keyframes: { front: [], back: [], left: [], right: [] },
+            keyframesStatus: 'pending',
+            keyframesUpdatedAt: new Date().toISOString(),
+            coachCompleted: false,
+            updatedAt: new Date().toISOString(),
         });
 
-        await db.collection('analyses').doc(analysisRef.id).update(updateData);
-                return {
+        scheduleKeyframesExtraction({
+            analysisId: analysisRef.id,
+            playerId: currentUser.id,
+            videoUrl: videoPath,
+            videoFrontUrl,
+            videoLeftUrl,
+            videoRightUrl,
+            videoBackUrl,
+        });
+
+        return {
             message: "Video analizado exitosamente con IA.",
             analysisId: analysisRef.id,
             videoUrl: videoPath,
             shotType,
             status: 'analyzed',
-            analysisResult,
-            redirectTo: `/analysis/${analysisRef.id}`
+            analysisResult: analysisResultWithScore,
+            redirectTo: analysisMode === 'biomech-pro'
+                ? `/biomech-pro/analysis/${analysisRef.id}`
+                : '/dashboard'
         };
 
     } catch (error) {
@@ -1309,7 +1485,7 @@ export async function startAnalysisOld(prevState: any, formData: FormData) {
 }
 
 // Acción temporal para registrar/asegurar el jugador Adrián Bengolea
-export async function registerAdrian(prevState: any, _formData: FormData) {
+export async function registerAdrian(_prevState: any, _formData: FormData) {
     try {
         if (!adminDb) {
             return { success: false, message: "Firebase Admin no está inicializado" };
@@ -1343,824 +1519,5 @@ export async function registerAdrian(prevState: any, _formData: FormData) {
         console.error('❌ Error registrando jugador temporal:', error);
         const message = error instanceof Error ? error.message : 'Error desconocido';
         return { success: false, message: `No se pudo registrar: ${message}` };
-    }
-}
-
-// 🧪 FUNCIÓN DE ANÁLISIS DE PRUEBA CON PROMPT SIMPLIFICADO
-export async function startAnalysisTest(prevState: any, formData: FormData) {
-    try {
-        // Verificar si el sistema está en modo mantenimiento
-        const maintenanceEnabled = await isMaintenanceMode();
-        if (maintenanceEnabled) {
-            return { 
-                message: "El sistema está en mantenimiento. El análisis de lanzamientos está temporalmente deshabilitado.", 
-                error: true 
-            };
-        }
-
-                const userId = formData.get('userId') as string;
-        const coachId = (formData.get('coachId') as string | null) || null;
-        if (!userId) return { message: "ID de usuario requerido.", error: true };
-        
-        const shotType = formData.get('shotType') as string;
-        if (!shotType) return { message: "Tipo de lanzamiento requerido.", error: true };
-        
-        // Valores pre-configurados para testing (como en /test-simple-prompt)
-        const ageCategory = formData.get('ageCategory') as string || 'adult';
-        const playerLevel = formData.get('playerLevel') as string || 'intermediate';
-
-        // URLs ya subidas por el cliente (Firebase Storage)
-        const {
-            uploadedBackUrl,
-            uploadedFrontUrl,
-            uploadedLeftUrl,
-            uploadedRightUrl,
-            invalidFields
-        } = parseUploadedVideoUrls(formData);
-        if (invalidFields.length > 0) {
-            return {
-                message: `URLs de video inválidas: ${invalidFields.join(', ')}`,
-                error: true
-            };
-        }
-
-        // Flujo legacy: archivos directos
-        const formBack = formData.get('video-back') as File | null;
-        const formFront = formData.get('video-front') as File | null;
-        const videoLeft = formData.get('video-left') as File | null;
-        const videoRight = formData.get('video-right') as File | null;
-        
-        const hasUploadedUrls = Boolean(uploadedBackUrl || uploadedFrontUrl || uploadedLeftUrl || uploadedRightUrl);
-        const hasFormFiles = Boolean(formBack || formFront || videoLeft || videoRight);
-        
-        // Solo el video trasero es obligatorio
-        if (!hasUploadedUrls && !hasFormFiles) {
-            return { message: "El video trasero es obligatorio para el análisis.", error: true };
-        }
-
-                if (!adminDb || !adminStorage) {
-            return { message: "Error de configuración del servidor.", error: true };
-        }
-
-        const db = adminDb;
-
-        // Obtener usuario
-        const playerDoc = await db.collection('players').doc(userId).get();
-        const currentUser = playerDoc.exists ? { id: userId, ...(playerDoc.data() as any) } : null;
-        if (!currentUser) return { message: "Usuario no autenticado.", error: true };
-
-        // Validación de relación coach-jugador si se envía coachId
-        if (coachId) {
-            const assignedCoachId = (currentUser as any).coachId || null;
-            if (!assignedCoachId || String(assignedCoachId) !== String(coachId)) {
-                return { message: 'No estás autorizado para iniciar análisis de este jugador.', error: true };
-            }
-        }
-
-        // Crear referencia de análisis
-        const analysisRef = db.collection('analyses').doc();
-        const analysisId = analysisRef.id;
-
-                // Datos base del análisis
-        const baseAnalysisData = {
-            id: analysisId,
-            playerId: userId,
-            coachId: coachId || null,
-            status: 'processing',
-            shotType,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            analysisMethod: 'test-simple-prompt',
-            promptVersion: 'simplified-v1',
-        };
-
-        // Guardar análisis inicial
-        await analysisRef.set(baseAnalysisData);
-
-        // Procesar videos
-        let videoBackUrl: string | null = null;
-        let videoFrontUrl: string | null = null;
-        let videoLeftUrl: string | null = null;
-        let videoRightUrl: string | null = null;
-
-        if (hasUploadedUrls) {
-            console.log('📤 Usando videos pre-subidos por el cliente...');
-            videoBackUrl = uploadedBackUrl;
-            videoFrontUrl = uploadedFrontUrl;
-            videoLeftUrl = uploadedLeftUrl;
-            videoRightUrl = uploadedRightUrl;
-        } else {
-                        // Verificar que al menos el video trasero esté disponible
-            if (!formBack && !formFront) {
-                return { message: "El video trasero es obligatorio para el análisis.", error: true };
-            }
-
-            // Subir archivos a Firebase Storage
-            const bucket = adminStorage.bucket();
-            const timestamp = Date.now();
-            
-            try {
-                // Video trasero (obligatorio)
-                if (formBack && formBack.size > 0) {
-                    const backFileName = `videos/${userId}/back-${timestamp}.mp4`;
-                    const backFile = bucket.file(backFileName);
-                    await backFile.save(Buffer.from(await formBack.arrayBuffer()));
-                    videoBackUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(backFileName)}?alt=media`;
-                                    } else if (formFront && formFront.size > 0) {
-                    // Si no hay video trasero, usar el frontal como principal
-                    const frontFileName = `videos/${userId}/front-${timestamp}.mp4`;
-                    const frontFile = bucket.file(frontFileName);
-                    await frontFile.save(Buffer.from(await formFront.arrayBuffer()));
-                    videoBackUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(frontFileName)}?alt=media`;
-                                    }
-
-                // Video frontal (opcional)
-                if (formFront && formFront.size > 0 && formBack && formBack.size > 0) {
-                    const frontFileName = `videos/${userId}/front-${timestamp}.mp4`;
-                    const frontFile = bucket.file(frontFileName);
-                    await frontFile.save(Buffer.from(await formFront.arrayBuffer()));
-                    videoFrontUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(frontFileName)}?alt=media`;
-                                    }
-
-                // Video izquierdo (opcional)
-                if (videoLeft && videoLeft.size > 0) {
-                    const leftFileName = `videos/${userId}/left-${timestamp}.mp4`;
-                    const leftFile = bucket.file(leftFileName);
-                    await leftFile.save(Buffer.from(await videoLeft.arrayBuffer()));
-                    videoLeftUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(leftFileName)}?alt=media`;
-                                    }
-
-                // Video derecho (opcional)
-                if (videoRight && videoRight.size > 0) {
-                    const rightFileName = `videos/${userId}/right-${timestamp}.mp4`;
-                    const rightFile = bucket.file(rightFileName);
-                    await rightFile.save(Buffer.from(await videoRight.arrayBuffer()));
-                    videoRightUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(rightFileName)}?alt=media`;
-                                    }
-
-            } catch (uploadError) {
-                console.error('❌ Error subiendo videos:', uploadError);
-                return { message: "Error subiendo videos al servidor.", error: true };
-            }
-        }
-
-        // Verificar que al menos un video esté disponible
-        if (!videoBackUrl && !videoFrontUrl) {
-            return { message: "No se pudo procesar ningún video.", error: true };
-        }
-
-        // USAR FLUJO DIRECTO como /test-simple-prompt (sin Firebase download)
-        console.log('📥 Usando flujo directo (archivos → buffers) como /test-simple-prompt...');
-        
-        // Video principal - usar archivo directo si está disponible
-        let videoBuffer1: Buffer;
-        let fileName1: string;
-        
-        if (formBack && formBack.size > 0) {
-            videoBuffer1 = Buffer.from(await formBack.arrayBuffer());
-            fileName1 = formBack.name;
-                    } else if (formFront && formFront.size > 0) {
-            videoBuffer1 = Buffer.from(await formFront.arrayBuffer());
-            fileName1 = formFront.name;
-                    } else {
-            throw new Error('No hay videos disponibles para procesar');
-        }
-
-        let videoBuffer2: Buffer | null = null;
-        let videoBuffer3: Buffer | null = null;
-        let videoBuffer4: Buffer | null = null;
-        let fileName2: string | undefined;
-        let fileName3: string | undefined;
-        let fileName4: string | undefined;
-
-        // Video 2 - usar archivo directo si está disponible
-        if (formFront && formFront.size > 0 && formBack && formBack.size > 0) {
-            videoBuffer2 = Buffer.from(await formFront.arrayBuffer());
-            fileName2 = formFront.name;
-                    }
-
-        // Video 3 - usar archivo directo si está disponible
-        if (videoLeft && videoLeft.size > 0) {
-            videoBuffer3 = Buffer.from(await videoLeft.arrayBuffer());
-            fileName3 = videoLeft.name;
-                    }
-
-        // Video 4 - usar archivo directo si está disponible
-        if (videoRight && videoRight.size > 0) {
-            videoBuffer4 = Buffer.from(await videoRight.arrayBuffer());
-            fileName4 = videoRight.name;
-                    }
-
-                // Log de tamaños de videos para debugging
-        console.log(`📊 Tamaños de videos:`, {
-            video1: `${Math.round(videoBuffer1.length / 1024)}KB`,
-            video2: videoBuffer2 ? `${Math.round(videoBuffer2.length / 1024)}KB` : 'N/A',
-            video3: videoBuffer3 ? `${Math.round(videoBuffer3.length / 1024)}KB` : 'N/A',
-            video4: videoBuffer4 ? `${Math.round(videoBuffer4.length / 1024)}KB` : 'N/A'
-        });
-
-        // Llamar a la función de análisis con prompt simplificado (igual que /test-simple-prompt)
-        const { analyzeVideoSimplePrompt } = await import('@/utils/gemini-simple-prompt');
-        
-        let analysisResult;
-        try {
-            analysisResult = await analyzeVideoSimplePrompt(
-                videoBuffer1,
-                fileName1,
-                videoBuffer2,
-                fileName2,
-                videoBuffer3,
-                fileName3,
-                ageCategory, // Usar valores reales
-                playerLevel,
-                shotType
-            );
-                    } catch (error) {
-            console.error('❌ Error en el análisis:', error);
-            throw new Error(`Error en el análisis de video: ${error instanceof Error ? error.message : 'Error desconocido'}`);
-        }
-
-        // Adaptar el resultado al formato esperado por la UI
-        const adaptedAnalysisResult = {
-            detailedChecklist: analysisResult.technicalAnalysis?.parameters?.map((param: any) => ({
-                id: param.name.toLowerCase().replace(/\s+/g, '_'),
-                name: param.name,
-                description: param.comment,
-                status: (() => {
-                    const score = param.score || 0;
-                    if (score >= 70) return 'Correcto';
-                    if (score >= 36) return 'Mejorable';
-                    return 'Incorrecto';
-                })(), // Forzar cálculo basado en score, ignorar status de IA
-                rating: (() => {
-                    const score = param.score || 0;
-                    if (score >= 90) return 5; // Excelente
-                    if (score >= 70) return 4; // Correcto
-                    if (score >= 50) return 3; // Mejorable
-                    if (score >= 30) return 2; // Incorrecto leve
-                    return 1; // Incorrecto
-                })(), // Convertir 0-100 a 1-5 con escala correcta
-                comment: param.comment,
-                na: param.status === 'no_evaluable',
-                razon: param.status === 'no_evaluable' ? param.comment : null,
-                evidencia: param.evidencia || 'Visible en el video',
-                timestamp: null
-            })) || [],
-            overallScore: analysisResult.technicalAnalysis?.overallScore || 0,
-            strengths: analysisResult.technicalAnalysis?.strengths || [],
-            weaknesses: analysisResult.technicalAnalysis?.weaknesses || [],
-            recommendations: analysisResult.technicalAnalysis?.recommendations || [],
-            keyframes: [],
-            analysisSummary: `Análisis de prueba con prompt simplificado. ${analysisResult.verification?.description || 'Video de baloncesto analizado.'}`,
-            verification: analysisResult.verification,
-            shotSummary: analysisResult.shotSummary,
-            shots: analysisResult.shots
-        };
-
-        console.log('🔍 Debug - analysisResult from Gemini:', {
-            hasTechnicalAnalysis: !!analysisResult.technicalAnalysis,
-            hasParameters: !!analysisResult.technicalAnalysis?.parameters,
-            parametersLength: analysisResult.technicalAnalysis?.parameters?.length || 0,
-            parametersSample: analysisResult.technicalAnalysis?.parameters?.slice(0, 2) || 'N/A'
-        });
-
-                // Función para limpiar valores undefined antes de guardar en Firestore
-        const cleanForFirestore = (obj: any): any => {
-            if (obj === null || obj === undefined) return null;
-            if (typeof obj !== 'object') return obj;
-            if (Array.isArray(obj)) return obj.map(cleanForFirestore);
-            
-            const cleaned: any = {};
-            for (const [key, value] of Object.entries(obj)) {
-                if (value !== undefined) {
-                    cleaned[key] = cleanForFirestore(value);
-                }
-            }
-            return cleaned;
-        };
-
-        // Guardar análisis completo en Firestore
-        const updateData = cleanForFirestore({
-            status: 'analyzed',
-            analysisResult: adaptedAnalysisResult,
-            detailedChecklist: adaptedAnalysisResult.detailedChecklist,
-            keyframes: adaptedAnalysisResult.keyframes,
-            coachCompleted: false,
-            updatedAt: new Date().toISOString(),
-            // Metadatos adicionales del análisis
-            analysisMetadata: {
-                totalVideos: [videoBackUrl, videoFrontUrl, videoLeftUrl, videoRightUrl].filter(Boolean).length,
-                preprocessed: true,
-                ffmpegOptimized: true,
-                promptVersion: 'test-simple-prompt-v1',
-                analysisMethod: 'gemini-2.0-flash-exp-simplified',
-                processingTime: new Date().toISOString(),
-                videoUrls: {
-                    back: videoBackUrl,
-                    front: videoFrontUrl,
-                    left: videoLeftUrl,
-                    right: videoRightUrl
-                }
-            }
-        });
-
-        await db.collection('analyses').doc(analysisRef.id).update(updateData);
-                revalidatePath('/player/dashboard');
-        return { 
-            message: `Análisis de prueba completado exitosamente.`, 
-            error: false, 
-            analysisId: analysisId,
-            redirectTo: `/analysis-test/${analysisId}`
-        };
-
-    } catch (error) {
-        console.error('❌ Error en startAnalysisTest:', error);
-        const message = error instanceof Error ? error.message : 'Error desconocido';
-        return { message: `Error en el análisis de prueba: ${message}`, error: true };
-    }
-}
-
-// 🎯 FUNCIÓN PRINCIPAL DE ANÁLISIS: PROMPT OPTIMIZADO + PREPROCESAMIENTO FFMPEG + PESOS CONFIGURABLES
-export async function startAnalysis(prevState: any, formData: FormData) {
-    try {
-        // Verificar si el sistema está en modo mantenimiento general
-        const maintenanceEnabled = await isMaintenanceMode();
-        if (maintenanceEnabled) {
-            return { 
-                message: "El sistema está en mantenimiento. El análisis de lanzamientos está temporalmente deshabilitado.", 
-                error: true 
-            };
-        }
-
-        const userId = formData.get('userId') as string;
-        const coachId = (formData.get('coachId') as string | null) || null;
-        if (!userId) return { message: "ID de usuario requerido.", error: true };
-        const shotType = formData.get('shotType') as string;
-        if (!shotType) return { message: "Tipo de lanzamiento requerido.", error: true };
-        
-        // Verificar mantenimiento específico por tipo de tiro
-        const { isShotTypeInMaintenance, normalizeShotType } = await import('@/lib/maintenance');
-        const normalizedShotType = normalizeShotType(shotType);
-        const shotTypeMaintenance = await isShotTypeInMaintenance(normalizedShotType);
-        if (shotTypeMaintenance) {
-            return { 
-                message: `El análisis de ${shotType} está actualmente en mantenimiento. Por favor, intenta con otro tipo de tiro o vuelve más tarde.`, 
-                error: true 
-            };
-        }
-        
-        const ageCategory = formData.get('ageCategory') as string || 'adult';
-        const playerLevel = formData.get('playerLevel') as string || 'intermediate';
-        
-        // Extraer videos (hasta 4)
-        const videoFile1 = formData.get('video1') as File | null;
-        const videoFile2 = formData.get('video2') as File | null;
-        const videoFile3 = formData.get('video3') as File | null;
-        const videoFile4 = formData.get('video4') as File | null;
-
-        if (!videoFile1 || videoFile1.size === 0) {
-            return { message: "Al menos un video es requerido.", error: true };
-        }
-
-        console.log('📹 Videos recibidos:', {
-            video1: videoFile1 ? `${Math.round(videoFile1.size / 1024)}KB` : 'N/A',
-            video2: videoFile2 ? `${Math.round(videoFile2.size / 1024)}KB` : 'N/A',
-            video3: videoFile3 ? `${Math.round(videoFile3.size / 1024)}KB` : 'N/A',
-            video4: videoFile4 ? `${Math.round(videoFile4.size / 1024)}KB` : 'N/A'
-        });
-
-        // Crear análisis en Firestore
-        const analysisId = `analysis_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const now = new Date().toISOString();
-        
-        if (!adminDb) return { message: "Base de datos no disponible.", error: true };
-
-        // Subir videos a Storage y obtener URLs permanentes
-        console.log('📤 Subiendo videos a Storage...');
-        const { uploadVideoToStorage } = await import('@/lib/storage-utils');
-        
-        // Mapeo: video1=back, video2=front, video3=left, video4=right
-        let videoUrl: string | null = null;
-        let videoBackUrl: string | null = null;
-        let videoFrontUrl: string | null = null;
-        let videoLeftUrl: string | null = null;
-        let videoRightUrl: string | null = null;
-        
-        if (videoFile1) {
-            videoBackUrl = await uploadVideoToStorage(videoFile1, userId, { maxSeconds: 30 });
-            videoUrl = videoBackUrl; // El back es el video principal
-                    }
-        
-        if (videoFile2) {
-            videoFrontUrl = await uploadVideoToStorage(videoFile2, userId, { maxSeconds: 30 });
-            if (!videoUrl) videoUrl = videoFrontUrl; // Si no hay back, front es el principal
-                    }
-        
-        if (videoFile3) {
-            videoLeftUrl = await uploadVideoToStorage(videoFile3, userId, { maxSeconds: 30 });
-                    }
-        
-        if (videoFile4) {
-            videoRightUrl = await uploadVideoToStorage(videoFile4, userId, { maxSeconds: 30 });
-                    }
-
-                // Guardar análisis inicial con URLs de videos
-        await adminDb.collection('analyses').doc(analysisId).set({
-            id: analysisId,
-            playerId: userId,
-            coachId,
-            status: 'analyzing',
-            shotType,
-            ageCategory,
-            playerLevel,
-            createdAt: now,
-            updatedAt: now,
-            analysisType: 'weighted', // Análisis con pesos configurables
-            videoUrl,
-            videoBackUrl,
-            videoFrontUrl,
-            videoLeftUrl,
-            videoRightUrl
-        });
-
-        // Preprocesar videos con FFmpeg (usando la misma lógica que startAnalysis)
-        console.log('⚙️ Preprocesando videos con FFmpeg...');
-        
-        const { preprocessVideo } = await import('@/lib/gemini-video-real');
-        
-        // Procesar videos (solo los que existen)
-        const videoBuffers: Buffer[] = [];
-        const fileNames: string[] = [];
-        
-        if (videoFile1 && videoFile1.size > 0) {
-            const buffer1 = Buffer.from(await videoFile1.arrayBuffer());
-            console.log(`🎬 Procesando video1: ${Math.round(buffer1.length / 1024)}KB, nombre: ${videoFile1.name}`);
-            
-            // Si el video ya viene optimizado del cliente, no re-procesar
-            if (videoFile1.name.includes('_optimized') || videoFile1.name.includes('-compressed')) {
-                console.log('⏭️ Video1 ya optimizado en cliente, saltando preprocessing');
-                videoBuffers.push(buffer1);
-            } else {
-                const { optimizedVideo: processed1 } = await preprocessVideo(buffer1, videoFile1.name);
-                videoBuffers.push(processed1);
-            }
-            fileNames.push(videoFile1.name);
-        }
-        
-        if (videoFile2 && videoFile2.size > 0) {
-            const buffer2 = Buffer.from(await videoFile2.arrayBuffer());
-            console.log(`🎬 Procesando video2: ${Math.round(buffer2.length / 1024)}KB, nombre: ${videoFile2.name}`);
-            
-            if (videoFile2.name.includes('_optimized') || videoFile2.name.includes('-compressed')) {
-                console.log('⏭️ Video2 ya optimizado en cliente, saltando preprocessing');
-                videoBuffers.push(buffer2);
-            } else {
-                const { optimizedVideo: processed2 } = await preprocessVideo(buffer2, videoFile2.name);
-                videoBuffers.push(processed2);
-            }
-            fileNames.push(videoFile2.name);
-        }
-        
-        if (videoFile3 && videoFile3.size > 0) {
-            const buffer3 = Buffer.from(await videoFile3.arrayBuffer());
-            console.log(`🎬 Procesando video3: ${Math.round(buffer3.length / 1024)}KB, nombre: ${videoFile3.name}`);
-            
-            if (videoFile3.name.includes('_optimized') || videoFile3.name.includes('-compressed')) {
-                console.log('⏭️ Video3 ya optimizado en cliente, saltando preprocessing');
-                videoBuffers.push(buffer3);
-            } else {
-                const { optimizedVideo: processed3 } = await preprocessVideo(buffer3, videoFile3.name);
-                videoBuffers.push(processed3);
-            }
-            fileNames.push(videoFile3.name);
-        }
-        
-        if (videoFile4 && videoFile4.size > 0) {
-            const buffer4 = Buffer.from(await videoFile4.arrayBuffer());
-            console.log(`🎬 Procesando video4: ${Math.round(buffer4.length / 1024)}KB, nombre: ${videoFile4.name}`);
-            
-            if (videoFile4.name.includes('_optimized') || videoFile4.name.includes('-compressed')) {
-                console.log('⏭️ Video4 ya optimizado en cliente, saltando preprocessing');
-                videoBuffers.push(buffer4);
-            } else {
-                const { optimizedVideo: processed4 } = await preprocessVideo(buffer4, videoFile4.name);
-                videoBuffers.push(processed4);
-            }
-            fileNames.push(videoFile4.name);
-        }
-
-        console.log('🎬 Videos preprocesados con FFmpeg:', {
-            count: videoBuffers.length,
-            sizes: videoBuffers.map((buf, i) => `${i + 1}: ${Math.round(buf.length / 1024)}KB`)
-        });
-
-        // Llamar análisis con prompt simplificado (como test)
-        const { analyzeVideoSimplePrompt } = await import('@/utils/gemini-simple-prompt');
-        
-        if (!videoBuffers[0]) {
-            throw new Error('No se pudo leer el video principal para análisis.');
-        }
-        let analysisResult;
-        try {
-            // Pasar solo los videos que existen + parámetros importantes (máximo 3 videos)
-            analysisResult = await analyzeVideoSimplePrompt(
-                videoBuffers[0],
-                fileNames[0] ?? 'video1.mp4',
-                videoBuffers[1] || null,
-                fileNames[1] ?? null,
-                videoBuffers[2] || null,
-                fileNames[2] ?? null,
-                ageCategory,
-                playerLevel,
-                shotType
-            );
-                    } catch (error) {
-            console.error('❌ Error en el análisis híbrido:', error);
-            throw new Error(`Error en el análisis de video: ${error instanceof Error ? error.message : 'Error desconocido'}`);
-        }
-
-                // ⚖️ CALCULAR SCORE GLOBAL CON PESOS CONFIGURABLES
-                const { loadWeightsFromFirestore } = await import('@/lib/scoring');
-        
-        // Determinar tipo de tiro para cargar pesos correspondientes
-        let shotTypeKey = 'tres';
-        if (shotType.toLowerCase().includes('media')) {
-            shotTypeKey = 'media';
-        } else if (shotType.toLowerCase().includes('libre')) {
-            shotTypeKey = 'libre';
-        }
-        
-        const customWeights = await loadWeightsFromFirestore(shotTypeKey);
-        console.log(`📊 Pesos cargados para ${shotTypeKey}:`, Object.keys(customWeights).length, 'parámetros');
-        
-        // Calcular score ponderado usando los pesos configurables
-        const parameters = analysisResult.technicalAnalysis?.parameters || [];
-        let weightedScore = 0;
-        let totalWeight = 0;
-        let evaluableCount = 0;
-        let nonEvaluableCount = 0;
-        
-        // Función para normalizar el nombre del parámetro a un ID
-        const normalizeParamName = (name: string): string => {
-            // Primero normalizar y limpiar
-            let normalized = name
-                .toLowerCase()
-                .trim()
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '') // Quitar acentos
-                .replace(/\s+/g, '_') // Espacios a guiones bajos
-                .replace(/[^a-z0-9_]/g, '') // Solo letras, números y guiones bajos
-                .replace(/\//g, '_'); // Reemplazar / por _
-            
-            // Mapeo específico según tipo de tiro
-            const isLibre = shotTypeKey === 'libre';
-            
-            // Mapeo específico para manejar diferencias entre nombres de IA y claves de pesos
-            const mapping: Record<string, string> = {
-                // PREPARACIÓN (Común para tres y libre)
-                'alineacion_de_pies': 'alineacion_pies',
-                'alineacion_de_los_pies': 'alineacion_pies',
-                'alineacion_corporal': 'alineacion_cuerpo',
-                'alineacion_del_cuerpo': 'alineacion_cuerpo',
-                'alineacion_pies_cuerpo': 'alineacion_pies_cuerpo', // Para tiro libre
-                'alineacion_pies_cuerpo_libre': 'alineacion_pies_cuerpo',
-                'flexion_de_rodillas': 'flexion_rodillas',
-                'flexion_rodillas': isLibre ? 'flexion_rodillas_libre' : 'flexion_rodillas',
-                'muneca_cargada': isLibre ? 'muneca_cargada_libre' : 'muneca_cargada',
-                'posicion_inicial_del_balon': 'posicion_inicial_balon',
-                'posicion_inicial_balon': 'posicion_inicial_balon',
-                'rutina_pre_tiro': 'rutina_pre_tiro', // Específico tiro libre
-                'rutina_pretiro': 'rutina_pre_tiro',
-                
-                // ASCENSO (Común para tres y libre)
-                'mano_no_dominante_en_ascenso': 'mano_no_dominante_ascenso',
-                'angulo_de_codo_estable_en_ascenso': 'angulo_codo_fijo_ascenso',
-                'angulo_codo_estable_en_ascenso': 'angulo_codo_fijo_ascenso',
-                'angulo_codo_fijo_en_ascenso': 'angulo_codo_fijo_ascenso',
-                'angulo_codo_fijo_ascenso': 'angulo_codo_fijo_ascenso',
-                'codos_cerca_del_cuerpo': isLibre ? 'codos_cerca_cuerpo_libre' : 'codos_cerca_cuerpo',
-                'codos_cerca_del_cuerpo_libre': 'codos_cerca_cuerpo_libre',
-                'codos_cerca_cuerpo': isLibre ? 'codos_cerca_cuerpo_libre' : 'codos_cerca_cuerpo',
-                'subida_recta_del_balon': 'subida_recta_balon',
-                'trayectoria_del_balon_hasta_el_set_point': 'trayectoria_hasta_set_point',
-                'trayectoria_del_balon_hasta_set_point': 'trayectoria_hasta_set_point',
-                'trayectoria_hasta_el_set_point': 'trayectoria_hasta_set_point',
-                'trayectoria_vertical': 'trayectoria_vertical_libre', // Específico tiro libre
-                'trayectoria_vertical_libre': 'trayectoria_vertical_libre',
-                'mano_guia': 'mano_guia_libre',
-                'mano_guia_libre': 'mano_guia_libre',
-                'set_point': isLibre ? 'set_point_altura_edad' : 'set_point',
-                'set_point_altura_segun_edad': 'set_point_altura_edad',
-                'set_point_altura_edad': 'set_point_altura_edad',
-                'tiempo_de_lanzamiento': 'tiempo_lanzamiento',
-                
-                // FLUIDEZ
-                'tiro_en_un_solo_tiempo': isLibre ? 'tiro_un_solo_tiempo_libre' : 'tiro_un_solo_tiempo',
-                'tiro_un_solo_tiempo': isLibre ? 'tiro_un_solo_tiempo_libre' : 'tiro_un_solo_tiempo',
-                'tiro_un_solo_tiempo_libre': 'tiro_un_solo_tiempo_libre',
-                'transferencia_energetica_sincronia_con_piernas': isLibre ? 'sincronia_piernas_libre' : 'sincronia_piernas',
-                'transferencia_energetica__sincronia_con_piernas': isLibre ? 'sincronia_piernas_libre' : 'sincronia_piernas',
-                'sincronia_con_piernas': isLibre ? 'sincronia_piernas_libre' : 'sincronia_piernas',
-                'sincronia_piernas': isLibre ? 'sincronia_piernas_libre' : 'sincronia_piernas',
-                'sincronia_piernas_libre': 'sincronia_piernas_libre',
-                
-                // LIBERACIÓN
-                'mano_no_dominante_en_liberacion': 'mano_no_dominante_liberacion',
-                'mano_no_dominante_en_la_liberacion': 'mano_no_dominante_liberacion',
-                'extension_completa_del_brazo': isLibre ? 'extension_completa_liberacion' : 'extension_completa_brazo',
-                'extension_completa': isLibre ? 'extension_completa_liberacion' : 'extension_completa_brazo',
-                'extension_completa_brazo': isLibre ? 'extension_completa_liberacion' : 'extension_completa_brazo',
-                'extension_completa_liberacion': 'extension_completa_liberacion',
-                'giro_de_la_pelota': 'giro_pelota',
-                'rotacion_del_balon': 'rotacion_balon', // Específico tiro libre
-                'rotacion_balon': 'rotacion_balon',
-                'giro_pelota': 'giro_pelota',
-                'angulo_de_salida': isLibre ? 'angulo_salida_libre' : 'angulo_salida',
-                'angulo_salida': isLibre ? 'angulo_salida_libre' : 'angulo_salida',
-                'angulo_salida_libre': 'angulo_salida_libre',
-                'flexion_muneca_final': 'flexion_muneca_final', // Específico tiro libre (gooseneck)
-                'gooseneck': 'flexion_muneca_final',
-                
-                // SEGUIMIENTO (específicos de tiro libre)
-                'sin_salto': 'sin_salto_reglamentario',
-                'sin_salto_reglamentario': 'sin_salto_reglamentario',
-                'pies_dentro_zona': 'pies_dentro_zona',
-                'pies_dentro_de_zona': 'pies_dentro_zona',
-                'balance_vertical': 'balance_vertical',
-                'equilibrio_post_liberacion_y_aterrizaje': 'equilibrio_general',
-                'mantenimiento_del_equilibrio': 'equilibrio_general',
-                'equilibrio_en_aterrizaje': 'equilibrio_general',
-                'equilibrio_en_el_aterrizaje': 'equilibrio_general',
-                'equilibrio_general': 'equilibrio_general',
-                'duracion_del_follow_through': 'duracion_follow_through',
-                'duracion_del_followthrough': 'duracion_follow_through',
-                'follow_through_completo': 'follow_through_completo_libre',
-                'follow_through_completo_libre': 'follow_through_completo_libre',
-                
-                // CONSISTENCIA (solo para tres puntos)
-                'consistencia_del_movimiento': 'consistencia_general',
-                'consistencia_tecnica': 'consistencia_general',
-                'consistencia_de_resultados': 'consistencia_general',
-                'consistencia_repetitiva': 'consistencia_general',
-                'consistencia_general': 'consistencia_general'
-            };
-            
-            return mapping[normalized] || normalized;
-        };
-        
-        // Set para evitar contar el mismo parámetro dos veces
-        const processedParams = new Set<string>();
-
-        const normalizeStatus = (status: unknown): string =>
-            String(status || '')
-                .toLowerCase()
-                .trim()
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '')
-                .replace(/\s+/g, '_');
-        
-        for (const param of parameters) {
-            // Usar el campo id si existe, si no, normalizar el nombre
-            const paramId = param.id ? param.id.trim().toLowerCase() : normalizeParamName(param.name || '');
-            
-            // Si ya procesamos este parámetro, saltar (evita duplicados)
-            if (processedParams.has(paramId)) {
-                console.log(`⏭️ Saltando parámetro duplicado: ${paramId} (nombre original: ${param.name})`);
-                continue;
-            }
-            
-            // Marcar como procesado
-            processedParams.add(paramId);
-
-            const weight = customWeights[paramId] || 0;
-            const normalizedStatus = normalizeStatus(param.status);
-            const hasValidScore = typeof param.score === 'number' && param.score > 0;
-            const isNoEvaluable = normalizedStatus === 'no_evaluable' || param.na === true;
-
-            if (isNoEvaluable || !hasValidScore) {
-                nonEvaluableCount++;
-                console.log(`⚠️ ${paramId}: no evaluable (status=${param.status}, score=${param.score})`);
-                continue;
-            }
-
-            evaluableCount++;
-            if (weight === 0) {
-                console.warn(`⚠️ Parámetro evaluable sin peso: ${paramId} (nombre original: ${param.name})`);
-                continue;
-            }
-
-            weightedScore += weight * param.score;
-            totalWeight += weight;
-            console.log(`✅ ${paramId}: score=${param.score}, peso=${weight}%, contribución=${(weight * param.score).toFixed(2)}`);
-        }
-        
-        // Normalizar el score final
-        // Formula: Σ(peso_i × score_i) / Σ(peso_i)
-        // Promedio ponderado: suma de (peso × score) dividido por suma de pesos
-        const finalScore = totalWeight > 0 ? (weightedScore / totalWeight) : 0;
-        
-        console.log('📊 Cálculo de score finalizado:', {
-            evaluableCount,
-            nonEvaluableCount,
-            totalWeight: totalWeight.toFixed(2),
-            weightedScore: weightedScore.toFixed(2),
-            finalScore: finalScore.toFixed(2),
-            originalScore: analysisResult.technicalAnalysis?.overallScore
-        });
-
-               // Guardar resultados en Firestore (mapeando correctamente desde technicalAnalysis)
-               const adaptedAnalysisResult = {
-                   ...analysisResult,
-                   // Mapear correctamente los datos del technicalAnalysis
-                   detailedChecklist: analysisResult.technicalAnalysis?.parameters || [],
-                   analysisSummary: analysisResult.technicalAnalysis?.summary || 'Análisis completado',
-                   strengths: analysisResult.technicalAnalysis?.strengths || [],
-                   weaknesses: analysisResult.technicalAnalysis?.weaknesses || [],
-                   recommendations: analysisResult.technicalAnalysis?.recommendations || [],
-                   // ⚖️ Usar el score calculado con pesos personalizados
-                   overallScore: Math.round(finalScore * 100) / 100,
-                   score: Math.round(finalScore * 100) / 100,
-                   // Agregar metadatos del cálculo
-                   scoreMetadata: {
-                       originalScore: analysisResult.technicalAnalysis?.overallScore || 0,
-                       weightedScore: Math.round(finalScore * 100) / 100,
-                       evaluableCount,
-                       nonEvaluableCount,
-                       totalWeight: Math.round(totalWeight * 100) / 100,
-                       shotTypeKey,
-                       calculatedAt: new Date().toISOString()
-                   },
-                   // Asegurar que technicalAnalysis también esté disponible
-                   technicalAnalysis: analysisResult.technicalAnalysis
-               };
-
-                       // Limpiar valores undefined para Firestore
-        const cleanForFirestore = (obj: any): any => {
-            if (obj === null || obj === undefined) return null;
-            if (Array.isArray(obj)) return obj.map(cleanForFirestore);
-            if (typeof obj === 'object') {
-                const cleaned: any = {};
-                for (const [key, value] of Object.entries(obj)) {
-                    if (value !== undefined) {
-                        cleaned[key] = cleanForFirestore(value);
-                    }
-                }
-                return cleaned;
-            }
-            return obj;
-        };
-
-        const cleanedResult = cleanForFirestore(adaptedAnalysisResult);
-
-                console.log('🔍 Intentando guardar en Firestore...', {
-            analysisId,
-            hasAdminDb: !!adminDb,
-            resultSize: JSON.stringify(cleanedResult).length
-        });
-        
-        await adminDb.collection('analyses').doc(analysisId).update({
-            status: 'analyzed',
-            analysisResult: cleanedResult,
-            updatedAt: new Date().toISOString()
-        });
-
-                // Keyframes tradicionales (asíncronos, no bloquean)
-                console.log('🔍 Debug - videoBuffers disponibles:', {
-            front: videoBuffers[0] ? `${(videoBuffers[0].length / 1024 / 1024).toFixed(2)}MB` : 'No disponible',
-            back: videoBuffers[1] ? `${(videoBuffers[1].length / 1024 / 1024).toFixed(2)}MB` : 'No disponible',
-            left: videoBuffers[2] ? `${(videoBuffers[2].length / 1024 / 1024).toFixed(2)}MB` : 'No disponible',
-            right: videoBuffers[3] ? `${(videoBuffers[3].length / 1024 / 1024).toFixed(2)}MB` : 'No disponible'
-        });
-        
-        // Start traditional keyframe extraction without waiting
-        import('@/lib/keyframe-uploader').then(({ extractAndUploadKeyframesAsync }) => {
-                        extractAndUploadKeyframesAsync({
-                analysisId,
-                videoBuffers: {
-                    front: videoBuffers[0],
-                    back: videoBuffers[1],
-                    left: videoBuffers[2],
-                    right: videoBuffers[3]
-                },
-                userId
-            }).then(() => {
-                            }).catch(err => {
-                console.error('❌ [Keyframes] Error en extracción asíncrona:', err);
-            });
-        }).catch(err => {
-            console.error('❌ [Keyframes] Error al cargar módulo keyframe-uploader:', err);
-        });
-
-        return {
-            success: true,
-            message: "Análisis completado exitosamente.",
-            analysisId: analysisId,
-            redirectTo: `/analysis/${analysisId}`
-        };
-
-    } catch (error) {
-        console.error('❌ Error en startAnalysis:', error);
-        const message = error instanceof Error ? error.message : 'Error desconocido';
-        return { message: `Error en el análisis: ${message}`, error: true };
     }
 }

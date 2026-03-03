@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { PlayerCard } from "@/components/player-card";
 import {
   Card,
   CardContent,
@@ -11,11 +12,11 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Video, MessageSquare, Clock } from "lucide-react";
+import { Users, Video, MessageSquare } from "lucide-react";
 import type { Message, Player } from "@/lib/types";
 import { useAuth } from "@/hooks/use-auth";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, orderBy, query, where, updateDoc, doc, addDoc, serverTimestamp, setDoc, getDoc, limit, getDocs } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query, where, updateDoc, doc, addDoc, serverTimestamp, setDoc, getDoc, limit, getDocs, documentId } from "firebase/firestore";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -23,81 +24,170 @@ import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { buildConversationId, getMessageType } from "@/lib/message-utils";
+import { resolveMessageLinkToCurrentEnv } from "@/lib/app-url";
 
 export default function CoachDashboardPage() {
-  const { user, userProfile } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [players, setPlayers] = useState<Player[]>([] as any);
   const [messages, setMessages] = useState<Message[]>([]);
   const [analyses, setAnalyses] = useState<any[]>([]);
-  const [coachProfile, setCoachProfile] = useState<any | null>(null);
-  const [rateDraft, setRateDraft] = useState<string>("");
-  const [rateDirty, setRateDirty] = useState<boolean>(false);
-  const rateDirtyRef = useRef(false);
-  const [savingRate, setSavingRate] = useState<boolean>(false);
-  const [rateError, setRateError] = useState<string | null>(null);
+  const [extraPlayerNames, setExtraPlayerNames] = useState<Record<string, string>>({});
+  const [extraPlayers, setExtraPlayers] = useState<Record<string, Player>>({});
+  const [analysisPlayerById, setAnalysisPlayerById] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<string>("messages");
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false);
+  const [messagesTab, setMessagesTab] = useState<"requests" | "messages" | "system">("requests");
   const [playersSearch, setPlayersSearch] = useState<string>("");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<'all'|'pending'|'analyzed'>("all");
-  const [hiddenMessageIds, setHiddenMessageIds] = useState<string[]>([]);
-  useEffect(() => {
-    rateDirtyRef.current = rateDirty;
-  }, [rateDirty]);
-
-  useEffect(() => {
-    if (!user) return;
-    try {
-      const coachRef = doc(db as any, 'coaches', user.uid);
-      const unsub = onSnapshot(coachRef, (snap) => {
-        if (!snap.exists()) {
-          setCoachProfile(null);
-          return;
-        }
-        const data = { id: snap.id, ...(snap.data() as any) };
-        setCoachProfile(data);
-        if (!rateDirtyRef.current) {
-          setRateDraft(typeof data.ratePerAnalysis === 'number' ? String(data.ratePerAnalysis) : '');
-        }
-      }, (error) => {
-        console.error('Error cargando perfil de coach:', error);
-      });
-      return () => unsub();
-    } catch (e) {
-      console.error('Error inicializando perfil de coach:', e);
+  const toDate = (value: any) => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (typeof value === "string" || typeof value === "number") {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
     }
-  }, [user]);
+    if (typeof value?.toDate === "function") return value.toDate();
+    if (typeof value?._seconds === "number") {
+      return new Date(value._seconds * 1000 + Math.round((value._nanoseconds || 0) / 1e6));
+    }
+    return null;
+  };
+  const getTime = (value: any) => toDate(value)?.getTime() ?? 0;
+  const formatDate = (value: any) => {
+    const d = toDate(value);
+    return d ? d.toLocaleString() : "Fecha desconocida";
+  };
+  const renderMessageText = (text: string) => {
+    if (!text) return null;
+    const urlPattern = /https?:\/\/\S+/g;
+    const segments: Array<{ type: "text" | "link"; value: string }> = [];
+    let lastIndex = 0;
+    for (const match of text.matchAll(urlPattern)) {
+      const matchText = match[0];
+      const matchIndex = match.index ?? 0;
+      if (matchIndex > lastIndex) {
+        segments.push({ type: "text", value: text.slice(lastIndex, matchIndex) });
+      }
+      segments.push({ type: "link", value: matchText });
+      lastIndex = matchIndex + matchText.length;
+    }
+    if (lastIndex < text.length) {
+      segments.push({ type: "text", value: text.slice(lastIndex) });
+    }
+    return segments.map((segment, idx) => {
+      if (segment.type === "link") {
+        const href = resolveMessageLinkToCurrentEnv(segment.value);
+        return (
+          <a
+            key={`link-${idx}`}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline break-all"
+          >
+            {href}
+          </a>
+        );
+      }
+      return <span key={`text-${idx}`}>{segment.value}</span>;
+    });
+  };
+  const getOriginLabel = (m: Message) => {
+    if (m.fromId === "system") return "Sistema";
+    if (m.fromId === user?.uid) return "Tú";
+    return "Jugador";
+  };
+  const isKeyframeMessage = (m: Message) =>
+    Boolean(m.keyframeUrl || m.angle || typeof m.index === "number");
+  const extractAnalysisIdFromText = (text?: string | null) => {
+    if (!text) return "";
+    const urlMatch = text.match(/analysis\/([A-Za-z0-9_-]+)/);
+    if (urlMatch?.[1]) return urlMatch[1];
+    const match = text.match(/analysis_[A-Za-z0-9_-]+/);
+    return match?.[0] || "";
+  };
+  const getConversationKeyFromMessage = (m: Message, analysisIdOverride?: string) =>
+    m.conversationId || buildConversationId({
+      fromId: m.fromId,
+      toId: m.toId,
+      analysisId: analysisIdOverride ?? m.analysisId ?? null,
+    });
+  const groupMessages = (list: Message[], getKey: (m: Message) => string) => {
+    const grouped = new Map<string, { latest: Message; count: number }>();
+    for (const m of list) {
+      const key = getKey(m) || m.id;
+      const existing = grouped.get(key);
+      if (!existing) {
+        grouped.set(key, { latest: m, count: 1 });
+        continue;
+      }
+      const next = getTime(m.createdAt) > getTime(existing.latest.createdAt) ? m : existing.latest;
+      grouped.set(key, { latest: next, count: existing.count + 1 });
+    }
+    return Array.from(grouped.values()).sort((a, b) => getTime(b.latest.createdAt) - getTime(a.latest.createdAt));
+  };
 
   useEffect(() => {
     if (!user) return;
     try {
-      const q = query(collection(db as any, 'players'), where('coachId', '==', user.uid));
-      const unsub = onSnapshot(q, (snap) => {
-        const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as any[];
-        setPlayers(list as any);
-      }, (error) => {
-        console.error('Error en listener de jugadores:', error);
-      });
-      return () => unsub();
+      const q1 = query(collection(db as any, 'players'), where('coachId', '==', user.uid));
+      const q2 = query(collection(db as any, 'players'), where('coachDocId', '==', user.uid));
+      const unsubs: Array<() => void> = [];
+      const apply = (snap: any) => {
+        setPlayers(prev => {
+          const incoming = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })) as any[];
+          const merged = [...prev, ...incoming].reduce((acc: Record<string, Player>, p: any) => {
+            if (p?.id) acc[p.id] = p;
+            return acc;
+          }, {} as any);
+          return Object.values(merged) as any;
+        });
+      };
+      unsubs.push(onSnapshot(q1, apply));
+      unsubs.push(onSnapshot(q2, apply));
+      return () => { unsubs.forEach(u => u()); };
     } catch (e) {
       console.error('Error cargando jugadores del coach:', e);
     }
   }, [user]);
 
   // Cargar análisis de todos los jugadores del coach (en tiempo real, chunked por 10 ids)
+  // y también análisis vinculados directamente al coach (coachId), aunque el jugador ya no esté vinculado.
   useEffect(() => {
     if (!user) return;
-    let unsubs: Array<() => void> = [];
+    const unsubs: Array<() => void> = [];
     const chunkMap: Record<string, any[]> = {};
     try {
       const ids = players.map((p) => p.id).filter(Boolean);
-      // Limpiar si no hay jugadores
+      const mergeAndSort = () => {
+        const byId: Record<string, any> = {};
+        for (const list of Object.values(chunkMap)) {
+          for (const item of list) byId[item.id] = item;
+        }
+        const merged = Object.values(byId);
+        merged.sort((a: any, b: any) => getTime(b.createdAt) - getTime(a.createdAt));
+        setAnalyses(merged as any[]);
+      };
+
+      // Query adicional por coachId (para no perder análisis si se desvinculó el jugador)
+      const coachKey = `coach:${user.uid}`;
+      const coachQuery = query(collection(db as any, 'analyses'), where('coachId', '==', user.uid));
+      const coachUnsub = onSnapshot(coachQuery, (snap) => {
+        chunkMap[coachKey] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+        mergeAndSort();
+      }, (err) => {
+        console.error('Error cargando análisis por coachId:', err);
+      });
+      unsubs.push(coachUnsub);
+
+      // Si no hay jugadores, dejamos solo el stream por coachId
       if (ids.length === 0) {
-        setAnalyses([]);
-        return;
+        return () => { unsubs.forEach((u) => u()); };
       }
+
       // Partir en chunks de 10 para 'in'
       for (let i = 0; i < ids.length; i += 10) {
         const chunk = ids.slice(i, i + 10);
@@ -106,96 +196,7 @@ export default function CoachDashboardPage() {
         const u = onSnapshot(q, (snap) => {
           const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
           chunkMap[key] = list;
-          const merged = Object.values(chunkMap).flat();
-          // Ordenar por fecha descendente
-          merged.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-          
-          console.log(`[Coach Dashboard] Total análisis cargados antes de filtrar: ${merged.length}`);
-          console.log(`[Coach Dashboard] Jugadores asignados:`, players.map(p => ({ id: p.id, name: p.name })));
-          console.log(`[Coach Dashboard] UID del coach: ${user?.uid}`);
-          
-          const filtered = merged.filter((a: any) => {
-            if (!user?.uid) return false;
-            
-            // Debug específico para el análisis que no aparece
-            if (a.id === 'analysis_1760697596386_2z0qcauew') {
-              console.log(`🔍🔍🔍 [Coach Dashboard] DEBUG ESPECÍFICO analysis_1760697596386_2z0qcauew 🔍🔍🔍`, {
-                analysisId: a.id,
-                playerId: a.playerId,
-                playerName: players.find(p => p.id === a.playerId)?.name || 'Unknown',
-                isPlayerInList: players.some(p => p.id === a.playerId),
-                coachAccess: a.coachAccess,
-                coachAccessKeys: a.coachAccess ? Object.keys(a.coachAccess) : [],
-                userUid: user.uid,
-                hasCoachAccess: !!a.coachAccess,
-                coachAccessForUser: a.coachAccess?.[user.uid],
-                coachAccessStatus: a.coachAccess?.[user.uid]?.status,
-                status: a.status,
-                createdAt: a.createdAt
-              });
-            }
-            
-            const access = (a as any).coachAccess || {};
-            const coachAccess = access[user.uid];
-            
-            // Debug: log para ver qué análisis se están filtrando
-            if (!coachAccess || coachAccess.status !== 'paid') {
-              if (a.id === 'analysis_1760697596386_2z0qcauew') {
-                console.log(`❌❌❌ [Coach Dashboard] analysis_1760697596386_2z0qcauew FILTRADO - RAZÓN:`, {
-                  reason: !coachAccess ? 'No tiene coachAccess para este coach UID' : `Status es '${coachAccess.status}' no 'paid'`,
-                  playerId: a.playerId,
-                  playerName: players.find(p => p.id === a.playerId)?.name || 'Unknown',
-                  createdAt: a.createdAt,
-                  hasCoachAccess: !!access,
-                  coachIds: Object.keys(access),
-                  userUid: user.uid,
-                  coachAccess: coachAccess,
-                  status: a.status
-                });
-              }
-              console.log(`[Coach Dashboard] ❌ Análisis ${a.id} filtrado (NO PAGADO):`, {
-                playerId: a.playerId,
-                playerName: players.find(p => p.id === a.playerId)?.name || 'Unknown',
-                createdAt: a.createdAt,
-                hasCoachAccess: !!access,
-                coachIds: Object.keys(access),
-                userUid: user.uid,
-                coachAccess: coachAccess,
-                status: a.status
-              });
-            } else {
-              if (a.id === 'analysis_1760697596386_2z0qcauew') {
-                console.log(`✅✅✅ [Coach Dashboard] analysis_1760697596386_2z0qcauew INCLUIDO ✅✅✅`);
-              }
-              console.log(`[Coach Dashboard] ✅ Análisis ${a.id} INCLUIDO (PAGADO):`, {
-                playerId: a.playerId,
-                playerName: players.find(p => p.id === a.playerId)?.name || 'Unknown',
-                createdAt: a.createdAt
-              });
-            }
-            // Solo mostrar análisis con acceso pagado
-            return coachAccess && coachAccess.status === 'paid';
-          });
-          
-          console.log(`[Coach Dashboard] Total análisis después de filtrar: ${filtered.length}`);
-          const analysis1760 = filtered.find(a => a.id === 'analysis_1760697596386_2z0qcauew');
-          if (analysis1760) {
-            console.log(`✅ [Coach Dashboard] analysis_1760697596386_2z0qcauew está en el array filtered:`, {
-              id: analysis1760.id,
-              status: analysis1760.status,
-              playerId: analysis1760.playerId,
-              createdAt: analysis1760.createdAt
-            });
-          } else {
-            console.log(`❌ [Coach Dashboard] analysis_1760697596386_2z0qcauew NO está en el array filtered`);
-          }
-          console.log(`[Coach Dashboard] Análisis incluidos:`, filtered.map(a => ({ 
-            id: a.id, 
-            playerId: a.playerId, 
-            status: a.status,
-            createdAt: a.createdAt 
-          })));
-          setAnalyses(filtered as any[]);
+          mergeAndSort();
         }, (err) => {
           console.error('Error cargando análisis (chunk):', err);
         });
@@ -225,122 +226,272 @@ export default function CoachDashboardPage() {
   useEffect(() => {
     if (!user) return;
     try {
-      const q1 = query(collection(db as any, 'messages'), where('toId', '==', user.uid), orderBy('createdAt', 'desc'));
-      const q2 = query(collection(db as any, 'messages'), where('toCoachDocId', '==', user.uid), orderBy('createdAt', 'desc'));
+      const q1 = query(collection(db as any, 'messages'), where('toId', '==', user.uid));
+      const q2 = query(collection(db as any, 'messages'), where('toCoachDocId', '==', user.uid));
+      const q3 = query(collection(db as any, 'messages'), where('fromId', '==', user.uid));
       const unsubs: Array<() => void> = [];
       const apply = (snap: any) => {
         setMessages(prev => {
           const incoming = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })) as Message[];
           const merged = [...incoming, ...prev].reduce((acc: Record<string, Message>, m: Message) => { acc[m.id] = m; return acc; }, {} as any);
-          return Object.values(merged).sort((a, b) => (new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
+          return Object.values(merged).sort((a, b) => (getTime(b.createdAt) - getTime(a.createdAt)));
         });
       };
-      unsubs.push(onSnapshot(q1, apply, (error) => {
-        console.error('Error en listener de mensajes coach (q1):', error);
-      }));
-      unsubs.push(onSnapshot(q2, apply, (error) => {
-        console.error('Error en listener de mensajes coach (q2):', error);
-      }));
+      unsubs.push(onSnapshot(q1, apply));
+      unsubs.push(onSnapshot(q2, apply));
+      unsubs.push(onSnapshot(q3, apply));
       return () => { unsubs.forEach(u => u()); };
     } catch (e) {
       console.error('Error cargando mensajes:', e);
     }
   }, [user]);
 
-  // Cargar mensajes ocultos desde localStorage al iniciar
-  useEffect(() => {
-    try {
-      if (typeof window === 'undefined') return;
-      const stored = window.localStorage.getItem('coachHiddenMessageIds');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          const validIds = parsed.filter((id) => typeof id === 'string');
-          if (validIds.length > 0) {
-            setHiddenMessageIds(validIds);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('No se pudieron recuperar mensajes ocultos:', e);
-    }
-  }, []);
-
-  // Guardar mensajes ocultos en localStorage cuando cambien
-  useEffect(() => {
-    try {
-      if (typeof window === 'undefined') return;
-      if (hiddenMessageIds.length > 0) {
-        window.localStorage.setItem('coachHiddenMessageIds', JSON.stringify(hiddenMessageIds));
-      } else {
-        // Si no hay mensajes ocultos, limpiar el localStorage para mantenerlo limpio
-        window.localStorage.removeItem('coachHiddenMessageIds');
-      }
-    } catch (e) {
-      console.warn('No se pudieron guardar mensajes ocultos:', e);
-    }
-  }, [hiddenMessageIds]);
-
+  const isAnalysisDone = (analysis: any) =>
+    String(analysis?.status) === "analyzed" && analysis?.coachCompleted === true;
+  const isBiomechProAnalysis = (analysis: any) =>
+    String(analysis?.analysisMode) === "biomech-pro";
+  const canCoachEditAnalysis = (analysis: any) => {
+    const access = analysis?.coachAccess?.[user?.uid || ''];
+    return access?.status === 'paid';
+  };
   const unreadCount = useMemo(() => messages.filter(m => !m.read).length, [messages]);
-  const analyzedCount = useMemo(() => analyses.filter((a: any) => String(a.status) === 'analyzed' && a.coachCompleted === true).length, [analyses]);
-  const pendingCount = useMemo(() => analyses.filter((a: any) => String(a.status) !== 'analyzed' || a.coachCompleted !== true).length, [analyses]);
-  const visibleMessages = useMemo(() => {
-    const filtered = unreadOnly ? messages.filter(m => !m.read) : messages;
-    if (hiddenMessageIds.length === 0) return filtered;
-    const hiddenSet = new Set(hiddenMessageIds);
-    return filtered.filter((m) => !hiddenSet.has(m.id));
-  }, [messages, unreadOnly, hiddenMessageIds]);
-  const playerOptions = useMemo(() => [{ id: 'all', name: 'Todos' }, ...players.map(p => ({ id: p.id, name: p.name }))], [players]);
+  const analyzedCount = useMemo(() => analyses.filter(isAnalysisDone).length, [analyses]);
+  const pendingCount = useMemo(() => analyses.filter((a: any) => !isAnalysisDone(a)).length, [analyses]);
+  const visibleMessages = useMemo(() => unreadOnly ? messages.filter(m => !m.read) : messages, [messages, unreadOnly]);
+  const totalConversationMessages = useMemo(() => {
+    return visibleMessages.filter((m) => m.fromId !== 'system' && m.toId !== 'system');
+  }, [visibleMessages]);
+  const requestMessages = useMemo(() => {
+    const requestPattern = /(analiz|analis|revis|evalu|feedback|devoluci|tiros?)/i;
+    return visibleMessages.filter((m) => {
+      const isSystemMessage = m.fromId === 'system';
+      const isFromCoach = m.fromId === user?.uid;
+      const hasAnalysisRef = Boolean(m.analysisId) || Boolean(extractAnalysisIdFromText(m.text));
+      const looksLikeRequest = requestPattern.test(m.text || '');
+      return !isSystemMessage && !isFromCoach && (hasAnalysisRef || looksLikeRequest);
+    });
+  }, [visibleMessages, user]);
+  const analysisIdsFromMessages = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of messages) {
+      const resolvedId = m.analysisId || extractAnalysisIdFromText(m.text);
+      if (resolvedId) ids.add(String(resolvedId));
+    }
+    return Array.from(ids);
+  }, [messages]);
+  const missingAnalysisIds = useMemo(() => {
+    return analysisIdsFromMessages.filter((id) => !analysisPlayerById[id]);
+  }, [analysisIdsFromMessages, analysisPlayerById]);
+  const playerIdsFromAnalysisMessages = useMemo(() => {
+    return Object.values(analysisPlayerById).map((id) => String(id)).filter(Boolean);
+  }, [analysisPlayerById]);
+  const requestPlayerIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of requestMessages) {
+      if (m?.fromId) ids.add(String(m.fromId));
+    }
+    return Array.from(ids);
+  }, [requestMessages]);
+  const systemMessages = useMemo(() => {
+    return visibleMessages.filter((m) => m.fromId === 'system' || m.toId === 'system');
+  }, [visibleMessages]);
+  const groupedRequestMessages = useMemo(() => {
+    return groupMessages(requestMessages, (m) =>
+      getConversationKeyFromMessage(m, m.analysisId || extractAnalysisIdFromText(m.text))
+    );
+  }, [requestMessages]);
+  const groupedConversationMessages = useMemo(() => {
+    return groupMessages(totalConversationMessages, (m) =>
+      getConversationKeyFromMessage(m, m.analysisId || extractAnalysisIdFromText(m.text))
+    );
+  }, [totalConversationMessages]);
+  const groupedSystemMessages = useMemo(() => {
+    return groupMessages(systemMessages, (m) =>
+      getConversationKeyFromMessage(m, m.analysisId || extractAnalysisIdFromText(m.text))
+    );
+  }, [systemMessages]);
+  const playerNameLookup = useMemo(() => {
+    const base: Record<string, string> = {};
+    for (const p of players) {
+      if (p?.id) base[p.id] = p.name || p.id;
+    }
+    const extra: Record<string, string> = {};
+    for (const p of Object.values(extraPlayers)) {
+      if ((p as any)?.id) extra[(p as any).id] = (p as any).name || (p as any).id;
+    }
+    return { ...extraPlayerNames, ...extra, ...base };
+  }, [players, extraPlayerNames, extraPlayers]);
+
+  const mergedPlayers = useMemo(() => {
+    const byId: Record<string, any> = {};
+    for (const p of players) {
+      if (p?.id) byId[p.id] = p;
+    }
+    for (const p of Object.values(extraPlayers)) {
+      const pid = (p as any)?.id;
+      if (pid && !byId[pid]) byId[pid] = p;
+    }
+    for (const pid of playerIdsFromAnalysisMessages) {
+      if (!pid || byId[pid]) continue;
+      byId[pid] = {
+        id: pid,
+        name: playerNameLookup[pid] || pid,
+        avatarUrl: 'https://placehold.co/100x100.png',
+        role: 'player',
+        status: 'pending',
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        playerLevel: '-',
+        ageGroup: '-',
+      } as any;
+    }
+    for (const pid of requestPlayerIds) {
+      if (!pid || byId[pid]) continue;
+      byId[pid] = {
+        id: pid,
+        name: playerNameLookup[pid] || pid,
+        avatarUrl: 'https://placehold.co/100x100.png',
+        role: 'player',
+        status: 'pending',
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        playerLevel: '-',
+        ageGroup: '-',
+      } as any;
+    }
+    for (const a of analyses) {
+      const pid = a?.playerId ? String(a.playerId) : '';
+      if (!pid || byId[pid]) continue;
+      byId[pid] = {
+        id: pid,
+        name: playerNameLookup[pid] || pid,
+        avatarUrl: 'https://placehold.co/100x100.png',
+        role: 'player',
+        status: 'active',
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        playerLevel: '-',
+        ageGroup: '-',
+      } as any;
+    }
+    return Object.values(byId) as Player[];
+  }, [players, extraPlayers, analyses, playerNameLookup, requestPlayerIds, playerIdsFromAnalysisMessages]);
+  const playerOptions = useMemo(() => {
+    const options = mergedPlayers.map(p => ({ id: p.id, name: p.name }));
+    return [{ id: 'all', name: 'Todos' }, ...options];
+  }, [mergedPlayers]);
   const filteredAnalyses = useMemo(() => {
     let arr = analyses;
-    if (selectedPlayerId !== 'all') arr = arr.filter((a: any) => a.playerId === selectedPlayerId);
-    if (statusFilter === 'analyzed') arr = arr.filter((a: any) => String(a.status) === 'analyzed' && a.coachCompleted === true);
-    if (statusFilter === 'pending') arr = arr.filter((a: any) => String(a.status) !== 'analyzed' || a.coachCompleted !== true);
-    
-    // Debug para el análisis específico
-    const specificAnalysis = arr.find((a: any) => a.id === 'analysis_1760697596386_2z0qcauew');
-    if (specificAnalysis) {
-      console.log(`✅ [filteredAnalyses] analysis_1760697596386_2z0qcauew está en filteredAnalyses:`, {
-        selectedPlayerId,
-        statusFilter,
-        analysisStatus: specificAnalysis.status,
-        coachCompleted: specificAnalysis.coachCompleted,
-        willShow: statusFilter === 'all' || (statusFilter === 'analyzed' && String(specificAnalysis.status) === 'analyzed' && specificAnalysis.coachCompleted === true) || (statusFilter === 'pending' && (String(specificAnalysis.status) !== 'analyzed' || specificAnalysis.coachCompleted !== true))
-      });
-    } else if (analyses.some((a: any) => a.id === 'analysis_1760697596386_2z0qcauew')) {
-      console.log(`❌ [filteredAnalyses] analysis_1760697596386_2z0qcauew está en analyses pero NO en filteredAnalyses:`, {
-        selectedPlayerId,
-        statusFilter,
-        analysisStatus: analyses.find((a: any) => a.id === 'analysis_1760697596386_2z0qcauew')?.status
-      });
+    if (selectedPlayerId !== "all") {
+      arr = arr.filter((a: any) => a.playerId === selectedPlayerId);
     }
-    
+    if (statusFilter === "analyzed") {
+      arr = arr.filter(isAnalysisDone);
+    }
+    if (statusFilter === "pending") {
+      arr = arr.filter((a: any) => !isAnalysisDone(a));
+    }
     return arr;
   }, [analyses, selectedPlayerId, statusFilter]);
   const filteredPlayers = useMemo(() => {
     const term = playersSearch.trim().toLowerCase();
-    if (!term) return players;
-    return players.filter(p => p.name?.toLowerCase().includes(term));
-  }, [players, playersSearch]);
-  
-  // Función helper para normalizar el nombre del remitente de mensajes del sistema
-  const getDisplayName = (message: Message) => {
-    const fromName = message.fromName || message.fromId;
-    if (message.fromId === 'system' || fromName === 'Shot Analysis' || fromName === 'msjs del sistema' || fromName === 'Chaaaas.com') {
-      return 'Chaaaas.com';
+    if (!term) return mergedPlayers;
+    return mergedPlayers.filter(p => p.name?.toLowerCase().includes(term));
+  }, [mergedPlayers, playersSearch]);
+
+  const missingPlayerIds = useMemo(() => {
+    const missing: string[] = [];
+    const known = new Set<string>();
+    for (const p of players) if (p?.id) known.add(String(p.id));
+    for (const id of Object.keys(extraPlayerNames)) known.add(id);
+    for (const id of Object.keys(extraPlayers)) known.add(id);
+    const seen = new Set<string>();
+    for (const pid of playerIdsFromAnalysisMessages) {
+      if (!pid || seen.has(pid) || known.has(pid)) continue;
+      seen.add(pid);
+      missing.push(pid);
     }
-    return fromName;
-  };
-  const isSystemMessage = (message: Message) => {
-    const fromName = message.fromName || message.fromId;
-    return message.fromId === 'system' || fromName === 'Shot Analysis' || fromName === 'msjs del sistema' || fromName === 'Chaaaas.com';
-  };
-  
+    for (const pid of requestPlayerIds) {
+      if (!pid || seen.has(pid) || known.has(pid)) continue;
+      seen.add(pid);
+      missing.push(pid);
+    }
+    for (const a of analyses) {
+      const pid = a?.playerId ? String(a.playerId) : '';
+      if (!pid || seen.has(pid) || known.has(pid)) continue;
+      seen.add(pid);
+      missing.push(pid);
+    }
+    return missing;
+  }, [analyses, players, extraPlayerNames, extraPlayers, requestPlayerIds, playerIdsFromAnalysisMessages]);
+
+  useEffect(() => {
+    if (missingAnalysisIds.length === 0) return;
+    let cancelled = false;
+    const loadMissingAnalyses = async () => {
+      try {
+        const found: Record<string, string> = {};
+        for (const id of missingAnalysisIds) {
+          const snap = await getDoc(doc(db as any, 'analyses', id));
+          if (!snap.exists()) continue;
+          const data = snap.data() as any;
+          if (data?.playerId) {
+            found[id] = String(data.playerId);
+          }
+        }
+        if (!cancelled && Object.keys(found).length > 0) {
+          setAnalysisPlayerById((prev) => ({ ...prev, ...found }));
+        }
+      } catch (e) {
+        console.error('Error cargando análisis para mensajes:', e);
+      }
+    };
+    loadMissingAnalyses();
+    return () => { cancelled = true; };
+  }, [missingAnalysisIds]);
+
+  useEffect(() => {
+    if (missingPlayerIds.length === 0) return;
+    let cancelled = false;
+    const loadMissingNames = async () => {
+      try {
+        for (let i = 0; i < missingPlayerIds.length; i += 10) {
+          const chunk = missingPlayerIds.slice(i, i + 10);
+          const q = query(collection(db as any, 'players'), where(documentId(), 'in', chunk));
+          const snap = await getDocs(q);
+          if (cancelled) return;
+          const found: Record<string, string> = {};
+          const foundPlayers: Record<string, Player> = {};
+          snap.docs.forEach((d) => {
+            const data = d.data() as any;
+            found[d.id] = data?.name || d.id;
+            foundPlayers[d.id] = { id: d.id, ...(data as any) } as Player;
+          });
+          if (Object.keys(found).length > 0) {
+            setExtraPlayerNames((prev) => ({ ...prev, ...found }));
+          }
+          if (Object.keys(foundPlayers).length > 0) {
+            setExtraPlayers((prev) => ({ ...prev, ...foundPlayers }));
+          }
+        }
+      } catch (e) {
+        console.error('Error cargando nombres de jugadores:', e);
+      }
+    };
+    loadMissingNames();
+    return () => { cancelled = true; };
+  }, [missingPlayerIds]);
   const markAsRead = async (m: Message) => {
     try {
-      if (!m.read) {
-        await updateDoc(doc(db as any, 'messages', m.id), { read: true, readAt: new Date().toISOString() });
-      }
+      const analysisIdOverride = m.analysisId || extractAnalysisIdFromText(m.text);
+      const key = getConversationKeyFromMessage(m, analysisIdOverride);
+      const toMark = messages.filter((msg) => {
+        const msgKey = getConversationKeyFromMessage(msg, msg.analysisId || extractAnalysisIdFromText(msg.text));
+        return !msg.read && msgKey === key;
+      });
+      await Promise.all(toMark.map((msg) =>
+        updateDoc(doc(db as any, 'messages', msg.id), { read: true, readAt: new Date().toISOString() })
+      ));
     } catch (e) {
       console.error('No se pudo marcar como leído:', e);
     }
@@ -356,10 +507,6 @@ export default function CoachDashboardPage() {
   const [rejectFor, setRejectFor] = useState<Message | null>(null);
   const [rejectText, setRejectText] = useState<string>("");
   const [rejecting, setRejecting] = useState<boolean>(false);
-  const hideMessage = (id: string) => {
-    setHiddenMessageIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-  };
-  const restoreHiddenMessages = () => setHiddenMessageIds([]);
 
   const sendReply = async () => {
     if (!user || !replyFor || !replyText.trim()) return;
@@ -374,6 +521,13 @@ export default function CoachDashboardPage() {
         text: replyText.trim(),
         createdAt: serverTimestamp(),
         read: false,
+        analysisId: replyFor.analysisId || null,
+        messageType: getMessageType({ fromId: user.uid, analysisId: replyFor.analysisId || null }),
+        conversationId: buildConversationId({
+          fromId: user.uid,
+          toId: replyFor.fromId,
+          analysisId: replyFor.analysisId || null,
+        }),
       } as any;
       await addDoc(colRef, payload);
       setReplyText("");
@@ -401,7 +555,7 @@ export default function CoachDashboardPage() {
       // Marcar el mensaje como leído
       await updateDoc(doc(db as any, 'messages', m.id), { read: true, readAt: new Date().toISOString() });
       // Buscar último análisis del jugador
-      let targetUrl = `/coach/players/${m.fromId}`;
+      let targetUrl = `/players/${m.fromId}`;
       try {
         const qa = query(collection(db as any, 'analyses'), where('playerId', '==', m.fromId), orderBy('createdAt', 'desc'), limit(1));
         const res = await getDocs(qa);
@@ -434,6 +588,13 @@ export default function CoachDashboardPage() {
         text: rejectText.trim(),
         createdAt: serverTimestamp(),
         read: false,
+        analysisId: rejectFor.analysisId || null,
+        messageType: getMessageType({ fromId: user.uid, analysisId: rejectFor.analysisId || null }),
+        conversationId: buildConversationId({
+          fromId: user.uid,
+          toId: rejectFor.fromId,
+          analysisId: rejectFor.analysisId || null,
+        }),
       } as any;
       await addDoc(colRef, payload);
       // Marcar el mensaje original como leído
@@ -449,43 +610,23 @@ export default function CoachDashboardPage() {
     }
   };
 
-  const saveRatePerAnalysis = async () => {
-    if (!user) return;
-    const parsed = Number(rateDraft);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      setRateError('Ingresá un monto mayor a 0.');
-      return;
-    }
-    setRateError(null);
-    try {
-      setSavingRate(true);
-      const coachRef = doc(db as any, 'coaches', user.uid);
-      await updateDoc(coachRef, {
-        ratePerAnalysis: parsed,
-        updatedAt: new Date().toISOString(),
-      });
-      setRateDirty(false);
-      toast({ title: 'Tarifa actualizada', description: `Nueva tarifa: $${parsed}` });
-    } catch (e) {
-      console.error('Error guardando tarifa:', e);
-      setRateError('No se pudo guardar la tarifa. Intenta de nuevo.');
-    } finally {
-      setSavingRate(false);
-    }
-  };
-
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-8 min-w-0">
       <div>
-        <h1 className="font-headline text-4xl font-bold tracking-tight">
-          Panel de Entrenador{userProfile?.name ? `: ${userProfile.name}` : ''}
+        <h1 className="font-headline text-2xl sm:text-4xl font-bold tracking-tight break-words">
+          Panel de Entrenador
         </h1>
         <p className="mt-2 text-muted-foreground">
           Gestiona tus jugadores y revisa las solicitudes de conexión.
         </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link href="/coach/compare">Comparar antes y después</Link>
+          </Button>
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card className="cursor-pointer hover:shadow-md" onClick={() => { window.location.href = '/coach/dashboard#players'; }}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -494,7 +635,7 @@ export default function CoachDashboardPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{players.length}</div>
+            <div className="text-2xl font-bold">{mergedPlayers.length}</div>
             <p className="text-xs text-muted-foreground">
               jugadores actualmente bajo tu tutela
             </p>
@@ -514,24 +655,6 @@ export default function CoachDashboardPage() {
             </p>
           </CardContent>
         </Card>
-        <Card className="cursor-pointer hover:shadow-md" onClick={() => { 
-          setStatusFilter('pending');
-          setActiveTab('analyses');
-          window.location.hash = 'analyses';
-        }}>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Análisis Pendientes
-            </CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{pendingCount}</div>
-            <p className="text-xs text-muted-foreground">
-              esperando tu revisión
-            </p>
-          </CardContent>
-        </Card>
         <Card className="cursor-pointer hover:shadow-md" onClick={() => { window.location.href = '/coach/dashboard#messages'; }}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -547,48 +670,6 @@ export default function CoachDashboardPage() {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>Tarifa por análisis</CardTitle>
-            <CardDescription>
-              Esta tarifa se muestra a los jugadores y se usa al momento de cobrar cada revisión manual.
-            </CardDescription>
-          </div>
-          {typeof coachProfile?.ratePerAnalysis === 'number' && (
-            <Badge variant="secondary" className="text-base px-3 py-1">
-              Tarifa vigente: ${coachProfile.ratePerAnalysis}
-            </Badge>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <label className="text-sm font-medium mb-1 block">Monto en ARS</label>
-              <Input
-                type="number"
-                min="1"
-                step="1"
-                value={rateDraft}
-                onChange={(e) => { setRateDraft(e.target.value); setRateDirty(true); setRateError(null); }}
-                placeholder="Ej: 15000"
-              />
-              {rateError && <p className="text-sm text-destructive mt-1">{rateError}</p>}
-              <p className="text-xs text-muted-foreground mt-1">
-                Recomendado: valores entre $10.000 y $50.000 ARS según tu experiencia.
-              </p>
-            </div>
-            <Button
-              className="sm:w-auto"
-              onClick={saveRatePerAnalysis}
-              disabled={savingRate || !rateDirty || !rateDraft.trim()}
-            >
-              {savingRate ? 'Guardando…' : 'Guardar tarifa'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
       <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); try { if ((window.location.hash || '').replace('#','') !== v) window.location.hash = v; } catch {} }} className="w-full">
         <TabsList className="grid w-full grid-cols-3">
@@ -610,115 +691,282 @@ export default function CoachDashboardPage() {
         </TabsList>
 
         <TabsContent id="messages" value="messages" className="space-y-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold">Mensajes</h2>
               <p className="text-muted-foreground">Mensajes recibidos de jugadores.</p>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} />
-                Solo no leídos
-              </label>
-              {hiddenMessageIds.length > 0 && (
-                <button
-                  className="text-xs text-muted-foreground underline hover:text-foreground"
-                  onClick={restoreHiddenMessages}
-                >
-                  Mostrar ocultos ({hiddenMessageIds.length})
-                </button>
-              )}
-            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} />
+              Solo no leídos
+            </label>
           </div>
-          <div className="grid gap-4">
-            {visibleMessages.length === 0 && (
-              <div className="py-8 text-center text-muted-foreground">Sin mensajes</div>
-            )}
-            {visibleMessages.map((m) => (
-              <Card key={m.id} className="hover:shadow-sm">
-                <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                  <CardTitle className="text-base">
-                    {getDisplayName(m)}
-                    {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
-                  </CardTitle>
-                  <div className="flex flex-wrap items-center gap-3">
-                    {!m.read && (
-                      <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
-                    )}
-                    {!isSystemMessage(m) && (
-                      <>
-                        <button className="text-xs text-green-600 disabled:opacity-50" disabled={acceptingId === m.id} onClick={() => acceptPlayer(m)}>
-                          {acceptingId === m.id ? 'Aceptando…' : 'Aceptar propuesta'}
-                        </button>
-                        <Dialog open={rejectFor?.id === m.id} onOpenChange={(open) => { if (open) { setRejectFor(m); setRejectText(`Lamentablemente no puedo ayudarte en este momento. ¡Gracias por contactarme!\n\n— ${user?.displayName || 'Entrenador'}`); } else { setRejectFor(null); setRejectText(""); } }}>
-                          <DialogTrigger asChild>
-                            <button className="text-xs text-red-600">Rechazar</button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Rechazar solicitud de {getDisplayName(m)}</DialogTitle>
-                              <DialogDescription>Envía un mensaje opcional para explicar el rechazo.</DialogDescription>
-                            </DialogHeader>
-                            <Textarea value={rejectText} onChange={(e) => setRejectText(e.target.value)} rows={4} />
-                            <DialogFooter>
-                              <Button onClick={sendReject} disabled={rejecting || !rejectText.trim()} variant="destructive">
-                                {rejecting ? 'Enviando…' : 'Enviar rechazo'}
-                              </Button>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
-                      </>
-                    )}
-                    {!isSystemMessage(m) && (
-                      <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
-                        <DialogTrigger asChild>
-                          <button className="text-xs text-primary">Responder</button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Responder a {getDisplayName(m)}</DialogTitle>
-                            <DialogDescription>Escribe tu respuesta y se enviará al jugador.</DialogDescription>
-                          </DialogHeader>
-                          <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={4} />
-                          <DialogFooter>
-                            <Button onClick={sendReply} disabled={sendingReply || !replyText.trim()}>
-                              {sendingReply ? 'Enviando…' : 'Enviar'}
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    )}
-                    <button className="text-xs text-muted-foreground" onClick={() => hideMessage(m.id)}>
-                      Ocultar
-                    </button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-sm text-muted-foreground mb-1">
-                    {new Date(m.createdAt || Date.now()).toLocaleString()}
-                  </div>
-                  <div className="text-sm">{m.text}</div>
-                  {/* Mostrar botón para ir al análisis si el mensaje tiene analysisId */}
-                  {(() => {
-                    // Usar analysisId del mensaje si está disponible, sino intentar extraerlo del texto
-                    const analysisId = (m as any).analysisId || m.text?.match(/(analysis_[a-zA-Z0-9_-]+)/i)?.[1];
-                    if (analysisId) {
-                      return (
-                        <div className="mt-3 pt-3 border-t">
-                          <Button asChild size="sm" variant="default">
-                            <Link href={`/analysis/${analysisId}`}>
-                              Ver análisis
-                            </Link>
-                          </Button>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <Tabs value={messagesTab} onValueChange={(v) => setMessagesTab(v as "requests" | "messages" | "system")}>
+            <TabsList className="w-full flex gap-2 overflow-x-auto flex-nowrap">
+              <TabsTrigger value="requests" className="whitespace-nowrap flex-shrink-0">
+                Solicitudes
+              </TabsTrigger>
+              <TabsTrigger value="messages" className="whitespace-nowrap flex-shrink-0">
+                Mensajes
+              </TabsTrigger>
+              <TabsTrigger value="system" className="whitespace-nowrap flex-shrink-0">
+                Sistema
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="requests" className="mt-4">
+              <div className="grid gap-4">
+                {groupedRequestMessages.length === 0 && (
+                  <div className="py-8 text-center text-muted-foreground">Sin solicitudes</div>
+                )}
+                {groupedRequestMessages.map(({ latest: m, count }) => {
+                  const isSystemMessage = m.fromId === 'system';
+                  const resolvedAnalysisId = m.analysisId || extractAnalysisIdFromText(m.text);
+                  const isAnalysisMessage = Boolean(resolvedAnalysisId);
+                  const showProposalActions = !isSystemMessage && !isAnalysisMessage;
+                  const analysisHref = resolvedAnalysisId ? `/analysis/${resolvedAnalysisId}#messages` : '';
+                  const playerIdForAnalysis = resolvedAnalysisId ? analysisPlayerById[resolvedAnalysisId] : '';
+                  const playerProfileHref = playerIdForAnalysis ? `/players/${playerIdForAnalysis}` : '';
+                  return (
+                  <Card key={m.id} className="hover:shadow-sm">
+                    <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                      <CardTitle className="text-base">
+                        {m.fromName || m.fromId}
+                        {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
+                      </CardTitle>
+                      <div className="flex items-center gap-3">
+                        {!m.read && (
+                          <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
+                        )}
+                        {isAnalysisMessage && (
+                          <Link className="text-xs text-primary" href={analysisHref}>
+                            Ir al lanzamiento
+                          </Link>
+                        )}
+                        {playerProfileHref && (
+                          <Link className="text-xs text-primary" href={playerProfileHref}>
+                            Ver perfil del jugador
+                          </Link>
+                        )}
+                        {showProposalActions && (
+                          <>
+                            <button className="text-xs text-green-600 disabled:opacity-50" disabled={acceptingId === m.id} onClick={() => acceptPlayer(m)}>
+                              {acceptingId === m.id ? 'Aceptando…' : 'Aceptar propuesta'}
+                            </button>
+                            <Dialog open={rejectFor?.id === m.id} onOpenChange={(open) => { if (open) { setRejectFor(m); setRejectText(`Lamentablemente no puedo ayudarte en este momento. ¡Gracias por contactarme!\n\n— ${user?.displayName || 'Entrenador'}`); } else { setRejectFor(null); setRejectText(""); } }}>
+                              <DialogTrigger asChild>
+                                <button className="text-xs text-red-600">Rechazar</button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Rechazar solicitud de {m.fromName || m.fromId}</DialogTitle>
+                                  <DialogDescription>Envía un mensaje opcional para explicar el rechazo.</DialogDescription>
+                                </DialogHeader>
+                                <Textarea value={rejectText} onChange={(e) => setRejectText(e.target.value)} rows={4} />
+                                <DialogFooter>
+                                  <Button onClick={sendReject} disabled={rejecting || !rejectText.trim()} variant="destructive">
+                                    {rejecting ? 'Enviando…' : 'Enviar rechazo'}
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          </>
+                        )}
+                        {isAnalysisMessage ? (
+                          <Link className="text-xs text-primary" href={analysisHref}>
+                            Responder
+                          </Link>
+                        ) : (
+                          <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
+                            <DialogTrigger asChild>
+                              <button className="text-xs text-primary">Responder</button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Responder a {m.fromName || m.fromId}</DialogTitle>
+                                <DialogDescription>Escribe tu respuesta y se enviará al jugador.</DialogDescription>
+                              </DialogHeader>
+                              <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={4} />
+                              <DialogFooter>
+                                <Button onClick={sendReply} disabled={sendingReply || !replyText.trim()}>
+                                  {sendingReply ? 'Enviando…' : 'Enviar'}
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-2">
+                        <Badge variant="outline">{getOriginLabel(m)}</Badge>
+                        {resolvedAnalysisId && <Badge variant="secondary">Lanzamiento</Badge>}
+                        {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                        {count > 1 && <Badge variant="outline">{count} mensajes</Badge>}
+                      </div>
+                      <div className="text-sm text-muted-foreground mb-1">
+                        {formatDate(m.createdAt)}
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap">{renderMessageText(m.text)}</div>
+                    </CardContent>
+                  </Card>
+                  );
+                })}
+              </div>
+            </TabsContent>
+            <TabsContent value="messages" className="mt-4">
+              <div className="grid gap-4">
+                {groupedConversationMessages.length === 0 && (
+                  <div className="py-8 text-center text-muted-foreground">Sin mensajes</div>
+                )}
+                {groupedConversationMessages.map(({ latest: m, count }) => {
+                  const isSystemMessage = m.fromId === 'system';
+                  const resolvedAnalysisId = m.analysisId || extractAnalysisIdFromText(m.text);
+                  const isAnalysisMessage = Boolean(resolvedAnalysisId);
+                  const showProposalActions = !isSystemMessage && !isAnalysisMessage;
+                  const analysisHref = resolvedAnalysisId ? `/analysis/${resolvedAnalysisId}#messages` : '';
+                  const isOwnMessage = m.fromId === user?.uid;
+                  const playerIdForAnalysis = resolvedAnalysisId ? analysisPlayerById[resolvedAnalysisId] : '';
+                  const playerProfileHref = playerIdForAnalysis ? `/players/${playerIdForAnalysis}` : '';
+                  return (
+                  <Card key={m.id} className="hover:shadow-sm">
+                    <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                      <CardTitle className="text-base">
+                        {m.fromName || m.fromId}
+                        {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
+                      </CardTitle>
+                      <div className="flex items-center gap-3">
+                        {!m.read && (
+                          <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
+                        )}
+                        {isAnalysisMessage && (
+                          <Link className="text-xs text-primary" href={analysisHref}>
+                            Ir al lanzamiento
+                          </Link>
+                        )}
+                        {playerProfileHref && (
+                          <Link className="text-xs text-primary" href={playerProfileHref}>
+                            Ver perfil del jugador
+                          </Link>
+                        )}
+                        {showProposalActions && !isOwnMessage && (
+                          <>
+                            <button className="text-xs text-green-600 disabled:opacity-50" disabled={acceptingId === m.id} onClick={() => acceptPlayer(m)}>
+                              {acceptingId === m.id ? 'Aceptando…' : 'Aceptar propuesta'}
+                            </button>
+                            <Dialog open={rejectFor?.id === m.id} onOpenChange={(open) => { if (open) { setRejectFor(m); setRejectText(`Lamentablemente no puedo ayudarte en este momento. ¡Gracias por contactarme!\n\n— ${user?.displayName || 'Entrenador'}`); } else { setRejectFor(null); setRejectText(""); } }}>
+                              <DialogTrigger asChild>
+                                <button className="text-xs text-red-600">Rechazar</button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Rechazar solicitud de {m.fromName || m.fromId}</DialogTitle>
+                                  <DialogDescription>Envía un mensaje opcional para explicar el rechazo.</DialogDescription>
+                                </DialogHeader>
+                                <Textarea value={rejectText} onChange={(e) => setRejectText(e.target.value)} rows={4} />
+                                <DialogFooter>
+                                  <Button onClick={sendReject} disabled={rejecting || !rejectText.trim()} variant="destructive">
+                                    {rejecting ? 'Enviando…' : 'Enviar rechazo'}
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          </>
+                        )}
+                        {isAnalysisMessage ? (
+                          <Link className="text-xs text-primary" href={analysisHref}>
+                            Responder
+                          </Link>
+                        ) : (
+                          !isOwnMessage && (
+                            <Dialog open={replyFor?.id === m.id} onOpenChange={(open) => { setReplyFor(open ? m : null); if (!open) setReplyText(""); }}>
+                              <DialogTrigger asChild>
+                                <button className="text-xs text-primary">Responder</button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Responder a {m.fromName || m.fromId}</DialogTitle>
+                                  <DialogDescription>Escribe tu respuesta y se enviará al jugador.</DialogDescription>
+                                </DialogHeader>
+                                <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={4} />
+                                <DialogFooter>
+                                  <Button onClick={sendReply} disabled={sendingReply || !replyText.trim()}>
+                                    {sendingReply ? 'Enviando…' : 'Enviar'}
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          )
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-2">
+                        <Badge variant="outline">{getOriginLabel(m)}</Badge>
+                        {resolvedAnalysisId && <Badge variant="secondary">Lanzamiento</Badge>}
+                        {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                        {count > 1 && <Badge variant="outline">{count} mensajes</Badge>}
+                      </div>
+                      <div className="text-sm text-muted-foreground mb-1">
+                        {formatDate(m.createdAt)}
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap">{renderMessageText(m.text)}</div>
+                    </CardContent>
+                  </Card>
+                  );
+                })}
+              </div>
+            </TabsContent>
+            <TabsContent value="system" className="mt-4">
+              <div className="grid gap-4">
+                {groupedSystemMessages.length === 0 && (
+                  <div className="py-8 text-center text-muted-foreground">Sin mensajes de sistema</div>
+                )}
+                {groupedSystemMessages.map(({ latest: m, count }) => {
+                  const resolvedAnalysisId = m.analysisId || extractAnalysisIdFromText(m.text);
+                  const analysisHref = resolvedAnalysisId ? `/analysis/${resolvedAnalysisId}#messages` : '';
+                  const playerIdForAnalysis = resolvedAnalysisId ? analysisPlayerById[resolvedAnalysisId] : '';
+                  const playerProfileHref = playerIdForAnalysis ? `/players/${playerIdForAnalysis}` : '';
+                  return (
+                  <Card key={m.id} className="hover:shadow-sm">
+                    <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                      <CardTitle className="text-base">
+                        {m.fromName || 'Chaaaas.com'}
+                        {!m.read && <Badge variant="secondary" className="ml-2">Nuevo</Badge>}
+                      </CardTitle>
+                      <div className="flex items-center gap-3">
+                        {!m.read && (
+                          <button className="text-xs text-primary" onClick={() => markAsRead(m)}>Marcar leído</button>
+                        )}
+                        {resolvedAnalysisId && (
+                          <Link className="text-xs text-primary" href={analysisHref}>
+                            Ir al lanzamiento
+                          </Link>
+                        )}
+                        {playerProfileHref && (
+                          <Link className="text-xs text-primary" href={playerProfileHref}>
+                            Ver perfil del jugador
+                          </Link>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mb-2">
+                        <Badge variant="outline">{getOriginLabel(m)}</Badge>
+                        {resolvedAnalysisId && <Badge variant="secondary">Lanzamiento</Badge>}
+                        {isKeyframeMessage(m) && <Badge variant="secondary">Fotograma</Badge>}
+                        {count > 1 && <Badge variant="outline">{count} mensajes</Badge>}
+                      </div>
+                      <div className="text-sm text-muted-foreground mb-1">
+                        {formatDate(m.createdAt)}
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap">{renderMessageText(m.text)}</div>
+                    </CardContent>
+                  </Card>
+                  );
+                })}
+              </div>
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         <TabsContent id="players" value="players" className="space-y-6">
@@ -729,36 +977,23 @@ export default function CoachDashboardPage() {
             </p>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <Input placeholder="Buscar jugador..." value={playersSearch} onChange={(e) => setPlayersSearch(e.target.value)} />
-            </div>
-            <div className="divide-y rounded-md border">
-              {filteredPlayers.length === 0 && (
-                <div className="py-6 text-center text-sm text-muted-foreground">No hay jugadores</div>
-              )}
-              {filteredPlayers.map((p) => (
-                <Link 
-                  key={p.id} 
-                  href={`/coach/players/${p.id}`} 
-                  className="flex items-center gap-3 p-3 hover:bg-muted/40"
-                  onClick={(e) => {
-                    // Asegurar que la navegación funcione
-                    console.log('Navegando a jugador:', p.id);
-                  }}
-                >
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={p.avatarUrl} alt={p.name} />
-                    <AvatarFallback>{p.name?.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{p.name}</div>
-                    <div className="text-xs text-muted-foreground truncate">{p.playerLevel || 'Nivel'} · {p.ageGroup || 'Grupo'}</div>
-                  </div>
-                  <span className="text-xs text-primary">Ver</span>
-                </Link>
-              ))}
-            </div>
+          <div className="flex items-center gap-3">
+            <Input placeholder="Buscar jugador..." value={playersSearch} onChange={(e) => setPlayersSearch(e.target.value)} />
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {filteredPlayers.map((player) => (
+              <PlayerCard key={player.id} player={player as any} />
+            ))}
+            {filteredPlayers.length === 0 && (
+              <div className="col-span-full py-8 text-center text-muted-foreground">
+                <Users className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No tienes jugadores</h3>
+                <p className="text-muted-foreground">
+                  Aún no tienes jugadores asignados. Acepta solicitudes de conexión para comenzar.
+                </p>
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -797,31 +1032,30 @@ export default function CoachDashboardPage() {
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Pendientes ({filteredAnalyses.filter((a: any) => String(a.status) !== 'analyzed' || a.coachCompleted !== true).length})</CardTitle>
+                <CardTitle>Pendientes ({filteredAnalyses.filter((a: any) => !isAnalysisDone(a)).length})</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {filteredAnalyses.filter((a: any) => String(a.status) !== 'analyzed' || a.coachCompleted !== true).length === 0 && (
+                {filteredAnalyses.filter((a: any) => !isAnalysisDone(a)).length === 0 && (
                   <div className="text-sm text-muted-foreground">No hay análisis pendientes.</div>
                 )}
-                {filteredAnalyses.filter((a: any) => {
-                  const isPending = String(a.status) !== 'analyzed' || a.coachCompleted !== true;
-                  // Debug para el análisis específico
-                  if (a.id === 'analysis_1760697596386_2z0qcauew') {
-                    console.log(`🔍 [Pendientes] Verificando analysis_1760697596386_2z0qcauew:`, {
-                      status: a.status,
-                      statusAsString: String(a.status),
-                      isPending,
-                      willShow: isPending
-                    });
-                  }
-                  return isPending;
-                }).map((a: any) => {
+                {filteredAnalyses.filter((a: any) => !isAnalysisDone(a)).map((a: any) => {
                   const p = players.find((pl) => pl.id === a.playerId);
+                  const canEdit = canCoachEditAnalysis(a);
                   return (
                     <div key={a.id} className="flex items-center justify-between gap-3 border rounded-md p-3">
                       <div className="min-w-0">
-                        <div className="font-medium truncate">{p?.name || a.playerId}</div>
-                        <div className="text-xs text-muted-foreground truncate">{new Date(a.createdAt || Date.now()).toLocaleString()}</div>
+                        <div className="font-medium truncate">{playerNameLookup[String(a.playerId || '')] || p?.name || a.playerId}</div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span className="truncate">{new Date(a.createdAt || Date.now()).toLocaleString()}</span>
+                          {isBiomechProAnalysis(a) && (
+                            <Badge variant="secondary">BIOMECH PRO</Badge>
+                          )}
+                          {canEdit ? (
+                            <Badge variant="default" className="bg-amber-600 hover:bg-amber-700">Pendiente tu evaluación</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">Solo ver</Badge>
+                          )}
+                        </div>
                       </div>
                       <Link href={`/analysis/${a.id}`} className="text-xs text-primary shrink-0">Ver</Link>
                     </div>
@@ -831,42 +1065,29 @@ export default function CoachDashboardPage() {
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle>Realizados ({filteredAnalyses.filter((a: any) => String(a.status) === 'analyzed' && a.coachCompleted === true).length})</CardTitle>
+                <CardTitle>Realizados ({filteredAnalyses.filter((a: any) => isAnalysisDone(a)).length})</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {filteredAnalyses.filter((a: any) => String(a.status) === 'analyzed' && a.coachCompleted === true).length === 0 && (
+                {filteredAnalyses.filter((a: any) => isAnalysisDone(a)).length === 0 && (
                   <div className="text-sm text-muted-foreground">Aún no hay análisis realizados.</div>
                 )}
-                {filteredAnalyses.filter((a: any) => {
-                  const isAnalyzed = String(a.status) === 'analyzed' && a.coachCompleted === true;
-                  // Debug para el análisis específico
-                  if (a.id === 'analysis_1760697596386_2z0qcauew') {
-                    console.log(`🔍 [Realizados] Verificando analysis_1760697596386_2z0qcauew:`, {
-                      status: a.status,
-                      statusAsString: String(a.status),
-                      isAnalyzed,
-                      willShow: isAnalyzed,
-                      inFilteredAnalyses: filteredAnalyses.some(fa => fa.id === 'analysis_1760697596386_2z0qcauew'),
-                      filteredAnalysesLength: filteredAnalyses.length
-                    });
-                  }
-                  return isAnalyzed;
-                }).map((a: any) => {
-                  // Debug adicional para verificar que se está renderizando
-                  if (a.id === 'analysis_1760697596386_2z0qcauew') {
-                    console.log(`✅✅✅ [Realizados] RENDERIZANDO analysis_1760697596386_2z0qcauew ✅✅✅`);
-                  }
+                {filteredAnalyses.filter((a: any) => isAnalysisDone(a)).map((a: any) => {
                   const p = players.find((pl) => pl.id === a.playerId);
+                  const canEdit = canCoachEditAnalysis(a);
                   return (
                     <div key={a.id} className="flex items-center justify-between gap-3 border rounded-md p-3">
                       <div className="min-w-0">
-                        <div className="font-medium truncate">{p?.name || a.playerId}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {a.coachCompletedAt 
-                            ? new Date(a.coachCompletedAt).toLocaleString('es-ES')
-                            : a.updatedAt 
-                              ? new Date(a.updatedAt).toLocaleString('es-ES')
-                              : new Date(a.createdAt || Date.now()).toLocaleString('es-ES')}
+                        <div className="font-medium truncate">{playerNameLookup[String(a.playerId || '')] || p?.name || a.playerId}</div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span className="truncate">{new Date(a.createdAt || Date.now()).toLocaleString()}</span>
+                          {isBiomechProAnalysis(a) && (
+                            <Badge variant="secondary">BIOMECH PRO</Badge>
+                          )}
+                          {canEdit ? (
+                            <Badge variant="default" className="bg-green-600 hover:bg-green-700">Evaluado por ti</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">Solo ver</Badge>
+                          )}
                         </div>
                       </div>
                       <Link href={`/analysis/${a.id}`} className="text-xs text-primary shrink-0">Abrir</Link>

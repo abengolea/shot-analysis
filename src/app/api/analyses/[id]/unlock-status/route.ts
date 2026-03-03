@@ -9,12 +9,8 @@ export async function GET(
 ) {
   try {
     const { id: analysisId } = await params;
-
     if (!analysisId) {
-      return NextResponse.json(
-        { error: 'ID de análisis es requerido' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'ID de análisis es requerido' }, { status: 400 });
     }
 
     const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
@@ -23,161 +19,164 @@ export async function GET(
     }
     const token = authHeader.split(' ')[1];
     const decoded = await adminAuth.verifyIdToken(token);
-    const playerId = decoded.uid;
+    const uid = decoded.uid;
 
-    // Obtener el análisis
-    const analysisDoc = await adminDb
-      .collection('analyses')
-      .doc(analysisId)
-      .get();
-
-    if (!analysisDoc.exists) {
-      return NextResponse.json(
-        { error: 'Análisis no encontrado' },
-        { status: 404 }
-      );
+    const [coachSnap, playerSnap] = await Promise.all([
+      adminDb.collection('coaches').doc(uid).get(),
+      adminDb.collection('players').doc(uid).get(),
+    ]);
+    const coachData = coachSnap.exists ? (coachSnap.data() as any) : null;
+    const playerData = playerSnap.exists ? (playerSnap.data() as any) : null;
+    const role = coachData?.role || playerData?.role;
+    if (!coachSnap.exists && !playerSnap.exists) {
+      return NextResponse.json({ error: 'Usuario no autorizado' }, { status: 403 });
     }
 
-    const analysisData = analysisDoc.data() as any;
-    
-    // Verificar que el análisis pertenezca al jugador
-    if (String(analysisData.playerId) !== String(playerId)) {
-      return NextResponse.json(
-        { error: 'No autorizado para este análisis' },
-        { status: 403 }
-      );
+    const analysisSnap = await adminDb.collection('analyses').doc(analysisId).get();
+    if (!analysisSnap.exists) {
+      return NextResponse.json({ error: 'Análisis no encontrado' }, { status: 404 });
     }
 
-    // Buscar unlocks para este análisis
-    // Los unlocks tienen formato: analysisId__coachId
-    const unlockSnapshot = await adminDb
-      .collection('coach_unlocks')
+    const analysisData = analysisSnap.data() as any;
+    const analysisPlayerId = analysisData?.playerId;
+    const coachAccess = analysisData?.coachAccess || {};
+    const coachAccessForUser = coachAccess?.[uid];
+
+    const isAdmin = role === 'admin';
+    const isOwnerPlayer = playerSnap.exists && analysisPlayerId && String(analysisPlayerId) === String(uid);
+    const hasPaidCoachAccess = coachSnap.exists && coachAccessForUser?.status === 'paid';
+    if (!isAdmin && !isOwnerPlayer && !hasPaidCoachAccess) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+    }
+
+    const unlockSnapshot = await adminDb.collection('coach_unlocks')
       .where('analysisId', '==', analysisId)
+      .where('playerId', '==', analysisPlayerId)
       .get();
 
-    const unlocks: any[] = [];
+    const unlocks: Array<{
+      id: string;
+      coachId: string;
+      coachName: string;
+      status: string;
+      paymentProvider?: string | null;
+      preferenceId?: string | null;
+      paymentId?: string | null;
+      createdAt?: string | null;
+      updatedAt?: string | null;
+    }> = [];
+
+    const coachIdsSet = new Set<string>();
     for (const doc of unlockSnapshot.docs) {
-      const unlockData = doc.data();
-      // Verificar que el unlock pertenezca al jugador
-      if (String(unlockData.playerId) === String(playerId)) {
-        unlocks.push({
-          id: doc.id,
-          coachId: unlockData.coachId,
-          coachName: unlockData.coachName || '',
-          status: unlockData.status || 'pending', // 'pending' | 'paid'
-          paymentId: unlockData.paymentId || null,
-          paymentProvider: unlockData.paymentProvider || null,
-          preferenceId: unlockData.preferenceId || null,
-          createdAt: unlockData.createdAt,
-          updatedAt: unlockData.updatedAt,
-        });
+      const unlockData = doc.data() as any;
+      unlocks.push({
+        id: doc.id,
+        coachId: unlockData.coachId,
+        coachName: unlockData.coachName || '',
+        status: unlockData.status || 'pending',
+        paymentProvider: unlockData.paymentProvider || null,
+        preferenceId: unlockData.preferenceId || null,
+        paymentId: unlockData.paymentId || null,
+        createdAt: unlockData.createdAt || null,
+        updatedAt: unlockData.updatedAt || null,
+      });
+      if (unlockData.coachId) coachIdsSet.add(unlockData.coachId);
+    }
+
+    for (const coachId of Object.keys(coachAccess)) {
+      coachIdsSet.add(coachId);
+    }
+
+    const coachNames: Record<string, string> = {};
+    if (coachIdsSet.size > 0) {
+      const coachDocs = await Promise.all(
+        Array.from(coachIdsSet).map((coachId) => adminDb.collection('coaches').doc(coachId).get())
+      );
+      const coachIds = Array.from(coachIdsSet);
+      for (let i = 0; i < coachDocs.length; i++) {
+        const doc = coachDocs[i];
+        if (doc.exists) {
+          const coachInfo = doc.data() as any;
+          coachNames[coachIds[i]] = coachInfo?.name || 'Entrenador';
+        }
       }
     }
 
-    // También verificar coachAccess en el análisis
-    const coachAccess = analysisData.coachAccess || {};
     const paidCoachIds: string[] = [];
     const pendingCoachIds: string[] = [];
-    const paidCoachData: Array<{ coachId: string; paymentId?: string }> = [];
-    
+
+    for (const unlock of unlocks) {
+      if (unlock.status === 'paid') {
+        paidCoachIds.push(unlock.coachId);
+        continue;
+      }
+      if (unlock.paymentId) {
+        const paymentSnap = await adminDb.collection('payments').doc(unlock.paymentId).get();
+        if (paymentSnap.exists) {
+          const paymentData = paymentSnap.data() as any;
+          if (paymentData?.status === 'approved' || paymentData?.status === 'paid') {
+            paidCoachIds.push(unlock.coachId);
+          }
+        }
+      }
+    }
+
     for (const [coachId, access] of Object.entries(coachAccess)) {
       const accessData = access as any;
       if (accessData.status === 'paid') {
-        paidCoachIds.push(coachId);
-        paidCoachData.push({
-          coachId,
-          paymentId: accessData.paymentId,
-        });
-      } else if (accessData.status === 'pending') {
-        pendingCoachIds.push(coachId);
-      }
-    }
-
-    // Obtener nombres de los coaches pagados/pendientes
-    const coachIds = [...new Set([...paidCoachIds, ...pendingCoachIds])];
-    const coachNames: Record<string, string> = {};
-    
-    for (const coachId of coachIds) {
-      try {
-        const coachDoc = await adminDb.collection('coaches').doc(coachId).get();
-        if (coachDoc.exists) {
-          const coachData = coachDoc.data() as any;
-          coachNames[coachId] = coachData.name || 'Entrenador';
+        if (!paidCoachIds.includes(coachId)) {
+          paidCoachIds.push(coachId);
         }
-      } catch (e) {
-        console.error(`Error obteniendo nombre del coach ${coachId}:`, e);
       }
     }
 
-    // Verificar si hay feedback de entrenador (revisión completada)
+    for (const unlock of unlocks) {
+      if (unlock.status === 'pending' && !paidCoachIds.includes(unlock.coachId)) {
+        pendingCoachIds.push(unlock.coachId);
+      }
+    }
+
     let hasCoachFeedback = false;
-    try {
-      const feedbackCollRef = adminDb.collection('analyses').doc(analysisId).collection('coach_feedback');
-      const feedbackSnapshot = await feedbackCollRef.orderBy('updatedAt', 'desc').limit(1).get();
-      if (!feedbackSnapshot.empty) {
-        const feedbackData = feedbackSnapshot.docs[0].data();
-        hasCoachFeedback = feedbackData && (
-          (feedbackData.items && typeof feedbackData.items === 'object' && Object.keys(feedbackData.items).length > 0) ||
-          (feedbackData.coachSummary && String(feedbackData.coachSummary).trim().length > 0)
-        );
-      }
-    } catch (e) {
-      console.error('Error verificando feedback:', e);
+    const feedbackSnapshot = await adminDb.collection('analyses')
+      .doc(analysisId)
+      .collection('coach_feedback')
+      .orderBy('updatedAt', 'desc')
+      .limit(1)
+      .get();
+    if (!feedbackSnapshot.empty) {
+      const feedbackData = feedbackSnapshot.docs[0].data() as any;
+      hasCoachFeedback = Boolean(
+        (feedbackData?.items && typeof feedbackData.items === 'object' && Object.keys(feedbackData.items).length > 0) ||
+        (feedbackData?.coachSummary && String(feedbackData.coachSummary).trim().length > 0)
+      );
     }
 
-    // Verificar si el jugador ya dejó reseña para este análisis
-    let reviewedCoachIds: string[] = [];
-    try {
-      const reviewSnapshot = await adminDb
-        .collection('coach_reviews')
-        .where('analysisId', '==', analysisId)
-        .where('playerId', '==', playerId)
-        .get();
-      reviewedCoachIds = Array.from(new Set(
-        reviewSnapshot.docs
-          .map((doc) => (doc.data() as any)?.coachId)
-          .filter((id) => typeof id === 'string' && id.length > 0)
-      ));
-    } catch (e) {
-      console.error('Error verificando reseñas:', e);
-    }
-
-    // Determinar el estado general
-    const hasPaidUnlock = unlocks.some(u => u.status === 'paid') || paidCoachIds.length > 0;
-    const hasPendingUnlock = unlocks.some(u => u.status === 'pending') || pendingCoachIds.length > 0;
+    const hasPaidUnlock = paidCoachIds.length > 0;
+    const hasPendingUnlock = pendingCoachIds.length > 0;
+    const status: 'none' | 'pending_payment' | 'paid_pending_review' | 'reviewed' =
+      hasCoachFeedback
+        ? 'reviewed'
+        : hasPaidUnlock
+          ? 'paid_pending_review'
+          : hasPendingUnlock
+            ? 'pending_payment'
+            : 'none';
 
     return NextResponse.json({
-      analysisId,
-      unlocks,
-      paidCoachIds: paidCoachIds.map(id => {
-        const coachData = paidCoachData.find(c => c.coachId === id);
-        return {
-          coachId: id,
-          coachName: coachNames[id] || 'Entrenador',
-          paymentId: coachData?.paymentId || null,
-        };
-      }),
-      pendingCoachIds: pendingCoachIds.map(id => ({
+      status,
+      hasCoachFeedback,
+      paidCoachIds: paidCoachIds.map((id) => ({
         coachId: id,
         coachName: coachNames[id] || 'Entrenador',
       })),
-      hasPaidUnlock,
-      hasPendingUnlock,
-      hasCoachFeedback,
-      reviewedCoachIds,
-      status: hasCoachFeedback 
-        ? 'reviewed' 
-        : hasPaidUnlock 
-          ? 'paid_pending_review' 
-          : hasPendingUnlock 
-            ? 'pending_payment' 
-            : 'none',
+      pendingCoachIds: pendingCoachIds.map((id) => ({
+        coachId: id,
+        coachName: coachNames[id] || 'Entrenador',
+      })),
+      unlocks,
     });
   } catch (error) {
-    console.error('Error al obtener estado de unlock:', error);
-    return NextResponse.json(
-      { error: 'Error interno del servidor' },
-      { status: 500 }
-    );
+    console.error('Error en unlock-status:', error);
+    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
   }
 }

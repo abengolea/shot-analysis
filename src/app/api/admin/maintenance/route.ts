@@ -1,156 +1,94 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebase-admin';
+import { adminAuth, adminDb } from '@/lib/firebase-admin';
 
-// GET - Obtener estado de mantenimiento
-export async function GET(request: NextRequest) {
+type ShotTypesMaintenance = {
+  tres: boolean;
+  media: boolean;
+  libre: boolean;
+};
+
+type MaintenanceConfig = {
+  enabled: boolean;
+  title: string;
+  message: string;
+  updatedAt: string;
+  updatedBy: string;
+  shotTypesMaintenance: ShotTypesMaintenance;
+};
+
+const DEFAULT_CONFIG: MaintenanceConfig = {
+  enabled: false,
+  title: '🔧 SITIO EN MANTENIMIENTO',
+  message: 'Estamos ajustando variables importantes del sistema.\n\nEl análisis de lanzamientos está temporalmente deshabilitado.\n\nVolveremos pronto con mejoras. ¡Gracias por tu paciencia!',
+  updatedAt: '',
+  updatedBy: '',
+  shotTypesMaintenance: {
+    tres: false,
+    media: false,
+    libre: false,
+  },
+};
+
+async function requireAdmin(req: NextRequest): Promise<boolean> {
   try {
-    if (!adminDb) {
-      return NextResponse.json({ error: 'Admin DB no inicializado' }, { status: 500 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const shotType = searchParams.get('shotType'); // Opcional: verificar por tipo de tiro específico
-
-    const configDoc = await adminDb.collection('system_config').doc('maintenance').get();
-    
-    if (!configDoc.exists) {
-      // Si no existe, crear con valores por defecto
-      const defaultConfig = {
-        enabled: false,
-        title: '🔧 SITIO EN MANTENIMIENTO',
-        message: 'Estamos ajustando variables importantes del sistema.\n\nEl análisis de lanzamientos está temporalmente deshabilitado.\n\nVolveremos pronto con mejoras. ¡Gracias por tu paciencia!',
-        updatedAt: new Date().toISOString(),
-        updatedBy: 'system',
-        shotTypesMaintenance: {
-          tres: false,
-          media: false,
-          libre: false // Tiro libre disponible por defecto
-        }
-      };
-      
-      await adminDb.collection('system_config').doc('maintenance').set(defaultConfig);
-      
-      // Si se solicita un tipo específico, responder si está en mantenimiento
-      if (shotType) {
-        const normalized = shotType.toLowerCase();
-        let isInMaintenance = false;
-        if (normalized.includes('libre') || normalized.includes('free') || normalized.includes('ft')) {
-          // En desarrollo local, permitir siempre tiro libre para testing
-          isInMaintenance = defaultConfig.shotTypesMaintenance.libre;
-        } else if (normalized.includes('media') || normalized.includes('jump')) {
-          isInMaintenance = defaultConfig.shotTypesMaintenance.media;
-        } else {
-          isInMaintenance = defaultConfig.shotTypesMaintenance.tres;
-        }
-        return NextResponse.json({ inMaintenance: isInMaintenance || defaultConfig.enabled, config: defaultConfig });
-      }
-      
-      return NextResponse.json(defaultConfig);
-    }
-
-    const config = configDoc.data() as any;
-    
-    // Si se solicita un tipo específico, responder si está en mantenimiento
-    if (shotType) {
-      const normalized = shotType.toLowerCase();
-      let isInMaintenance = false;
-      let typeKey: 'tres' | 'media' | 'libre' = 'tres';
-      
-      if (normalized.includes('libre') || normalized.includes('free') || normalized.includes('ft')) {
-        typeKey = 'libre';
-        isInMaintenance = config.shotTypesMaintenance?.libre || false;
-      } else if (normalized.includes('media') || normalized.includes('jump')) {
-        isInMaintenance = config.shotTypesMaintenance?.media || false;
-        typeKey = 'media';
-      } else {
-        isInMaintenance = config.shotTypesMaintenance?.tres || false;
-        typeKey = 'tres';
-      }
-      
-      // Si está en mantenimiento, generar mensaje específico con tipos disponibles
-      if (isInMaintenance || config.enabled) {
-        const availableTypes: string[] = [];
-        if (!config.enabled) {
-          if (!config.shotTypesMaintenance?.tres) availableTypes.push('Lanzamiento de Tres');
-          if (!config.shotTypesMaintenance?.media) availableTypes.push('Lanzamiento de Media Distancia');
-          if (!config.shotTypesMaintenance?.libre) availableTypes.push('Tiro Libre');
-        }
-        
-        let message = config.message;
-        if (availableTypes.length > 0) {
-          message = `El análisis de ${shotType} está actualmente en mantenimiento.\n\n` +
-                   `Los siguientes tipos de análisis están disponibles:\n` +
-                   availableTypes.map(t => `• ${t}`).join('\n') +
-                   `\n\n💡 Recomendación: Seleccioná uno de los tipos disponibles para continuar.`;
-        } else if (!config.enabled && availableTypes.length === 0) {
-          message = `El análisis de ${shotType} está actualmente en mantenimiento.\n\n` +
-                   `Por favor, vuelve más tarde cuando este tipo de análisis esté disponible.`;
-        }
-        
-        return NextResponse.json({ 
-          inMaintenance: true,
-          config: {
-            ...config,
-            message,
-            title: config.enabled ? config.title : '🚧 Análisis en Mantenimiento'
-          }
-        });
-      }
-      
-      return NextResponse.json({ 
-        inMaintenance: false,
-        config: config 
-      });
-    }
-
-    return NextResponse.json(config);
-  } catch (error) {
-    console.error('Error obteniendo configuración de mantenimiento:', error);
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
+    const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
+    if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) return false;
+    const token = authHeader.split(' ')[1];
+    const decoded = await adminAuth.verifyIdToken(token);
+    const uid = decoded.uid;
+    const coachSnap = await adminDb.collection('coaches').doc(uid).get();
+    const playerSnap = await adminDb.collection('players').doc(uid).get();
+    const role = coachSnap.exists ? (coachSnap.data() as any)?.role : (playerSnap.exists ? (playerSnap.data() as any)?.role : undefined);
+    return role === 'admin';
+  } catch {
+    return false;
   }
 }
 
-// POST - Actualizar estado de mantenimiento
-export async function POST(request: NextRequest) {
+function normalizeShotTypes(input: any): ShotTypesMaintenance {
+  const base = { ...DEFAULT_CONFIG.shotTypesMaintenance };
+  if (input && typeof input === 'object') {
+    base.tres = Boolean(input.tres);
+    base.media = Boolean(input.media);
+    base.libre = Boolean(input.libre);
+  }
+  return base;
+}
+
+export async function GET() {
   try {
-    if (!adminDb) {
-      return NextResponse.json({ error: 'Admin DB no inicializado' }, { status: 500 });
-    }
-
-    const body = await request.json();
-    const { enabled, title, message, updatedBy, shotTypesMaintenance } = body;
-
-    if (typeof enabled !== 'boolean') {
-      return NextResponse.json({ error: 'enabled debe ser boolean' }, { status: 400 });
-    }
-
-    // Obtener configuración actual para mantener shotTypesMaintenance si no se envía
-    const currentDoc = await adminDb.collection('system_config').doc('maintenance').get();
-    const currentData = currentDoc.exists ? currentDoc.data() : null;
-
-    const config = {
-      enabled,
-      title: title || '🔧 SITIO EN MANTENIMIENTO',
-      message: message || 'El análisis de lanzamientos está temporalmente deshabilitado.',
-      updatedAt: new Date().toISOString(),
-      updatedBy: updatedBy || 'admin',
-      shotTypesMaintenance: shotTypesMaintenance || currentData?.shotTypesMaintenance || {
-        tres: false,
-        media: false,
-        libre: false
-      }
+    const ref = adminDb.collection('config').doc('maintenance');
+    const snap = await ref.get();
+    const data = snap.exists ? (snap.data() as Partial<MaintenanceConfig>) : {};
+    const config: MaintenanceConfig = {
+      ...DEFAULT_CONFIG,
+      ...data,
+      shotTypesMaintenance: normalizeShotTypes(data?.shotTypesMaintenance),
     };
-
-    await adminDb.collection('system_config').doc('maintenance').set(config);
-
-    return NextResponse.json({ 
-      success: true, 
-      message: `Mantenimiento ${enabled ? 'habilitado' : 'deshabilitado'} correctamente`,
-      config 
-    });
-  } catch (error) {
-    console.error('Error actualizando configuración de mantenimiento:', error);
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
+    return NextResponse.json(config);
+  } catch (e) {
+    console.error('GET maintenance error:', e);
+    return NextResponse.json({ ok: false, error: 'Error interno' }, { status: 500 });
   }
 }
 
+export async function POST(req: NextRequest) {
+  try {
+    if (!await requireAdmin(req)) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 403 });
+    const body = await req.json();
+    const config: MaintenanceConfig = {
+      ...DEFAULT_CONFIG,
+      enabled: Boolean(body?.enabled),
+      title: typeof body?.title === 'string' ? body.title : DEFAULT_CONFIG.title,
+      message: typeof body?.message === 'string' ? body.message : DEFAULT_CONFIG.message,
+      updatedAt: new Date().toISOString(),
+      updatedBy: typeof body?.updatedBy === 'string' ? body.updatedBy : DEFAULT_CONFIG.updatedBy,
+      shotTypesMaintenance: normalizeShotTypes(body?.shotTypesMaintenance),
+    };
+    await adminDb.collection('config').doc('maintenance').set(config, { merge: true });
+    return NextResponse.json({ ok: true, message: 'Configuración guardada', config });
+  } catch (e) {
+    console.error('POST maintenance error:', e);
+    return NextResponse.json({ ok: false, error: 'Error interno' }, { status: 500 });
+  }
+}

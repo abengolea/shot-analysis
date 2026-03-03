@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb, adminStorage } from '@/lib/firebase-admin';
-
-// Configurar límite de body size para esta ruta
-export const runtime = 'nodejs';
-export const maxDuration = 30;
+import { hasPaidCoachAccessToPlayer } from '@/lib/coach-access';
+import { keyframeIdFromUrl, isKeyframeUrlTooLong } from '@/lib/keyframe-id';
 
 type KeyframeAnnotation = {
   id?: string;
   analysisId: string;
   keyframeUrl: string;
+  keyframeId?: string;
   angle?: 'front' | 'back' | 'left' | 'right';
   index?: number;
   overlayUrl: string; // URL en storage (png con transparencia)
@@ -17,7 +16,7 @@ type KeyframeAnnotation = {
   createdAt: string;
 };
 
-async function verifyCoachPermission(req: NextRequest, analysisId: string): Promise<{ ok: boolean; uid?: string; name?: string; reason?: string }> {
+async function verifyCoachPermission(req: NextRequest, analysisId: string): Promise<{ ok: boolean; uid?: string; name?: string; role?: string; reason?: string }> {
   try {
     if (!adminDb || !adminAuth) return { ok: false, reason: 'Admin SDK not ready' };
     const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
@@ -25,7 +24,16 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     const token = authHeader.split(' ')[1];
     const decoded = await adminAuth.verifyIdToken(token);
     const uid = decoded.uid;
-    let name = (decoded as any)?.name || undefined;
+    const name = (decoded as any)?.name || undefined;
+
+    const [coachSnap, viewerPlayerSnap] = await Promise.all([
+      adminDb.collection('coaches').doc(uid).get(),
+      adminDb.collection('players').doc(uid).get(),
+    ]);
+    const coachData = coachSnap.exists ? (coachSnap.data() as any) : null;
+    const playerData = viewerPlayerSnap.exists ? (viewerPlayerSnap.data() as any) : null;
+    const role = coachData?.role || playerData?.role;
+    if (role === 'admin') return { ok: true, uid, name, role };
 
     const analysisRef = adminDb.collection('analyses').doc(analysisId);
     const analysisSnap = await analysisRef.get();
@@ -34,30 +42,33 @@ async function verifyCoachPermission(req: NextRequest, analysisId: string): Prom
     const playerId = analysis?.playerId;
     if (!playerId) return { ok: false, reason: 'Player missing' };
 
-    const playerSnap = await adminDb.collection('players').doc(playerId).get();
-    const player = playerSnap.exists ? (playerSnap.data() as any) : null;
+    const coachAccess = analysis?.coachAccess || {};
+    const access = coachAccess?.[uid];
+    if (access?.status === 'paid') return { ok: true, uid, name, role };
+    if (analysis?.coachId && String(analysis.coachId) === String(uid)) return { ok: true, uid, name, role };
+
+    const assignedPlayerSnap = await adminDb.collection('players').doc(playerId).get();
+    const player = assignedPlayerSnap.exists ? (assignedPlayerSnap.data() as any) : null;
     const assignedCoachId = player?.coachId || null;
 
-    if (assignedCoachId && assignedCoachId === uid) {
-      // Si name no está disponible en el token, obtenerlo de la colección coaches
-      if (!name) {
-        try {
-          const coachSnap = await adminDb.collection('coaches').doc(uid).get();
-          if (coachSnap.exists) {
-            const coachData = coachSnap.data() as any;
-            name = coachData?.name || undefined;
-          }
-        } catch (e) {
-          console.error('Error obteniendo nombre del coach:', e);
-        }
-      }
-      return { ok: true, uid, name };
-    }
+    if (assignedCoachId && assignedCoachId === uid) return { ok: true, uid, name, role };
+    const hasPlayerPaidAccess = await hasPaidCoachAccessToPlayer({
+      adminDb,
+      coachId: uid,
+      playerId: String(playerId),
+    });
+    if (hasPlayerPaidAccess) return { ok: true, uid, name, role };
     return { ok: false, reason: 'Forbidden' };
   } catch (e) {
     console.error('verifyCoachPermission error', e);
     return { ok: false, reason: 'Auth error' };
   }
+}
+
+function extractStoragePath(overlayUrl: string, bucketName: string): string | null {
+  const prefix = `https://storage.googleapis.com/${bucketName}/`;
+  if (!overlayUrl || !overlayUrl.startsWith(prefix)) return null;
+  return overlayUrl.slice(prefix.length);
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -69,7 +80,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const ref = adminDb.collection('analyses').doc(analysisId).collection('keyframeAnnotations');
     let q = ref.orderBy('createdAt', 'desc') as FirebaseFirestore.Query<FirebaseFirestore.DocumentData>;
-    if (keyframeUrl) q = q.where('keyframeUrl', '==', keyframeUrl);
+    if (keyframeUrl) {
+      if (isKeyframeUrlTooLong(keyframeUrl)) {
+        q = q.where('keyframeId', '==', keyframeIdFromUrl(keyframeUrl));
+      } else {
+        q = q.where('keyframeUrl', '==', keyframeUrl);
+      }
+    }
     const snap = await q.get();
     const items: KeyframeAnnotation[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
     return NextResponse.json({ annotations: items });
@@ -79,112 +96,89 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 }
 
-async function listAnnotations(analysisId: string, keyframeUrl?: string) {
-  if (!adminDb) return NextResponse.json({ error: 'Admin SDK no inicializado' }, { status: 500 });
-  
-  const ref = adminDb.collection('analyses').doc(analysisId).collection('keyframeAnnotations');
-  let q = ref.orderBy('createdAt', 'desc') as FirebaseFirestore.Query<FirebaseFirestore.DocumentData>;
-  if (keyframeUrl) {
-    q = q.where('keyframeUrl', '==', keyframeUrl);
-  }
-  const snap = await q.get();
-  const items: KeyframeAnnotation[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-  return NextResponse.json({ annotations: items });
-}
-
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: analysisId } = await params;
-    
-    // Leer body con manejo de errores mejorado
-    let body: any;
-    try {
-      body = await request.json();
-    } catch (jsonError: any) {
-      console.error('❌ Error parseando JSON:', jsonError);
-      return NextResponse.json({ error: 'Body inválido o demasiado grande' }, { status: 400 });
-    }
-    
-    // Si action es 'list', manejar como petición de listado (sin autenticación requerida)
+    if (!adminDb || !adminAuth || !adminStorage) return NextResponse.json({ error: 'Admin SDK no inicializado' }, { status: 500 });
+
+    const body = await request.json().catch(() => ({}));
     if (body?.action === 'list') {
       const keyframeUrl = String(body?.keyframeUrl || '');
-      return await listAnnotations(analysisId, keyframeUrl || undefined);
-    }
-    
-    // Si no, manejar como creación de anotación (requiere autenticación)
-    if (!adminDb || !adminAuth || !adminStorage) {
-      console.error('❌ Admin SDK no inicializado');
-      return NextResponse.json({ error: 'Admin SDK no inicializado' }, { status: 500 });
+      const ref = adminDb.collection('analyses').doc(analysisId).collection('keyframeAnnotations');
+      let q = ref.orderBy('createdAt', 'desc') as FirebaseFirestore.Query<FirebaseFirestore.DocumentData>;
+      if (keyframeUrl) {
+        if (isKeyframeUrlTooLong(keyframeUrl)) {
+          q = q.where('keyframeId', '==', keyframeIdFromUrl(keyframeUrl));
+        } else {
+          q = q.where('keyframeUrl', '==', keyframeUrl);
+        }
+      }
+      const snap = await q.get();
+      const items: KeyframeAnnotation[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      return NextResponse.json({ annotations: items });
     }
 
     const perm = await verifyCoachPermission(request, analysisId);
-    if (!perm.ok || !perm.uid) {
-      console.error('❌ No autorizado:', perm.reason);
-      return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+    if (!perm.ok || !perm.uid) return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+
+    if (body?.action === 'delete') {
+      const annotationId = String(body?.annotationId || '');
+      if (!annotationId) return NextResponse.json({ error: 'annotationId requerido' }, { status: 400 });
+      const ref = adminDb.collection('analyses').doc(analysisId).collection('keyframeAnnotations').doc(annotationId);
+      const snap = await ref.get();
+      if (!snap.exists) return NextResponse.json({ error: 'Anotación no encontrada' }, { status: 404 });
+      const data = snap.data() as KeyframeAnnotation | undefined;
+      if (data?.analysisId && data.analysisId !== analysisId) {
+        return NextResponse.json({ error: 'Anotación inválida' }, { status: 400 });
+      }
+      if (perm.role !== 'admin' && data?.coachId && data.coachId !== perm.uid) {
+        return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+      }
+      const bucket = adminStorage.bucket();
+      const storagePath = extractStoragePath(data?.overlayUrl || '', bucket.name);
+      if (storagePath) {
+        await bucket.file(storagePath).delete({ ignoreNotFound: true });
+      }
+      await ref.delete();
+      return NextResponse.json({ success: true });
     }
 
     const keyframeUrl = String(body?.keyframeUrl || '');
     const angle = body?.angle as KeyframeAnnotation['angle'] | undefined;
     const index = typeof body?.index === 'number' ? Number(body.index) : undefined;
     const overlayDataUrl = String(body?.overlayDataUrl || ''); // data:image/png;base64,....
-    
-    console.log('📝 Guardando anotación:', {
-      analysisId,
-      hasKeyframeUrl: !!keyframeUrl,
-      keyframeUrlLength: keyframeUrl.length,
-      hasOverlayDataUrl: !!overlayDataUrl,
-      overlayDataUrlLength: overlayDataUrl.length,
-      overlayDataUrlStart: overlayDataUrl.substring(0, 30),
-      angle,
-      index
-    });
-    
     if (!keyframeUrl || !overlayDataUrl.startsWith('data:image/png;base64,')) {
-      console.error('❌ Validación fallida:', {
-        hasKeyframeUrl: !!keyframeUrl,
-        overlayDataUrlStart: overlayDataUrl.substring(0, 50)
-      });
       return NextResponse.json({ error: 'keyframeUrl y overlay PNG base64 requeridos' }, { status: 400 });
     }
 
     // Guardar overlay en Storage
-    try {
-      const base64 = overlayDataUrl.split(',')[1];
-      if (!base64) {
-        throw new Error('No se pudo extraer base64 del data URL');
-      }
-      const buffer = Buffer.from(base64, 'base64');
-      const bucket = adminStorage.bucket();
-      const fileName = `overlay_${Date.now()}.png`;
-      const storagePath = `keyframe-overlays/${perm.uid}/${analysisId}/${fileName}`;
-      const fileRef = bucket.file(storagePath);
-      await fileRef.save(buffer, { metadata: { contentType: 'image/png' } });
-      await fileRef.makePublic();
-      const overlayUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
+    const base64 = overlayDataUrl.split(',')[1];
+    const buffer = Buffer.from(base64, 'base64');
+    const bucket = adminStorage.bucket();
+    const fileName = `overlay_${Date.now()}.png`;
+    const storagePath = `keyframe-overlays/${perm.uid}/${analysisId}/${fileName}`;
+    const fileRef = bucket.file(storagePath);
+    await fileRef.save(buffer, { metadata: { contentType: 'image/png' } });
+    await fileRef.makePublic();
+    const overlayUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
 
-      const payload: any = {
-        analysisId,
-        keyframeUrl,
-        overlayUrl,
-        coachId: perm.uid,
-        createdAt: new Date().toISOString(),
-      };
-      
-      // Solo agregar campos opcionales si tienen valor (Firestore no acepta undefined)
-      if (angle) payload.angle = angle;
-      if (typeof index === 'number') payload.index = index;
-      if (perm.name) payload.coachName = perm.name;
-      
-      const ref = await adminDb.collection('analyses').doc(analysisId).collection('keyframeAnnotations').add(payload);
-      console.log('✅ Anotación guardada exitosamente:', ref.id);
-      return NextResponse.json({ success: true, id: ref.id, overlayUrl });
-    } catch (storageError: any) {
-      console.error('❌ Error guardando en Storage:', storageError);
-      return NextResponse.json({ error: `Error guardando imagen: ${storageError.message}` }, { status: 500 });
-    }
-  } catch (e: any) {
-    console.error('❌ Error en POST keyframe-annotations:', e);
-    return NextResponse.json({ error: `Error interno: ${e?.message || 'Desconocido'}` }, { status: 500 });
+    const payload: KeyframeAnnotation = {
+      analysisId,
+      keyframeUrl,
+      keyframeId: keyframeIdFromUrl(keyframeUrl),
+      angle,
+      index,
+      overlayUrl,
+      coachId: perm.uid,
+      coachName: perm.name,
+      createdAt: new Date().toISOString(),
+    };
+    const ref = await adminDb.collection('analyses').doc(analysisId).collection('keyframeAnnotations').add(payload);
+    return NextResponse.json({ success: true, id: ref.id, overlayUrl });
+  } catch (e) {
+    console.error('❌ Error guardando anotación:', e);
+    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }
+
 
