@@ -288,5 +288,53 @@ export async function queueEmail(options: EmailOptions): Promise<boolean> {
   return sendEmailUnified(options);
 }
 
+export interface SendBulkEmailOptions {
+  to: string[];
+  subject: string;
+  html: string;
+  text?: string;
+}
+
+export interface SendBulkEmailResult {
+  success: boolean;
+  successCount: number;
+  failureCount: number;
+  errors: string[];
+}
+
+/**
+ * Envía el mismo email a múltiples destinatarios.
+ * Por cada destinatario se intenta envío; se reportan éxitos y fallos.
+ */
+export async function sendBulkEmail(options: SendBulkEmailOptions): Promise<SendBulkEmailResult> {
+  const { to, subject, html, text } = options;
+  const recipients = normalizeRecipients(to);
+  const errors: string[] = [];
+  let successCount = 0;
+
+  for (const email of recipients) {
+    try {
+      const sent = await sendEmailUnified({
+        to: email,
+        subject,
+        html,
+        text,
+      });
+      if (sent) successCount++;
+      else errors.push(`No enviado: ${email}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${email}: ${msg}`);
+    }
+  }
+
+  return {
+    success: errors.length === 0,
+    successCount,
+    failureCount: recipients.length - successCount,
+    errors,
+  };
+}
+
 
 

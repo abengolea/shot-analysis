@@ -53,7 +53,7 @@ export default function AnchoredCommentsOverlay({
       
       // Solo mostrar comentarios dentro de la ventana de tolerancia
       if (timeDiff <= tolerance) {
-        for (const note of kf.notes) {
+        for (const note of kf.notes ?? []) {
           if (dismissedNotes.has(note.id)) continue;
           
           // Si el comentario tiene un anclaje, calcular posición

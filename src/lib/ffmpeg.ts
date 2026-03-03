@@ -136,6 +136,18 @@ function spawnCollectStderr(cmd: string, args: string[]): Promise<string> {
   });
 }
 
+export async function extractKeyframesForAI(
+  inputBuffer: Buffer,
+  numFrames: number
+): Promise<Array<{ index: number; timestamp: number; description: string }>> {
+  const frames = await extractKeyframesFromBuffer(inputBuffer, numFrames);
+  return frames.map((f) => ({
+    index: f.index,
+    timestamp: f.timestamp,
+    description: '',
+  }));
+}
+
 export async function extractKeyframesFromBuffer(
   inputBuffer: Buffer,
   numFrames: number
@@ -286,5 +298,76 @@ export async function segmentAttemptsByMotionFromBuffer(
   } finally {
     try { await fs.rm(tmpDir, { recursive: true, force: true }); } catch {}
   }
+}
+
+async function extractFramesBetweenFromBuffer(
+  inputBuffer: Buffer,
+  fromSec: number,
+  toSec: number,
+  numFrames: number
+): Promise<Array<{ index: number; timestamp: number; imageBuffer: Buffer }>> {
+  const start = Math.max(0, Math.min(fromSec, toSec));
+  const end = Math.max(start + 0.05, Math.max(fromSec, toSec));
+  const frames: Array<{ index: number; timestamp: number; imageBuffer: Buffer }> = [];
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'shot-kfwin-'));
+  const inPath = path.join(tmpDir, 'input.mp4');
+  await fs.writeFile(inPath, inputBuffer);
+  try {
+    const interval = (end - start) / Math.max(1, numFrames + 1);
+    for (let i = 1; i <= numFrames; i++) {
+      const ts = start + interval * i;
+      const outPath = path.join(tmpDir, `seg_${i}.jpg`);
+      const args = [
+        '-y',
+        '-ss', ts.toFixed(2),
+        '-i', inPath,
+        '-frames:v', '1',
+        '-q:v', '3',
+        '-vf', 'scale=-2:480',
+        outPath,
+      ];
+      await spawnAsync(RESOLVED_FFMPEG, args);
+      const buf = await fs.readFile(outPath);
+      frames.push({ index: i - 1, timestamp: ts, imageBuffer: buf });
+    }
+    return frames;
+  } finally {
+    try { await fs.rm(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
+export async function extractFramesFromMultipleShots(
+  inputBuffer: Buffer,
+  options: { framesPerSegment?: number } = {}
+): Promise<Array<{
+  shotIndex: number;
+  startTime: number;
+  endTime: number;
+  frames: Array<{ index: number; timestamp: number; imageBuffer: Buffer }>;
+}>> {
+  const framesPerSegment = options.framesPerSegment ?? 4;
+  const segments = await segmentAttemptsByMotionFromBuffer(inputBuffer);
+  const result: Array<{
+    shotIndex: number;
+    startTime: number;
+    endTime: number;
+    frames: Array<{ index: number; timestamp: number; imageBuffer: Buffer }>;
+  }> = [];
+  for (let i = 0; i < segments.length; i++) {
+    const { start, end } = segments[i];
+    const frames = await extractFramesBetweenFromBuffer(
+      inputBuffer,
+      start,
+      end,
+      framesPerSegment
+    );
+    result.push({
+      shotIndex: i,
+      startTime: start,
+      endTime: end,
+      frames,
+    });
+  }
+  return result;
 }
 

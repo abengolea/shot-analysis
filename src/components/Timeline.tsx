@@ -239,9 +239,9 @@ export default function Timeline({ timeline, videoRef, onSeek, onAddComment, ana
                     {formatTime(kf.tMs)}
                   </div>
                 )}
-                {kf.notes.length > 0 && (
+                {(kf.notes?.length ?? 0) > 0 && (
                   <span className="absolute top-1 right-1 bg-blue-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
-                    {kf.notes.length}
+                    {kf.notes?.length ?? 0}
                   </span>
                 )}
                 {kf.eventType && kf.eventType !== 'manual' && (
@@ -265,7 +265,7 @@ export default function Timeline({ timeline, videoRef, onSeek, onAddComment, ana
       {/* Lista de comentarios por keyframe */}
       <div className="mt-4 space-y-3">
         {timelineData.keyframes
-          .filter(kf => kf.notes.length > 0)
+          .filter(kf => (kf.notes?.length ?? 0) > 0)
           .map((kf) => (
             <div key={kf.id} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
               <div className="flex items-center justify-between mb-2">
@@ -281,7 +281,7 @@ export default function Timeline({ timeline, videoRef, onSeek, onAddComment, ana
                 </button>
               </div>
               <div className="space-y-2">
-                {kf.notes.map((note) => (
+                {(kf.notes ?? []).map((note) => (
                   <div
                     key={note.id}
                     className="bg-white p-2 rounded border border-gray-200"
@@ -320,7 +320,7 @@ export default function Timeline({ timeline, videoRef, onSeek, onAddComment, ana
           ))}
       </div>
 
-      {timelineData.keyframes.filter(kf => kf.notes.length > 0).length === 0 && (
+      {timelineData.keyframes.filter(kf => (kf.notes?.length ?? 0) > 0).length === 0 && (
         <p className="text-sm text-gray-500 text-center py-4">
           No hay comentarios aún. Haz clic en "Agregar Comentario" para empezar.
         </p>

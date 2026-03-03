@@ -47,7 +47,7 @@ export default function Upload2Page() {
       
       if (result.error) {
         setMessage(result.message);
-      } else if (result.success && result.redirectTo) {
+      } else if (result.redirectTo) {
         setMessage('Análisis iniciado exitosamente. Redirigiendo...');
         setTimeout(() => {
           router.push(result.redirectTo!);

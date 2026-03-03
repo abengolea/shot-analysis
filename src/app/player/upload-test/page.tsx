@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Upload, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-import { startAnalysisTest } from '@/app/actions';
+import { startAnalysis } from '@/app/actions';
 
 export default function UploadTestPage() {
   const { user } = useAuth();
@@ -43,7 +43,7 @@ export default function UploadTestPage() {
         formData.set('shotType', 'jump_shot'); // Valor por defecto
               }
       
-      const result = await startAnalysisTest(null, formData);
+      const result = await startAnalysis(null, formData);
       
       if (result.error) {
         setMessage(result.message);
