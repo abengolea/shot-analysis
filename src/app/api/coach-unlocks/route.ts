@@ -244,10 +244,20 @@ export async function POST(req: NextRequest) {
       }
     } else {
       console.log('✅ Usando MercadoPago para crear el pago');
-      // Crear preferencia con MercadoPago (comportamiento original)
+      // MercadoPago requiere email válido del pagador (nunca vacío ni test@test)
+      let payerEmail = (decoded.email || '').trim();
+      if (!payerEmail || !payerEmail.includes('@')) {
+        const playerDoc = await adminDb.collection('players').doc(playerId).get();
+        payerEmail = (playerDoc.data() as any)?.email || '';
+      }
+      if (!payerEmail || !payerEmail.includes('@')) {
+        return NextResponse.json({
+          error: 'Se requiere un email válido para pagar con MercadoPago. Verificá tu perfil.',
+        }, { status: 400 });
+      }
       const pref = await createPreference({
         userId: playerId,
-        userEmail: decoded.email,
+        userEmail: payerEmail,
         productId: 'coach_review',
         amountARS: totalAmount,
         title: `Revisión manual - ${coachData?.name || 'Entrenador'}`,

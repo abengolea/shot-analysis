@@ -2,12 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import { processCoachReviewPayment } from '@/lib/mercadopago';
 
-const MP_BASE = process.env.MP_BASE_URL || 'https://api.mercadopago.com';
-const MP_PLATFORM_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN_AR || '';
-
 export async function POST(req: NextRequest) {
   try {
-    if (!MP_PLATFORM_ACCESS_TOKEN) {
+    const mpToken = (process.env.MP_ACCESS_TOKEN_AR || '').trim();
+    const mpBase = process.env.MP_BASE_URL || 'https://api.mercadopago.com';
+    if (!mpToken) {
       return NextResponse.json(
         { error: 'MP_ACCESS_TOKEN_AR no configurado' },
         { status: 500 }
@@ -32,8 +31,8 @@ export async function POST(req: NextRequest) {
     // Si tenemos paymentId, buscar directamente
     if (paymentId) {
       console.log('🔍 [Check MP Payment] Verificando pago por paymentId:', paymentId);
-      const paymentRes = await fetch(`${MP_BASE}/v1/payments/${paymentId}`, {
-        headers: { Authorization: `Bearer ${MP_PLATFORM_ACCESS_TOKEN}` },
+      const paymentRes = await fetch(`${mpBase}/v1/payments/${paymentId}`, {
+        headers: { Authorization: `Bearer ${mpToken}` },
       });
       
       if (!paymentRes.ok) {
@@ -48,8 +47,8 @@ export async function POST(req: NextRequest) {
     } else if (preferenceId) {
       // Para preferenceId: primero intentar merchant_orders (más compatible)
       console.log('🔍 [Check MP Payment] Buscando merchant_orders por preferenceId:', preferenceId);
-      const moRes = await fetch(`${MP_BASE}/merchant_orders/search?preference_id=${preferenceId}`, {
-        headers: { Authorization: `Bearer ${MP_PLATFORM_ACCESS_TOKEN}` },
+      const moRes = await fetch(`${mpBase}/merchant_orders/search?preference_id=${preferenceId}`, {
+        headers: { Authorization: `Bearer ${mpToken}` },
       });
       if (moRes.ok) {
         const moData = await moRes.json().catch(() => ({}));
@@ -60,8 +59,8 @@ export async function POST(req: NextRequest) {
         if (payments.length) {
           const approvedFromOrder = payments.find((p: any) => p.status === 'approved') || payments[0];
           if (approvedFromOrder?.id) {
-            const paymentRes = await fetch(`${MP_BASE}/v1/payments/${approvedFromOrder.id}`, {
-              headers: { Authorization: `Bearer ${MP_PLATFORM_ACCESS_TOKEN}` },
+            const paymentRes = await fetch(`${mpBase}/v1/payments/${approvedFromOrder.id}`, {
+              headers: { Authorization: `Bearer ${mpToken}` },
             });
             if (!paymentRes.ok) {
               const errTxt = await paymentRes.text().catch(() => '');
@@ -81,8 +80,8 @@ export async function POST(req: NextRequest) {
       // Si merchant_orders no resolvió el pago, intentar payments/search por preference_id
       if (!payment) {
         console.log('🔁 [Check MP Payment] Fallback a payments/search por preferenceId:', preferenceId);
-        const searchRes = await fetch(`${MP_BASE}/v1/payments/search?preference_id=${preferenceId}`, {
-          headers: { Authorization: `Bearer ${MP_PLATFORM_ACCESS_TOKEN}` },
+        const searchRes = await fetch(`${mpBase}/v1/payments/search?preference_id=${preferenceId}`, {
+          headers: { Authorization: `Bearer ${mpToken}` },
         });
         if (!searchRes.ok) {
           const errTxt = await searchRes.text().catch(() => '');

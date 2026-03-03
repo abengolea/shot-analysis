@@ -1,9 +1,22 @@
 import { adminDb } from '@/lib/firebase-admin';
 import { sendCustomEmail } from '@/lib/email-service';
 
-const MP_BASE = process.env.MP_BASE_URL || 'https://api.mercadopago.com';
-const MP_PLATFORM_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN_AR || '';
-const MP_NOTIFICATION_URL = process.env.MP_WEBHOOK_URL || '';
+// Leer env en runtime para evitar cache (igual que dLocal)
+function getMpBase(): string {
+  return (process.env.MP_BASE_URL || 'https://api.mercadopago.com').trim();
+}
+function getMpAccessToken(): string {
+  return (process.env.MP_ACCESS_TOKEN_AR || '').trim();
+}
+function getMpNotificationUrl(): string {
+  return (process.env.MP_WEBHOOK_URL || '').trim();
+}
+function getAppUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL || '').trim();
+}
+function isProductionToken(token: string): boolean {
+  return token.startsWith('APP_USR-');
+}
 
 type PreferenceItem = {
   title: string;
@@ -26,49 +39,53 @@ type CreatePreferenceInput = {
 };
 
 export async function createPreference(input: CreatePreferenceInput) {
-  const resolvedAccessToken = input.collectorAccessToken || MP_PLATFORM_ACCESS_TOKEN;
+  const resolvedAccessToken = input.collectorAccessToken || getMpAccessToken();
   if (!resolvedAccessToken) throw new Error('MP_ACCESS_TOKEN_AR no configurado');
 
-  // Determinar base para back_urls (debe ser https para usar auto_return)
-  const computeReturnBase = (): string | undefined => {
-    if (input.returnBase) return input.returnBase;
+  // Con token de PRODUCCIÓN (APP_USR-), MP exige HTTPS y dominio real. Nunca localhost.
+  const isProd = isProductionToken(resolvedAccessToken);
+  const appUrlHttps = getAppUrl() || 'https://chaaaas.com';
+
+  const computeReturnBase = (): string => {
+    if (isProd) {
+      return appUrlHttps;
+    }
+    if (input.returnBase) {
+      const u = input.returnBase;
+      if (u.startsWith('http://localhost') || u.startsWith('http://127.0.0.1')) {
+        return appUrlHttps;
+      }
+      return u;
+    }
     const explicit = process.env.MP_RETURN_URL;
     if (explicit) return explicit;
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-    if (appUrl) return appUrl;
-    const webhookUrl = process.env.MP_WEBHOOK_URL;
+    if (appUrlHttps) return appUrlHttps;
+    const webhookUrl = getMpNotificationUrl();
     if (webhookUrl) {
       try {
-        const origin = new URL(webhookUrl).origin;
-        return origin;
+        return new URL(webhookUrl).origin;
       } catch {}
     }
-    return undefined;
+    return appUrlHttps;
   };
 
   const returnBase = computeReturnBase();
   const resolveReturnUrl = (base: string): string => {
     try {
       const u = new URL(base);
-      // Usar /player/payments/return para mantener consistencia con la estructura de rutas
       return `${u.origin}/player/payments/return`;
     } catch {
       const trimmed = base.replace(/\/$/, '');
       if (trimmed.endsWith('/payments/return') || trimmed.endsWith('/player/payments/return')) return trimmed;
-      // Intentar con /player/payments/return primero
-      if (trimmed.includes('/player/')) {
-        return `${trimmed}/payments/return`;
-      }
+      if (trimmed.includes('/player/')) return `${trimmed}/payments/return`;
       return `${trimmed}/player/payments/return`;
     }
   };
-  
-  // Construir URL de retorno con parámetros para identificar el tipo de pago
-  const baseReturnUrl = returnBase ? resolveReturnUrl(returnBase) : undefined;
-  const returnUrl = baseReturnUrl ? (() => {
+
+  const baseReturnUrl = resolveReturnUrl(returnBase);
+  const returnUrl = (() => {
     try {
       const url = new URL(baseReturnUrl);
-      // Agregar parámetros para identificar el tipo de pago
       if (input.productId) url.searchParams.set('productId', input.productId);
       if (input.metadata?.coachId) url.searchParams.set('coachId', input.metadata.coachId);
       if (input.metadata?.analysisId) url.searchParams.set('analysisId', input.metadata.analysisId);
@@ -77,21 +94,26 @@ export async function createPreference(input: CreatePreferenceInput) {
     } catch {
       return baseReturnUrl;
     }
-  })() : undefined;
-  
-  const backUrls = returnUrl
-    ? {
-        success: returnUrl,
-        failure: returnUrl,
-        pending: returnUrl,
-      }
-    : undefined;
-  
-  // auto_return solo funciona con HTTPS, pero siempre configuramos back_urls
-  // para que el usuario pueda hacer clic en "Volver al sitio" si auto_return no funciona
-  const canAutoReturn = Boolean(backUrls?.success && backUrls.success.startsWith('https://'));
+  })();
 
-  const body = {
+  const backUrls = {
+    success: returnUrl,
+    failure: returnUrl,
+    pending: returnUrl,
+  };
+
+  const notificationUrl = getMpNotificationUrl() || `${appUrlHttps.replace(/\/$/, '')}/api/payments/webhook`;
+  if (!notificationUrl.startsWith('https://')) {
+    throw new Error('notification_url debe ser HTTPS para MercadoPago. Configura MP_WEBHOOK_URL con https://chaaaas.com/api/payments/webhook');
+  }
+
+  const payerEmail = (input.userEmail || '').trim();
+  const invalidEmails = ['', 'test@test.com', 'test@test'];
+  if (!payerEmail || invalidEmails.includes(payerEmail.toLowerCase()) || !payerEmail.includes('@')) {
+    throw new Error(`MercadoPago requiere un email válido del pagador. Recibido: ${payerEmail ? '(email inválido)' : '(vacío)'}`);
+  }
+
+  const body: Record<string, any> = {
     items: [
       {
         title: input.title,
@@ -106,25 +128,27 @@ export async function createPreference(input: CreatePreferenceInput) {
       ...(input.userEmail ? { userEmail: input.userEmail } : {}),
       productId: input.productId,
     },
-    notification_url: MP_NOTIFICATION_URL,
+    payer: {
+      email: payerEmail,
+    },
+    notification_url: notificationUrl,
+    back_urls: backUrls,
+    auto_return: 'approved',
     ...(typeof input.marketplaceFeeARS === 'number' ? { marketplace_fee: Math.max(0, input.marketplaceFeeARS) } : {}),
     ...(typeof input.sponsorId !== 'undefined' && input.sponsorId !== null
       ? { sponsor_id: Number(input.sponsorId) }
       : {}),
-    // Siempre configurar back_urls para que el usuario pueda volver manualmente
-    ...(backUrls ? { back_urls: backUrls } : {}),
-    // auto_return solo si es HTTPS (en producción)
-    ...(canAutoReturn ? { auto_return: 'approved' as const } : {}),
   };
-  
-  console.log('🔍 Configuración de MercadoPago:', {
+
+  console.log('🔍 [MP] Objeto de preferencia completo:', JSON.stringify(body, null, 2));
+  console.log('🔍 [MP] Config:', {
     returnUrl,
-    hasBackUrls: !!backUrls,
-    canAutoReturn,
-    isHttps: returnUrl?.startsWith('https://'),
+    notificationUrl,
+    payerEmail: payerEmail ? `${payerEmail.substring(0, 3)}***` : '(vacío)',
+    isProductionToken: isProd,
   });
 
-  const res = await fetch(`${MP_BASE}/checkout/preferences`, {
+  const res = await fetch(`${getMpBase()}/checkout/preferences`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -176,8 +200,8 @@ export async function handleWebhook(event: any) {
       }
 
       console.log('🔍 [MP Webhook] Obteniendo pago de MP:', data.id);
-      const paymentRes = await fetch(`${MP_BASE}/v1/payments/${data.id}`, {
-        headers: { Authorization: `Bearer ${MP_PLATFORM_ACCESS_TOKEN}` },
+      const paymentRes = await fetch(`${getMpBase()}/v1/payments/${data.id}`, {
+        headers: { Authorization: `Bearer ${getMpAccessToken()}` },
       });
       const payment = await paymentRes.json();
       console.log('📥 [MP Webhook] Pago obtenido:', {

@@ -52,18 +52,15 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Verificar variables de entorno
-    const hasApiKey = !!process.env.DLOCAL_API_KEY;
-    const hasSecretKey = !!process.env.DLOCAL_SECRET_KEY;
+    // Verificar variables de entorno (rechazar placeholders)
+    const apiKey = (process.env.DLOCAL_API_KEY || '').trim();
+    const secretKey = (process.env.DLOCAL_SECRET_KEY || '').trim();
+    const isPlaceholder = (v: string) => !v || v.includes('tu_api_key') || v.includes('tu_secret') || v.includes('CONFIGURAR');
     
-    if (!hasApiKey || !hasSecretKey) {
+    if (isPlaceholder(apiKey) || isPlaceholder(secretKey)) {
       return NextResponse.json({ 
-        error: 'Variables de entorno no configuradas',
-        missing: {
-          DLOCAL_API_KEY: !hasApiKey,
-          DLOCAL_SECRET_KEY: !hasSecretKey
-        },
-        hint: 'Crea un archivo .env.local con las variables DLOCAL_API_KEY y DLOCAL_SECRET_KEY'
+        error: 'DLOCAL_API_KEY o DLOCAL_SECRET_KEY no configurados o tienen valores placeholder',
+        hint: 'Revisa .env.local con credenciales reales de dLocal y reinicia el servidor (npm run dev)'
       }, { status: 500 });
     }
 

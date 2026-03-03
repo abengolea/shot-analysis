@@ -4,10 +4,32 @@ import { sendCustomEmail } from '@/lib/email-service';
 // dLocal Go usa diferentes URLs para testing y producción
 // NOTA: Las credenciales proporcionadas funcionan con PRODUCCIÓN
 // Si necesitas sandbox, obtén credenciales de sandbox desde el dashboard
-const DLOCAL_BASE = process.env.DLOCAL_BASE_URL || 'https://api.dlocalgo.com';
-const DLOCAL_API_KEY = process.env.DLOCAL_API_KEY || '';
-const DLOCAL_SECRET_KEY = process.env.DLOCAL_SECRET_KEY || '';
-const DLOCAL_NOTIFICATION_URL = process.env.DLOCAL_WEBHOOK_URL || '';
+// Usar getters para leer env en runtime y evitar cache de módulo en Next.js
+function getDlocalBase(): string {
+  return (process.env.DLOCAL_BASE_URL || 'https://api.dlocalgo.com').trim();
+}
+const PLACEHOLDER_PATTERNS = ['tu_api_key', 'tu_secret_key', 'CONFIGURAR', 'tu_api_key_aqui', 'tu_secret_key_aqui'];
+function isPlaceholderValue(v: string): boolean {
+  const lower = v.toLowerCase();
+  return PLACEHOLDER_PATTERNS.some(p => lower.includes(p.toLowerCase()));
+}
+function getDlocalApiKey(): string {
+  const v = (process.env.DLOCAL_API_KEY || '').trim();
+  if (v && isPlaceholderValue(v)) {
+    console.error('[dLocal] DLOCAL_API_KEY parece un placeholder. Revisa .env.local y reinicia el servidor (npm run dev).');
+  }
+  return v;
+}
+function getDlocalSecretKey(): string {
+  const v = (process.env.DLOCAL_SECRET_KEY || '').trim();
+  if (v && isPlaceholderValue(v)) {
+    console.error('[dLocal] DLOCAL_SECRET_KEY parece un placeholder. Revisa .env.local y reinicia el servidor (npm run dev).');
+  }
+  return v;
+}
+function getDlocalNotificationUrl(): string {
+  return (process.env.DLOCAL_WEBHOOK_URL || '').trim();
+}
 
 type CreatePaymentInput = {
   userId?: string;
@@ -26,10 +48,10 @@ type CreatePaymentInput = {
  * Formato confirmado: Bearer API_KEY:SECRET_KEY
  */
 function getAuthToken(): string {
-  const apiKey = (DLOCAL_API_KEY || '').trim();
-  const secretKey = (DLOCAL_SECRET_KEY || '').trim();
+  const apiKey = getDlocalApiKey();
+  const secretKey = getDlocalSecretKey();
   if (!apiKey || !secretKey) {
-    throw new Error('DLOCAL_API_KEY y DLOCAL_SECRET_KEY deben estar configurados');
+    throw new Error('DLOCAL_API_KEY y DLOCAL_SECRET_KEY deben estar configurados en .env.local');
   }
   // Formato confirmado que funciona: Bearer API_KEY:SECRET_KEY
   return `Bearer ${apiKey}:${secretKey}`;
@@ -41,13 +63,13 @@ function getAuthToken(): string {
 export async function testConnection() {
   try {
     // Verificar que las variables estén cargadas
-    const hasApiKey = !!DLOCAL_API_KEY;
-    const hasSecretKey = !!DLOCAL_SECRET_KEY;
+    const hasApiKey = !!getDlocalApiKey();
+    const hasSecretKey = !!getDlocalSecretKey();
     
     console.log('🔍 Verificando credenciales:', {
       hasApiKey,
       hasSecretKey,
-      baseUrl: DLOCAL_BASE,
+      baseUrl: getDlocalBase(),
     });
     
     if (!hasApiKey || !hasSecretKey) {
@@ -55,10 +77,10 @@ export async function testConnection() {
     }
     
     const authToken = getAuthToken();
-    console.log('🔑 Token de autenticación generado');
-    console.log('🌐 URL de prueba:', `${DLOCAL_BASE}/v1/me`);
+    console.log('🔑 Token de autenticación generado (longitud:', authToken.length, ')');
+    console.log('🌐 URL de prueba:', `${getDlocalBase()}/v1/me`);
     
-    const res = await fetch(`${DLOCAL_BASE}/v1/me`, {
+    const res = await fetch(`${getDlocalBase()}/v1/me`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -94,11 +116,11 @@ const DLOCAL_MIN_AMOUNT_USD = 1; // Monto mínimo en USD
  * Obtiene un pago desde dLocal Go por ID
  */
 export async function fetchDlocalPayment(paymentId: string) {
-  if (!DLOCAL_API_KEY || !DLOCAL_SECRET_KEY) {
+  if (!getDlocalApiKey() || !getDlocalSecretKey()) {
     throw new Error('DLOCAL_API_KEY y DLOCAL_SECRET_KEY deben estar configurados');
   }
   const path = `/v1/orders/${paymentId}`;
-  const res = await fetch(`${DLOCAL_BASE}${path}`, {
+  const res = await fetch(`${getDlocalBase()}${path}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -113,7 +135,7 @@ export async function fetchDlocalPayment(paymentId: string) {
 }
 
 export async function createPayment(input: CreatePaymentInput) {
-  if (!DLOCAL_API_KEY || !DLOCAL_SECRET_KEY) {
+  if (!getDlocalApiKey() || !getDlocalSecretKey()) {
     throw new Error('DLOCAL_API_KEY y DLOCAL_SECRET_KEY deben estar configurados');
   }
 
@@ -183,7 +205,7 @@ export async function createPayment(input: CreatePaymentInput) {
     country: input.currency === 'ARS' ? 'AR' : 'US',
     order_id: orderId,
     description: input.title,
-    notification_url: DLOCAL_NOTIFICATION_URL,
+    notification_url: getDlocalNotificationUrl(),
     ...(returnUrl ? { redirect_url: returnUrl } : {}),
     payer: {
       ...(input.userEmail ? { email: input.userEmail } : {}),
@@ -212,10 +234,10 @@ export async function createPayment(input: CreatePaymentInput) {
   let lastError: Error | null = null;
   
   console.log('🔍 Configuración dLocal:', {
-    baseUrl: DLOCAL_BASE,
-    hasApiKey: !!DLOCAL_API_KEY,
-    hasSecretKey: !!DLOCAL_SECRET_KEY,
-    notificationUrl: DLOCAL_NOTIFICATION_URL,
+    baseUrl: getDlocalBase(),
+    hasApiKey: !!getDlocalApiKey(),
+    hasSecretKey: !!getDlocalSecretKey(),
+    notificationUrl: getDlocalNotificationUrl(),
   });
   
   for (let i = 0; i < possiblePaths.length; i++) {
@@ -223,7 +245,7 @@ export async function createPayment(input: CreatePaymentInput) {
     try {
       const method = 'POST';
       const bodyString = JSON.stringify(body);
-      const fullUrl = `${DLOCAL_BASE}${path}`;
+      const fullUrl = `${getDlocalBase()}${path}`;
 
       console.log(`📤 [${i + 1}/${possiblePaths.length}] Intentando crear pago en: ${fullUrl}`);
       console.log(`📋 Body enviado:`, JSON.stringify(body, null, 2));
@@ -231,7 +253,9 @@ export async function createPayment(input: CreatePaymentInput) {
       // Realizar la petición a dLocal Go usando autenticación Bearer
       // Probar con 'Authorization' (mayúscula) y 'authorization' (minúscula)
       const authToken = getAuthToken();
-      console.log(`🔑 Token de autenticación: ${authToken.substring(0, 20)}...`);
+      // Log solo los primeros caracteres para no exponer credenciales
+      const preview = authToken.length > 20 ? `${authToken.substring(0, 12)}...` : '(oculto)';
+      console.log(`🔑 Token de autenticación: ${preview}`);
       const res = await fetch(fullUrl, {
         method,
         headers: {
@@ -321,7 +345,7 @@ export async function handleWebhook(event: any) {
     const path = `/v1/orders/${paymentId}`;
     const method = 'GET';
 
-    const paymentRes = await fetch(`${DLOCAL_BASE}${path}`, {
+    const paymentRes = await fetch(`${getDlocalBase()}${path}`, {
       method,
       headers: {
         'Content-Type': 'application/json',
