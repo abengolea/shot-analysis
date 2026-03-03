@@ -295,12 +295,18 @@ export default function DashboardPage() {
   // Redirecciones fuera del render para evitar actualizar durante render
   useEffect(() => {
     if (loading) return;
-    if (!user || !userProfile) {
+    if (!user) {
       router.replace('/login');
       return;
     }
-    if ((userProfile as any).role === 'admin') {
+    if ((userProfile as any)?.role === 'admin') {
       router.replace('/admin');
+      return;
+    }
+    if (!userProfile) {
+      // Usuario existe en Auth pero no tiene perfil en Firestore (o email no verificado)
+      router.replace(`/verify-email?email=${encodeURIComponent(user.email || '')}&reason=no_profile`);
+      return;
     }
   }, [loading, user, userProfile, router]);
 

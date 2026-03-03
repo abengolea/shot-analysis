@@ -12,6 +12,11 @@ export interface ResendConfig {
 
 let cached: ResendConfig | null = null;
 
+/** Invalida el cache (útil cuando Resend devuelve "API key is invalid" tras rotar la key). */
+export function clearResendConfigCache(): void {
+  cached = null;
+}
+
 async function getSecret(projectId: string, secretId: string): Promise<string> {
   const client = new SecretManagerServiceClient();
   const name = `projects/${projectId}/secrets/${secretId}/versions/latest`;

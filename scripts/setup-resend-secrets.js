@@ -21,7 +21,8 @@ function loadEnvLocal() {
     console.error('No se encontró .env.local en la raíz del proyecto.');
     process.exit(1);
   }
-  const text = fs.readFileSync(envPath, 'utf8');
+  let text = fs.readFileSync(envPath, 'utf8');
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1); // quitar BOM si existe
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
@@ -32,7 +33,7 @@ function loadEnvLocal() {
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
-    if (!process.env[key]) process.env[key] = value;
+    process.env[key] = value;
   }
 }
 
@@ -81,6 +82,12 @@ async function main() {
 
   if (!apiKey || !from) {
     console.error('En .env.local deben estar definidos RESEND_API_KEY y RESEND_FROM.');
+    const envPath = path.resolve(process.cwd(), '.env.local');
+    console.error(`  Archivo leído: ${envPath}`);
+    console.error(`  RESEND_API_KEY: ${apiKey ? `encontrado (${apiKey.length} caracteres)` : 'NO encontrado o vacío'}`);
+    console.error(`  RESEND_FROM: ${from ? `encontrado` : 'NO encontrado o vacío'}`);
+    const reseKeys = Object.keys(process.env).filter(k => k.includes('RESEND'));
+    if (reseKeys.length) console.error(`  Claves RESEND_* en env: ${reseKeys.join(', ')}`);
     process.exit(1);
   }
 

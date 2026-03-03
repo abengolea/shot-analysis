@@ -43,6 +43,8 @@ export default function MaintenancePage() {
   const [saving, setSaving] = useState(false);
   const [emailTestLoading, setEmailTestLoading] = useState(false);
   const [emailTestResult, setEmailTestResult] = useState<{ ok: boolean; message: string; detail?: unknown } | null>(null);
+  const [emailDiagnostic, setEmailDiagnostic] = useState<Record<string, unknown> | null>(null);
+  const [emailDiagnosticLoading, setEmailDiagnosticLoading] = useState(false);
   const { toast } = useToast();
 
   // Cargar configuración actual
@@ -117,13 +119,37 @@ export default function MaintenancePage() {
     }
   };
 
+  const fetchEmailDiagnostic = async () => {
+    setEmailDiagnostic(null);
+    setEmailDiagnosticLoading(true);
+    try {
+      const token = user ? await getIdToken(user, true) : '';
+      const res = await fetch('/api/email/diagnostic', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json().catch(() => ({}));
+      setEmailDiagnostic(data);
+      if (!res.ok) toast({ title: 'Error', description: data?.error || 'No se pudo obtener diagnóstico', variant: 'destructive' });
+    } catch (err) {
+      setEmailDiagnostic({ error: err instanceof Error ? err.message : 'Error de red' });
+      toast({ title: 'Error', description: 'No se pudo obtener diagnóstico', variant: 'destructive' });
+    } finally {
+      setEmailDiagnosticLoading(false);
+    }
+  };
+
   const sendEmailTest = async () => {
     setEmailTestResult(null);
     setEmailTestLoading(true);
     try {
+      const token = user ? await getIdToken(user, true) : '';
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
-      const res = await fetch('/api/email/test', { method: 'POST', signal: controller.signal });
+      const res = await fetch('/api/email/test', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: controller.signal,
+      });
       clearTimeout(timeoutId);
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -180,19 +206,46 @@ export default function MaintenancePage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button variant="outline" onClick={sendEmailTest} disabled={emailTestLoading}>
-              {emailTestLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Enviando...
-                </>
-              ) : (
-                <>
-                  <Mail className="mr-2 h-4 w-4" />
-                  Enviar email de prueba
-                </>
-              )}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={fetchEmailDiagnostic} disabled={emailDiagnosticLoading}>
+                {emailDiagnosticLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Cargando...
+                  </>
+                ) : (
+                  'Ver diagnóstico de email'
+                )}
+              </Button>
+              <Button variant="outline" onClick={sendEmailTest} disabled={emailTestLoading}>
+                {emailTestLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="mr-2 h-4 w-4" />
+                    Enviar email de prueba
+                  </>
+                )}
+              </Button>
+            </div>
+            {emailDiagnostic != null && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm">
+                <p className="font-medium mb-2">Diagnóstico (Resend, SMTP, URL base)</p>
+                <pre className="overflow-auto rounded bg-black/5 p-2 text-xs">
+                  {JSON.stringify(emailDiagnostic, null, 2)}
+                </pre>
+                {Array.isArray(emailDiagnostic.pasos) && emailDiagnostic.pasos.length > 0 && (
+                  <ul className="mt-2 list-disc list-inside text-amber-700">
+                    {emailDiagnostic.pasos.map((p: string, i: number) => (
+                      <li key={i}>{p}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
             {emailTestResult && (
               <div className={`rounded-lg border p-4 text-sm ${emailTestResult.ok ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
                 <p className="font-medium">{emailTestResult.ok ? '✓ Éxito' : '✗ Error'}</p>

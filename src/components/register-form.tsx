@@ -214,8 +214,9 @@ export function RegisterForm() {
                     description: result.message,
                 });
                 
-                // Redirigir a la página de verificación de email
-                window.location.href = '/verify-email';
+                // Redirigir a la página de verificación (con email para poder reenviar)
+                const params = new URLSearchParams({ email: data.email });
+                window.location.href = `/verify-email?${params.toString()}`;
             } else {
                 toast({
                     title: "Error de registro",

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -10,7 +11,14 @@ import { requestVerificationEmail } from '@/app/actions';
 import { Mail, CheckCircle, AlertCircle } from 'lucide-react';
 
 export default function VerifyEmailPage() {
+  const searchParams = useSearchParams();
+  const emailFromUrl = searchParams.get('email') ?? '';
+  const reason = searchParams.get('reason') ?? '';
   const [email, setEmail] = useState('');
+
+  useEffect(() => {
+    if (emailFromUrl && !email) setEmail(emailFromUrl);
+  }, [emailFromUrl, email]);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
@@ -53,7 +61,9 @@ export default function VerifyEmailPage() {
           </div>
           <CardTitle className="text-2xl">Verifica tu Email</CardTitle>
           <CardDescription>
-            Para completar tu registro, necesitamos verificar tu dirección de email
+            {reason === 'no_profile'
+              ? 'Tu cuenta existe pero faltan datos. Verificá tu email o completá el registro.'
+              : 'Para completar tu registro, necesitamos verificar tu dirección de email'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -99,7 +109,12 @@ export default function VerifyEmailPage() {
             </Button>
           </div>
 
-          <div className="text-center">
+          <div className="text-center space-y-2">
+            {reason === 'no_profile' && (
+              <p className="text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
+                Si no te registraste por la web, un administrador debe darte de alta como jugador. Contactá soporte.
+              </p>
+            )}
             <p className="text-sm text-gray-600">
               ¿Ya verificaste tu email?{' '}
               <a href="/login" className="text-blue-600 hover:underline font-medium">

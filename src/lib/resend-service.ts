@@ -3,7 +3,7 @@
  * Soporta HTML, texto plano, adjuntos y replyTo.
  */
 
-import { getResendConfig } from '@/lib/resend-secrets';
+import { getResendConfig, clearResendConfigCache } from '@/lib/resend-secrets';
 import { Resend } from 'resend';
 
 export interface ResendAttachment {
@@ -73,6 +73,11 @@ export async function sendEmailResendOrNull(
   try {
     return await sendEmailResend(options);
   } catch (err) {
+    const msg = (err instanceof Error ? err.message : String(err)) || '';
+    if (msg.toLowerCase().includes('api key') && msg.toLowerCase().includes('invalid')) {
+      clearResendConfigCache();
+      console.warn('[resend-service] API key inválida; cache limpiado. Actualizá Secret Manager y probá de nuevo.');
+    }
     console.warn('[resend-service] Envío fallido, usar fallback SMTP:', err);
     return null;
   }

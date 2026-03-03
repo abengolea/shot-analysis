@@ -43,19 +43,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const storedRole = typeof window !== 'undefined'
             ? (localStorage.getItem('preferredRole') || '')
             : '';
-          const pathRole = pathname.startsWith('/coach')
-            ? 'coach'
-            : pathname.startsWith('/club')
-              ? 'club'
-              : (
-                pathname.startsWith('/player') ||
-                pathname.startsWith('/dashboard') ||
-                pathname.startsWith('/upload') ||
-                pathname.startsWith('/profile') ||
-                pathname.startsWith('/coaches')
-              )
-                ? 'player'
-                : '';
+          const pathRole = pathname.startsWith('/admin')
+            ? 'admin'
+            : pathname.startsWith('/coach')
+              ? 'coach'
+              : pathname.startsWith('/club')
+                ? 'club'
+                : (
+                  pathname.startsWith('/player') ||
+                  pathname.startsWith('/dashboard') ||
+                  pathname.startsWith('/upload') ||
+                  pathname.startsWith('/profile') ||
+                  pathname.startsWith('/coaches')
+                )
+                  ? 'player'
+                  : '';
 
           // Cargar ambos perfiles en paralelo para decidir correctamente cuando existen los dos
           const [playerSnap, coachSnap, clubSnap] = await Promise.all([
@@ -67,43 +69,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const hasCoach = coachSnap.exists();
           const hasPlayer = playerSnap.exists();
           const hasClub = clubSnap.exists();
-          const requestedRole = (storedRole || pathRole) as 'coach' | 'player' | 'club' | '';
+          const playerRole = (playerSnap.data() as any)?.role;
+          const coachRole = (coachSnap.data() as any)?.role;
+          const clubRole = (clubSnap.data() as any)?.role;
+
+          // Prioridad 1: Si cualquier perfil tiene role === 'admin', usarlo (permite acceso admin correcto)
           let resolvedRole: 'coach' | 'player' | 'club' | '' = '';
           let selected: (Player | Coach | Club) | null = null;
-
-          if (requestedRole === 'coach') {
-            resolvedRole = hasCoach ? 'coach' : (hasPlayer ? 'player' : '');
-          } else if (requestedRole === 'club') {
-            resolvedRole = hasClub ? 'club' : (hasCoach ? 'coach' : (hasPlayer ? 'player' : ''));
-          } else if (requestedRole === 'player') {
-            resolvedRole = hasPlayer ? 'player' : (hasCoach ? 'coach' : (hasClub ? 'club' : ''));
-          } else if (hasClub) {
-            // Si no hay preferencia explícita y existe rol de club, usar club por defecto
-            resolvedRole = 'club';
-          } else if (hasCoach && hasPlayer) {
-            // Si tiene doble rol y no hay preferencia explícita, quedarse en coach por defecto
-            resolvedRole = 'coach';
-          } else if (hasCoach) {
-            resolvedRole = 'coach';
-          } else if (hasPlayer) {
+          if (playerRole === 'admin' && hasPlayer) {
             resolvedRole = 'player';
-          }
+            selected = { id: user.uid, ...(playerSnap.data() as any) } as Player;
+          } else if (coachRole === 'admin' && hasCoach) {
+            resolvedRole = 'coach';
+            selected = { id: user.uid, ...(coachSnap.data() as any) } as Coach;
+          } else if (clubRole === 'admin' && hasClub) {
+            resolvedRole = 'club';
+            selected = { id: user.uid, ...(clubSnap.data() as any) } as Club;
+          } else {
+            // Lógica normal cuando no hay rol admin
+            const requestedRole = (storedRole || pathRole) as 'coach' | 'player' | 'club' | 'admin' | '';
+            const effectiveRole = requestedRole === 'admin' ? '' : requestedRole;
 
-          if (resolvedRole === 'coach' && hasCoach) {
-            const data = coachSnap.data() as any;
-            selected = { id: user.uid, ...(data as any) } as Coach;
-          } else if (resolvedRole === 'club' && hasClub) {
-            const data = clubSnap.data() as any;
-            selected = { id: user.uid, ...(data as any) } as Club;
-          } else if (resolvedRole === 'player' && hasPlayer) {
-            const data = playerSnap.data() as any;
-            selected = { id: user.uid, ...(data as any) } as Player;
+            if (effectiveRole === 'coach') {
+              resolvedRole = hasCoach ? 'coach' : (hasPlayer ? 'player' : (hasClub ? 'club' : ''));
+            } else if (effectiveRole === 'club') {
+              resolvedRole = hasClub ? 'club' : (hasCoach ? 'coach' : (hasPlayer ? 'player' : ''));
+            } else if (effectiveRole === 'player') {
+              resolvedRole = hasPlayer ? 'player' : (hasCoach ? 'coach' : (hasClub ? 'club' : ''));
+            } else if (hasClub) {
+              resolvedRole = 'club';
+            } else if (hasCoach && hasPlayer) {
+              resolvedRole = 'coach';
+            } else if (hasCoach) {
+              resolvedRole = 'coach';
+            } else if (hasPlayer) {
+              resolvedRole = 'player';
+            }
+
+            if (resolvedRole === 'coach' && hasCoach) {
+              const data = coachSnap.data() as any;
+              selected = { id: user.uid, ...(data as any) } as Coach;
+            } else if (resolvedRole === 'club' && hasClub) {
+              const data = clubSnap.data() as any;
+              selected = { id: user.uid, ...(data as any) } as Club;
+            } else if (resolvedRole === 'player' && hasPlayer) {
+              const data = playerSnap.data() as any;
+              selected = { id: user.uid, ...(data as any) } as Player;
+            }
           }
 
           const selectedRole = (selected as any)?.role as string | undefined;
-          if (selected && (user.emailVerified || selectedRole === 'admin')) {
+          if (selected) {
             try {
-              if (typeof window !== 'undefined' && (selectedRole === 'coach' || selectedRole === 'player' || selectedRole === 'club')) {
+              if (typeof window !== 'undefined' && (selectedRole === 'coach' || selectedRole === 'player' || selectedRole === 'club' || selectedRole === 'admin')) {
                 localStorage.setItem('preferredRole', selectedRole);
               }
             } catch (e) {}
@@ -195,6 +213,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         case 'auth/too-many-requests':
           message = 'Demasiados intentos fallidos. Intenta más tarde';
           break;
+        case 'auth/invalid-credential':
+          message = 'Email o contraseña incorrectos';
+          break;
         case 'auth/configuration-not-found':
           message = 'Error de configuración de Firebase. Contacta al administrador.';
           break;
@@ -216,8 +237,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await updateProfile(newUser, { displayName: userData.name });
       }
 
-      // Enviar email de verificación (template + redirect al entorno actual)
-      await requestVerificationEmail(email);
+      // Enviar email de verificación (Resend + template Chaaaas)
+      const emailResult = await requestVerificationEmail(email);
 
       // Determinar la colección basada en el rol
       const role = userData.role || 'player';
@@ -310,7 +331,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return { 
         success: true, 
-        message: 'Cuenta creada exitosamente. Revisa tu email para activar tu cuenta.' 
+        message: emailResult.success
+          ? 'Cuenta creada exitosamente. Revisa tu email para activar tu cuenta.'
+          : 'Cuenta creada. No pudimos enviar el email. Usá "Reenviar Email" en la próxima pantalla.', 
       };
     } catch (error: any) {
       console.error('Error de registro:', error);

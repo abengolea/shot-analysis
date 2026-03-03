@@ -207,8 +207,12 @@ export async function sendVerificationEmail(userId: string, email: string): Prom
       html,
       text,
     });
-    if (!sent) console.log('📧 Verification link (log only):', verificationLink);
-    console.log(`✅ Email de verificación enviado a: ${email}`);
+    if (!sent) {
+      console.warn(`⚠️ No se pudo enviar email de verificación a: ${email} (Resend y SMTP fallaron o no configurados)`);
+      console.log('📧 Verification link (log only):', verificationLink);
+    } else {
+      console.log(`✅ Email de verificación enviado a: ${email}`);
+    }
     return sent;
   } catch (error) {
     console.error('❌ Error enviando email de verificación:', error);

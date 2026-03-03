@@ -38,7 +38,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     setMounted(true);
   }, []);
 
-  const publicRoutes = ["/", "/login", "/register"];
+  const publicRoutes = ["/", "/login", "/register", "/verify-email"];
   const isPublicRoute = publicRoutes.includes(pathname);
 
   if (!mounted) {
