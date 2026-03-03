@@ -6,8 +6,8 @@
 Crea o edita el archivo `.env.local` en la raíz del proyecto:
 
 ```env
-DLOCAL_API_KEY=WclAEZsecYnDPUXoopdhYAabkvmUDMyX
-DLOCAL_SECRET_KEY=mNbeb6yx1M1GAuKDlkY4zOsdjBSvKvAHahM9kjCc
+DLOCAL_API_KEY=tu_api_key_desde_el_dashboard_dlocal
+DLOCAL_SECRET_KEY=tu_secret_key_desde_el_dashboard_dlocal
 DLOCAL_BASE_URL=https://api-sbx.dlocalgo.com
 DLOCAL_WEBHOOK_URL=https://tu-dominio.com/api/payments/webhook-dlocal
 DLOCAL_RETURN_URL=https://tu-dominio.com/payments/return

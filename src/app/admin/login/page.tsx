@@ -9,8 +9,8 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function AdminLoginPage() {
   const { user, userProfile, signIn, loading, signOutUser, resetPassword } = useAuth();
-  const [email, setEmail] = useState(process.env.NODE_ENV !== 'production' ? "abengolea@hotmail.com" : "");
-  const [password, setPassword] = useState(process.env.NODE_ENV !== 'production' ? "afdlue4333379832" : "");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);

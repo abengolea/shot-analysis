@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,16 +13,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { User, Shield, Calendar, MapPin, Phone, Award, Briefcase, GraduationCap, Clock } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { User, Shield, Calendar, MapPin, Phone, Award, Briefcase, GraduationCap, Clock, Trash2 } from "lucide-react";
 import { Player, Coach } from "@/lib/types";
 import { storage } from "@/lib/firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Switch } from "@/components/ui/switch";
 
 export default function ProfilePage() {
-  const { user, userProfile, updateUserProfile } = useAuth();
+  const { user, userProfile, updateUserProfile, signOutUser } = useAuth();
   const { toast } = useToast();
+  const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -569,15 +584,76 @@ export default function ProfilePage() {
                   const isComplete = !!p && isNonEmptyString(p.name) && !!p.dob && isNonEmptyString(p.country) && isNonEmptyString(p.ageGroup) && isNonEmptyString(p.playerLevel) && isNonEmptyString(p.position) && p.height && p.wingspan;
                   if (!isComplete) {
                     e.preventDefault();
-                    // Mostrar un toast suave aquí, y que el usuario ya está en perfil
-                    // No se agregó AlertDialog para no duplicar; el usuario está en esta página
                   }
                 }}>
                   Subir Video
                 </a>
               </Button>
+              <Separator className="my-3" />
+              <Button
+                variant="outline"
+                className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setDeleteDialogOpen(true)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Eliminar mi cuenta
+              </Button>
             </CardContent>
           </Card>
+
+          <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Eliminar tu cuenta?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Esta acción es irreversible. Se eliminarán todos tus datos: perfil, análisis, videos y archivos.
+                  Escribí <strong>ELIMINAR</strong> para confirmar.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <Input
+                placeholder="Escribí ELIMINAR para confirmar"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                className="mt-2"
+              />
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setDeleteConfirmText("")}>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  disabled={deleteConfirmText !== "ELIMINAR" || isDeleting}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    if (deleteConfirmText !== "ELIMINAR" || !user) return;
+                    setIsDeleting(true);
+                    try {
+                      const token = await user.getIdToken();
+                      const res = await fetch("/api/account/delete", {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error || "Error al eliminar");
+                      await signOutUser();
+                      toast({ title: "Cuenta eliminada", description: "Tu cuenta fue eliminada correctamente." });
+                      router.push("/");
+                    } catch (err: unknown) {
+                      toast({
+                        title: "Error",
+                        description: err instanceof Error ? err.message : "No se pudo eliminar la cuenta",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setIsDeleting(false);
+                      setDeleteDialogOpen(false);
+                      setDeleteConfirmText("");
+                    }
+                  }}
+                >
+                  {isDeleting ? "Eliminando…" : "Eliminar cuenta"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     </div>

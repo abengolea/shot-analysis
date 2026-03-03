@@ -4,22 +4,26 @@ import { getAuth } from "firebase/auth";
 import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
-// Your web app's Firebase configuration
+// Firebase config: las variables deben estar en .env.local o en el entorno de despliegue.
+// No usar fallbacks hardcodeados por seguridad.
 const firebaseConfig: FirebaseOptions = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyBYvIGN0-Yd1b7LG2Seg6VwfKnTYIo4n_4",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "shotanalisys.firebaseapp.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "shotanalisys",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "shotanalisys.firebasestorage.app",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "602998191800",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:602998191800:web:dd8a758d589b12b3c5264d",
-  // measurementId es opcional en desarrollo
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
+
+if (typeof window !== 'undefined' && !firebaseConfig.apiKey) {
+  console.error('[Firebase] NEXT_PUBLIC_FIREBASE_API_KEY no está configurada. Revisa .env.local');
+}
 
 // Evitar inicializar en build del lado servidor sin variables válidas
 const isBrowser = typeof window !== 'undefined';
 
 let app: any = undefined;
-if (isBrowser) {
+if (isBrowser && firebaseConfig.apiKey) {
   if (getApps().length === 0) {
     app = initializeApp(firebaseConfig);
   } else {
