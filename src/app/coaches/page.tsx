@@ -430,18 +430,22 @@ export default function CoachesPage() {
               </Avatar>
               <CardTitle className="font-headline pt-2 text-2xl">{coach.name}</CardTitle>
               
-              {/* Rating and Reviews */}
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <div className="flex items-center gap-1">
-                  {renderStars(coach.rating || 0)}
-                </div>
-                <span className="text-sm font-semibold text-primary">
-                  {coach.rating?.toFixed(1)}
-                </span>
-              </div>
-              <div className="text-sm text-muted-foreground mb-3">
-                ({coach.reviews} reseñas)
-              </div>
+              {/* Rating and Reviews: solo mostramos cuando hay más de 100 calificaciones */}
+              {(coach.reviews || 0) > 100 && (
+                <>
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <div className="flex items-center gap-1">
+                      {renderStars(coach.rating || 0)}
+                    </div>
+                    <span className="text-sm font-semibold text-primary">
+                      {coach.rating?.toFixed(1)}
+                    </span>
+                  </div>
+                  <div className="text-sm text-muted-foreground mb-3">
+                    ({coach.reviews} reseñas)
+                  </div>
+                </>
+              )}
 
               {/* Specialties */}
               <div className="flex flex-wrap gap-1 justify-center">
