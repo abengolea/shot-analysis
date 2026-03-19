@@ -123,7 +123,7 @@ async function waitForFileActive(fileUri: string, apiKey: string, maxAttempts = 
 export async function analyzeWithFilesAPI(
   fileUri: string,
   prompt: string,
-  model: 'gemini-2.0-flash-lite' | 'gemini-2.5-flash' = 'gemini-2.5-flash'
+  model: 'gemini-3.1-flash-lite-preview' | 'gemini-2.5-flash' = 'gemini-2.5-flash'
 ) {
   return await limiter.schedule(async () => {
     return await withBackoff(async () => {
@@ -230,7 +230,7 @@ export async function analyzeBasketballShotWithFilesAPI(
   "natural_description": "Descripción EXACTA de lo que ves en 2 oraciones"
 }`;
 
-    const analysisResult = await analyzeWithFilesAPI(fileUri, prompt, 'gemini-2.0-flash-lite');
+    const analysisResult = await analyzeWithFilesAPI(fileUri, prompt, 'gemini-3.1-flash-lite-preview');
     
         // Extraer JSON del resultado
     const cleanResult = analysisResult

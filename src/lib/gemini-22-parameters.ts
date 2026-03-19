@@ -42,7 +42,7 @@ export async function withBackoff<T>(fn: () => Promise<T>, maxRetries = 6) {
 export async function analyzeWithGemini22Parameters(
   videoBase64: string,
   prompt: string,
-  model: 'gemini-2.0-flash-lite' | 'gemini-2.5-flash' = 'gemini-2.5-flash'
+  model: 'gemini-3.1-flash-lite-preview' | 'gemini-2.5-flash' = 'gemini-2.5-flash'
 ) {
   return await limiter.schedule(async () => {
     return await withBackoff(async () => {
@@ -197,7 +197,7 @@ export async function analyzeUnified22Parameters(
   "recommendations": ["string"]
 }`;
   
-  return await analyzeWithGemini22Parameters(videoBase64, prompt, 'gemini-2.0-flash-lite');
+  return await analyzeWithGemini22Parameters(videoBase64, prompt, 'gemini-3.1-flash-lite-preview');
 }
 
 // Función principal optimizada para 22 parámetros (UNA SOLA LLAMADA)

@@ -150,7 +150,7 @@ export async function convertToBase64(
 export async function analyzeWithGemini(
   videoBase64: string,
   prompt: string,
-  model: 'gemini-2.0-flash-lite' | 'gemini-2.5-flash' = 'gemini-2.5-flash'
+  model: 'gemini-3.1-flash-lite-preview' | 'gemini-2.5-flash' = 'gemini-2.5-flash'
 ) {
   return await limiter.schedule(async () => {
     return await withBackoff(async () => {
@@ -259,7 +259,7 @@ export async function detectShotsWithGemini(videoBase64: string): Promise<string
   ]
 }`;
 
-  return await analyzeWithGemini(videoBase64, prompt, 'gemini-2.0-flash-lite');
+  return await analyzeWithGemini(videoBase64, prompt, 'gemini-3.1-flash-lite-preview');
 }
 
 // Función para análisis técnico completo (modelo completo)

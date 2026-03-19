@@ -41,7 +41,7 @@ export async function analyzeVideoSingleCall(
   fourthVideoBase64?: string
 ): Promise<any> {
   const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.0-flash-exp",
+    model: "gemini-3.1-flash-lite-preview",
     generationConfig: {
       temperature: 0.2,
       topP: 0.8,

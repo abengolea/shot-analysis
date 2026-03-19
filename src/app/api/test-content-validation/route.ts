@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       'AIzaSyBYvIGN0-Yd1b7LG2Seg6VwfKnTYIo4n_4'
     );
     
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview' });
 
     const prompt = `
     Analiza este video y determina si contiene contenido de baloncesto.

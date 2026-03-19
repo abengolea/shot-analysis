@@ -166,7 +166,7 @@ async function analyzeWithGeminiSimple(
   shotType: string = 'jump_shot'
 ) {
   const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-3.1-flash-lite-preview',
     generationConfig: {
       maxOutputTokens: 8192,
       responseMimeType: 'application/json',

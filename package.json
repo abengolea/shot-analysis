@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:gemini": "npx tsx scripts/test-gemini-flows.ts",
     "setup:firebase": "node setup-firebase.js",
     "firebase:deploy": "firebase deploy --only firestore:rules,storage",
     "storage:cors:set": "gsutil cors set cors.json gs://shotanalisys.firebasestorage.app",
